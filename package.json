@@ -8,6 +8,8 @@
   ],
   "scripts": {
     "build": "npm run build -w apps/desktop",
-    "test": "npm run test -w packages/brain"
+    "test": "npm run test -w packages/brain",
+    "tauri:dev": "npm run tauri:dev -w apps/desktop",
+    "tauri:build": "npm run tauri:build -w apps/desktop"
   }
 }
