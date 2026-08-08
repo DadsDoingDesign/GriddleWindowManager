@@ -1,0 +1,13 @@
+{
+  "name": "griddle-wm",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "packages/*",
+    "apps/desktop"
+  ],
+  "scripts": {
+    "build": "npm run build -w apps/desktop",
+    "test": "npm run test -w packages/brain"
+  }
+}

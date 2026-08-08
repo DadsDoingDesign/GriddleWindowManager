@@ -1,0 +1,32 @@
+# @griddle/* library feedback
+
+Discrepancies between what the Griddle WM plan/spec assumed and what the
+installed packages (`@griddle/core` 0.1.11, `@griddle/svelte` 0.1.10) actually
+export. Verified against `node_modules/@griddle/core/dist/*.d.ts` and
+`node_modules/@griddle/svelte/dist/*.d.ts` (authoritative).
+
+## Task 1 findings (2026-08-08)
+
+- **`updateTile` does not exist.** Plan Task 4 says "tile resized
+  (`updateTile`/remove+re-add with displacement)". The actual API is
+  `Grid.resizeTile(id, {w,h}): boolean` (with cascade-push displacement built
+  in) for footprint changes and `Grid.moveTile(id, {col,row})` for position.
+  Adaptation: Task 4's resize path will use `resizeTile`, falling back to
+  remove + `addTileWithDisplacement` only if `resizeTile` returns `false`.
+- **`absolute` tiles DO exist** — plan risk note resolved. `Tile.position`
+  supports `'absolute'`/`'fixed'` with `pinned {x,y}` coordinates, gated by
+  `GridConfig.enablePositioning: true`. `pinUnits: 'cells'` lets overlay-mode
+  tiles keep whole-cell coordinates. Note: `moveTile` is a documented no-op for
+  out-of-flow tiles — overlay-mode moves must go through `setTilePinned`.
+- **Displacement failures return `false`, they don't throw.** Plan Task 3
+  says "if grid full (bounds error thrown by Griddle) → no apply". Reality:
+  `addTileWithDisplacement`/`moveTile`/`resizeTile` return `false` and leave
+  the grid unchanged. The brain should branch on the boolean, not catch.
+- **Movement docs not vendored in the npm package.** `README.md` links to the
+  repo's `docs/movement.md`; offline consumers only get the source comments
+  (the package does ship `src/`, which mitigates this). Suggestion: include
+  `docs/movement.md` in the published `files` list.
+- Minor: `@griddle/svelte` `GriddleGrid.svelte.d.ts` types events as
+  `CustomEvent<any>` for `dragStart`/`dragEnd`/`resizeStart`/`resizeEnd` —
+  typed payloads would let the settings editor consume drop events without
+  casting.
