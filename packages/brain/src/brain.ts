@@ -4,6 +4,9 @@
 // One @griddle/core Grid per enabled grid. Collision mode uses in-flow tiles
 // (first-fit placement, addTileWithDisplacement fallback); non-resizable
 // windows are always `absolute` tiles (position snaps, size is left alone).
+// Overlay mode stores every tile as a Griddle `absolute` tile (pinUnits:
+// 'cells'): tiles may overlap, nothing displaces, and a brain-wide recency
+// counter orders overlay snapshots bottom-to-top (top-most last).
 
 import { Grid } from '@griddle/core';
 import type { CellRect, Tile } from '@griddle/core';
@@ -108,6 +111,9 @@ export class WindowManagerBrain {
   private floating = new Map<Hwnd, string>();
   /** Slots remembered across minimize, for restore. */
   private remembered = new Map<Hwnd, RememberedSlot>();
+  /** Monotonic interaction order; higher = more recent (top-most in overlay). */
+  private recency = new Map<Hwnd, number>();
+  private recencyCounter = 0;
   /** Last rect emitted per hwnd, so flush() only emits actual changes. */
   private appliedRects = new Map<Hwnd, Rect>();
   /** In-progress user drag (between moveSizeStart and moveSizeEnd). */
@@ -165,6 +171,7 @@ export class WindowManagerBrain {
     if (this.floating.delete(hwnd)) changed = true;
     if (this.remembered.delete(hwnd)) changed = true;
     if (this.windows.delete(hwnd)) changed = true;
+    this.recency.delete(hwnd);
     this.appliedRects.delete(hwnd);
     if (changed) {
       this.flush();
@@ -228,6 +235,7 @@ export class WindowManagerBrain {
           pinned: { x: rem.slot.col, y: rem.slot.row },
         });
         this.tileGrid.set(w.hwnd, mg.settings.id);
+        this.touch(w.hwnd);
         placed = true;
       } else {
         const rect: CellRect = {
@@ -239,6 +247,7 @@ export class WindowManagerBrain {
         if (mg.grid.rectInBounds(rect) && mg.grid.tilesIn(rect).length === 0) {
           mg.grid.addTile({ id: w.hwnd, ...rect });
           this.tileGrid.set(w.hwnd, mg.settings.id);
+          this.touch(w.hwnd);
           placed = true;
         }
       }
@@ -294,9 +303,10 @@ export class WindowManagerBrain {
     const { mg, mon } = target;
     const dims = this.dims(mg.settings);
     const rect: Rect = { x: p.x, y: p.y, width: p.width, height: p.height };
+    // Non-resizable windows never report a size change, so this is safe for
+    // absolute tiles too (overlay-mode resizes must re-snap the footprint).
     const resizing =
-      !d.absolute &&
-      (p.width !== d.startRect.width || p.height !== d.startRect.height);
+      p.width !== d.startRect.width || p.height !== d.startRect.height;
 
     let footprint: Slot;
     if (resizing) {
@@ -309,7 +319,12 @@ export class WindowManagerBrain {
       footprint = slotFromCursor(mon, dims, p.cursorX, p.cursorY, size);
     }
 
-    const ghosts = d.absolute ? [] : this.simulateGhosts(mg, d, footprint, resizing);
+    // Overlay-mode targets never reflow neighbors; absolute tiles displace
+    // nothing either way — both preview with no ghosts.
+    const ghosts =
+      d.absolute || mg.settings.mode === 'overlay'
+        ? []
+        : this.simulateGhosts(mg, d, footprint, resizing);
 
     const unchanged =
       d.previewGridId === mg.settings.id &&
@@ -384,6 +399,7 @@ export class WindowManagerBrain {
     } else {
       this.commitTransfer(source, target, d, snapped);
     }
+    this.touch(hwnd); // the just-dragged window is now the top-most
     // Always re-emit the dragged window: even an unchanged slot must snap the
     // physically-moved window back onto its cell.
     this.appliedRects.delete(hwnd);
@@ -437,6 +453,36 @@ export class WindowManagerBrain {
     this.emitSnapshot();
   }
 
+  setMode(gridId: string, mode: 'collision' | 'overlay'): void {
+    const settings = this.gridSettings.get(gridId);
+    if (!settings || settings.mode === mode) return;
+    const updated: GridSettings = { ...settings, mode };
+    this.gridSettings.set(gridId, updated);
+
+    const mg = this.grids.get(gridId);
+    if (!mg) {
+      this.emitSnapshot();
+      return;
+    }
+    mg.settings = updated;
+    if (this.drag?.sourceGridId === gridId) this.cancelDrag();
+
+    if (mode === 'overlay') {
+      // Convert in place: every in-flow tile becomes absolute at its own
+      // slot. Geometry is unchanged, so no moves are emitted.
+      for (const tile of [...mg.grid.tiles]) {
+        if (tile.position === 'absolute') continue;
+        mg.grid.setTilePosition(tile.id, 'absolute', {
+          pinned: { x: tile.col, y: tile.row },
+        });
+      }
+    } else {
+      this.convertToCollision(mg);
+    }
+    this.flush();
+    this.emitSnapshot();
+  }
+
   exportConfig(): AppConfig {
     const layouts: Record<string, unknown> = { ...this.storedLayouts };
     for (const [id, mg] of this.grids) layouts[id] = mg.grid.toJSON();
@@ -453,6 +499,54 @@ export class WindowManagerBrain {
   }
 
   // ── internals ──────────────────────────────────────────────────────────
+
+  /** Mark `hwnd` as the most recently interacted-with window. */
+  private touch(hwnd: Hwnd): void {
+    this.recency.set(hwnd, ++this.recencyCounter);
+  }
+
+  private recencyOf(hwnd: Hwnd): number {
+    return this.recency.get(hwnd) ?? 0;
+  }
+
+  /**
+   * Overlay → collision: re-add every resizable tile in recency order, most
+   * recent first so it claims its slot outright (keeps it preferentially).
+   * Older tiles keep their slot if still free, else first-fit, else
+   * displacement as a last resort; tiles that no longer fit become floating.
+   * Non-resizable windows stay absolute (spec: always absolute).
+   */
+  private convertToCollision(mg: ManagedGrid): void {
+    const gridId = mg.settings.id;
+    const dims = this.dims(mg.settings);
+    const converts = mg.grid.tiles
+      .filter((t) => this.windows.get(t.id)?.resizable ?? true)
+      .sort((a, b) => this.recencyOf(b.id) - this.recencyOf(a.id));
+    for (const t of converts) mg.grid.removeTile(t.id);
+    for (const t of converts) {
+      const slot = tileSlotOf(t); // pinned coords for absolute tiles
+      const rect: CellRect = { col: slot.col, row: slot.row, w: slot.w, h: slot.h };
+      if (mg.grid.rectInBounds(rect) && mg.grid.tilesIn(rect).length === 0) {
+        mg.grid.addTile({ id: t.id, ...rect });
+        continue;
+      }
+      let placed = false;
+      for (let row = 0; row + slot.h <= dims.rows && !placed; row++) {
+        for (let col = 0; col + slot.w <= dims.cols && !placed; col++) {
+          const cand: CellRect = { col, row, w: slot.w, h: slot.h };
+          if (mg.grid.tilesIn(cand).length === 0) {
+            mg.grid.addTile({ id: t.id, ...cand });
+            placed = true;
+          }
+        }
+      }
+      if (placed) continue;
+      if (mg.grid.addTileWithDisplacement({ id: t.id, ...rect })) continue;
+      this.tileGrid.delete(t.id);
+      this.floating.set(t.id, gridId);
+      this.appliedRects.delete(t.id);
+    }
+  }
 
   private monitorFor(settings: GridSettings): MonitorInfo | undefined {
     const first = settings.monitorIds[0];
@@ -555,7 +649,23 @@ export class WindowManagerBrain {
     if (!tile) return;
 
     if (tile.position === 'absolute') {
-      mg.grid.setTilePinned(hwnd, { x: snapped.col, y: snapped.row });
+      const info = this.windows.get(hwnd);
+      if ((info?.resizable ?? true) && (snapped.w !== tile.w || snapped.h !== tile.h)) {
+        // Overlay-mode resize: footprint snaps to cells too. Absolute tiles
+        // never collide, so remove + re-add is side-effect free.
+        mg.grid.removeTile(hwnd);
+        mg.grid.addTile({
+          id: hwnd,
+          col: snapped.col,
+          row: snapped.row,
+          w: snapped.w,
+          h: snapped.h,
+          position: 'absolute',
+          pinned: { x: snapped.col, y: snapped.row },
+        });
+      } else {
+        mg.grid.setTilePinned(hwnd, { x: snapped.col, y: snapped.row });
+      }
       return;
     }
 
@@ -596,7 +706,10 @@ export class WindowManagerBrain {
     this.tileGrid.delete(hwnd);
     const info = this.windows.get(hwnd);
 
-    if (d.absolute || (info && !info.resizable)) {
+    // Absolute in the target iff the target is overlay-mode or the window
+    // itself is non-resizable (d.absolute may just mean "source was overlay").
+    const nonResizable = info ? !info.resizable : d.absolute;
+    if (target.settings.mode === 'overlay' || nonResizable) {
       target.grid.addTile({
         id: hwnd,
         col: snapped.col,
@@ -634,9 +747,10 @@ export class WindowManagerBrain {
   }
 
   /**
-   * Place a window into a grid: absolute for non-resizable windows, else
-   * first-fit in reading order, else displacement at the snapped slot. When
-   * even displacement fails (grid full) the window is marked floating.
+   * Place a window into a grid: absolute for non-resizable windows and for
+   * overlay-mode grids (snapped in place, overlap allowed), else first-fit in
+   * reading order, else displacement at the snapped slot. When even
+   * displacement fails (grid full) the window is marked floating.
    * Returns whether a tile was created.
    */
   private placeWindow(mg: ManagedGrid, w: WindowInfo): boolean {
@@ -645,7 +759,7 @@ export class WindowManagerBrain {
     const dims = this.dims(mg.settings);
     const snapped = snapRectToSlot(mon, dims, w);
 
-    if (!w.resizable) {
+    if (!w.resizable || mg.settings.mode === 'overlay') {
       mg.grid.addTile({
         id: w.hwnd,
         col: snapped.col,
@@ -656,6 +770,7 @@ export class WindowManagerBrain {
         pinned: { x: snapped.col, y: snapped.row },
       });
       this.tileGrid.set(w.hwnd, mg.settings.id);
+      this.touch(w.hwnd);
       return true;
     }
 
@@ -665,6 +780,7 @@ export class WindowManagerBrain {
         if (mg.grid.tilesIn(rect).length === 0) {
           mg.grid.addTile({ id: w.hwnd, ...rect });
           this.tileGrid.set(w.hwnd, mg.settings.id);
+          this.touch(w.hwnd);
           return true;
         }
       }
@@ -679,6 +795,7 @@ export class WindowManagerBrain {
     });
     if (ok) {
       this.tileGrid.set(w.hwnd, mg.settings.id);
+      this.touch(w.hwnd);
       return true;
     }
     this.floating.set(w.hwnd, mg.settings.id);
@@ -712,14 +829,18 @@ export class WindowManagerBrain {
     this.grids.delete(gridId);
   }
 
-  /** Target pixel rect for a tile. Absolute tiles keep the window's own size. */
+  /**
+   * Target pixel rect for a tile. Resizable windows snap to the cell rect
+   * (position and size) whether in flow or absolute (overlay mode);
+   * non-resizable absolute tiles keep the window's own size (position snap).
+   */
   private desiredRect(mon: MonitorInfo, dims: GridDims, tile: Tile): Rect {
     const slot = tileSlotOf(tile);
     const cell = cellRect(mon, dims, slot);
     if (tile.position !== 'absolute') return cell;
 
     const info = this.windows.get(tile.id);
-    if (!info) return cell;
+    if (!info || info.resizable) return cell;
     const width = Math.min(info.width, mon.workWidth);
     const height = Math.min(info.height, mon.workHeight);
     return {
@@ -752,7 +873,12 @@ export class WindowManagerBrain {
   private emitSnapshot(): void {
     const tiles: Record<string, TileSnapshot[]> = {};
     for (const [id, mg] of this.grids) {
-      tiles[id] = mg.grid.tiles.map((t) => {
+      const gridTiles = [...mg.grid.tiles];
+      if (mg.settings.mode === 'overlay') {
+        // Overlay stacking order: bottom-to-top, top-most (most recent) last.
+        gridTiles.sort((a, b) => this.recencyOf(a.id) - this.recencyOf(b.id));
+      }
+      tiles[id] = gridTiles.map((t) => {
         const info = this.windows.get(t.id);
         return {
           hwnd: t.id,

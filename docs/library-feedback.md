@@ -56,3 +56,33 @@ export. Verified against `node_modules/@griddle/core/dist/*.d.ts` and
   `addTile` when displacement returns `false`. No `updateTile` needed.
 - Minor: `Grid.removeTile(id)` on a missing id is a silent no-op (convenient
   for the cross-grid ghost simulation); worth documenting in the README.
+
+## Task 5 findings (2026-08-08)
+
+- **`absolute` tiles confirmed sufficient for overlay mode** — the plan's
+  fallback (brain-local out-of-flow tile tracking) was NOT needed. With
+  `enablePositioning: true` + `pinUnits: 'cells'`, overlay-mode tiles live in
+  the Grid as `position: 'absolute'` with `pinned {x: col, y: row}`:
+  they overlap freely, `tilesIn` ignores them, and `setTilePinned` moves them
+  without touching the rules engine. `setTilePosition(id, 'absolute',
+  {pinned})` converts a collision grid to overlay strictly in place (zero
+  geometry changes), and `setTilePosition` back to `'static'` was not even
+  required — overlay→collision re-adds tiles anyway to run displacement.
+- **No resize API for out-of-flow tiles.** `resizeTile` runs the in-flow
+  rules engine and `setTilePinned` only updates coordinates; there is no
+  documented way to change an absolute tile's `w`/`h` in place. Workaround
+  (harmless, since absolute tiles never collide): `removeTile` + `addTile`
+  with the new footprint. A `setTileSize(id, {w,h})` for out-of-flow tiles
+  would be cleaner.
+- **No z-order in the engine.** Overlay stacking ("top-most last") has no
+  Griddle representation — absolute tiles have no z/stacking field — so the
+  brain tracks a recency counter per hwnd and sorts overlay snapshots itself.
+  Reasonable scope cut for a layout engine, but a `z?: number` field on
+  out-of-flow tiles would have saved the bookkeeping.
+- **`addTileWithDisplacement` ordering nuance for "most recent wins".** The
+  method displaces the *sitting* tiles and fails (returning false, grid
+  unchanged) when a victim cannot be re-placed — so re-adding tiles
+  newest-last does NOT guarantee the newest keeps its slot on a crowded grid
+  (its own add is the one that fails). The brain instead re-adds newest
+  *first* (it claims its slot outright) and places older tiles via
+  own-slot-if-free → first-fit → displacement → floating.
