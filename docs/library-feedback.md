@@ -30,3 +30,12 @@ export. Verified against `node_modules/@griddle/core/dist/*.d.ts` and
   `CustomEvent<any>` for `dragStart`/`dragEnd`/`resizeStart`/`resizeEnd` —
   typed payloads would let the settings editor consume drop events without
   casting.
+
+## Task 3 findings (2026-08-08)
+
+- Confirmed in practice: the brain branches on `addTileWithDisplacement`'s
+  boolean for the grid-full path (window marked floating, no apply) — no
+  try/catch needed, as predicted above.
+- `Grid.tilesIn` skipping out-of-flow tiles works well for the
+  "non-resizable windows are always absolute" rule: in-flow first-fit
+  placement transparently ignores them, no special-casing required.

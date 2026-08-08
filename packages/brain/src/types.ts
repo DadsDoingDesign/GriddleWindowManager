@@ -91,6 +91,30 @@ export interface DragPos {
   height: number; // live rect
 }
 
+export interface TileSnapshot {
+  hwnd: Hwnd;
+  title: string;
+  exe: string;
+  slot: Slot;
+}
+
+export interface FloatingWindow {
+  hwnd: Hwnd;
+  title: string;
+  exe: string;
+}
+
+// Payload of the `state-snapshot` event (contract §C2).
+// Contract extension (Task 3): `floating` lists eligible windows a full grid
+// could not fit — they float free until space opens up.
+export interface StateSnapshot {
+  grids: GridSettings[];
+  templates: Template[];
+  tiles: Record<string, TileSnapshot[]>; // gridId -> tiles in placement order
+  floating: FloatingWindow[];
+  paused: boolean;
+}
+
 export interface AppConfig {
   // schema for %APPDATA%/griddle-wm/config.json
   version: 1;
