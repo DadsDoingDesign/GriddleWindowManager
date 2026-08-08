@@ -79,6 +79,19 @@ export. Verified against `node_modules/@griddle/core/dist/*.d.ts` and
   brain tracks a recency counter per hwnd and sorts overlay snapshots itself.
   Reasonable scope cut for a layout engine, but a `z?: number` field on
   out-of-flow tiles would have saved the bookkeeping.
+## Task 6 findings (2026-08-08)
+
+- **`Grid.reflow` cannot change row count.** The plan's `applyTemplate` says
+  "template with different cols/rows → grid `reflow` first", but
+  `ReflowOptions` is `{ cols, strategy: 'griddle-v1', placements? }` — columns
+  only, no `rows`, and unit sizes must be adjusted separately via
+  `updateConfig`. Adaptation: since every tile is re-placed at a template
+  slot immediately afterwards anyway, the brain rebuilds the Grid at the
+  template's dims (`new Grid({cols, rows, unitWidth, unitHeight, ...})`)
+  instead of reflowing — observable behavior is identical. A
+  `reflow({cols, rows})` overload (or `rows` in `ReflowOptions`) would let
+  consumers restructure without a rebuild.
+
 - **`addTileWithDisplacement` ordering nuance for "most recent wins".** The
   method displaces the *sitting* tiles and fails (returning false, grid
   unchanged) when a victim cannot be re-placed — so re-adding tiles

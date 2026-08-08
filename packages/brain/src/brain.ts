@@ -17,6 +17,7 @@ import {
   slotFromCursor,
   snapRectToSlot,
 } from './coords';
+import { makeUserTemplate, mergeWithBuiltins } from './templates';
 import type {
   AppConfig,
   ApplyLayout,
@@ -129,7 +130,7 @@ export class WindowManagerBrain {
 
   constructor(cb: BrainCallbacks, cfg?: AppConfig) {
     this.cb = cb;
-    this.templates = cfg ? [...cfg.templates] : [];
+    this.templates = mergeWithBuiltins(cfg?.templates ?? []);
     this.exclusions = new Set(cfg?.exclusions ?? []);
     this.storedLayouts = { ...(cfg?.layouts ?? {}) };
     this.hotkey = cfg?.hotkey ?? DEFAULT_HOTKEY;
@@ -483,6 +484,92 @@ export class WindowManagerBrain {
     this.emitSnapshot();
   }
 
+  /**
+   * Snapshot a live grid's layout as a user template (spec §5.5): cols/rows
+   * plus every tile's slot in reading order — no window identities.
+   */
+  captureTemplate(gridId: string, name: string): Template {
+    const mg = this.grids.get(gridId);
+    if (!mg) {
+      throw new Error(`captureTemplate: unknown or disabled grid "${gridId}"`);
+    }
+    const dims = this.dims(mg.settings);
+    const slots = mg.grid.tiles.map((t) => tileSlotOf(t));
+    const tpl = makeUserTemplate(name, dims.cols, dims.rows, slots, this.templates);
+    this.templates.push(tpl);
+    this.emitSnapshot();
+    return { ...tpl, slots: tpl.slots.map((s) => ({ ...s })) };
+  }
+
+  /**
+   * Lay a grid out per a template (spec §5.5): windows map to slots in
+   * recency order (most recent → first slot), extras auto-place, floating
+   * windows get retried, mode is unchanged, and everything lands in one
+   * apply. A template with different cols/rows re-dims the grid first.
+   *
+   * Note: the plan called for Griddle `reflow` here, but `Grid.reflow` only
+   * accepts a column count (no rows) — and every tile is re-placed at a
+   * template slot anyway, so the grid is rebuilt at the template's dims
+   * instead (see docs/library-feedback.md).
+   */
+  applyTemplate(gridId: string, templateId: string): void {
+    const mg = this.grids.get(gridId);
+    const tpl = this.templates.find((t) => t.id === templateId);
+    if (!mg || !tpl) return;
+    const mon = this.monitorFor(mg.settings);
+    if (!mon) return;
+    if (this.drag?.sourceGridId === gridId) this.cancelDrag();
+
+    const settings: GridSettings = {
+      ...mg.settings,
+      cols: tpl.cols,
+      rows: tpl.rows,
+      activeTemplateId: tpl.id,
+    };
+    mg.settings = settings;
+    this.gridSettings.set(gridId, settings);
+
+    // Assignment order: tiled windows by recency (most recent first), then
+    // this grid's floating windows — the template may open room for them.
+    const byRecency = (a: Hwnd, b: Hwnd) => this.recencyOf(b) - this.recencyOf(a);
+    const tiled = mg.grid.tiles.map((t) => t.id).sort(byRecency);
+    const floaters = [...this.floating.entries()]
+      .filter(([, gid]) => gid === gridId)
+      .map(([hwnd]) => hwnd)
+      .sort(byRecency);
+    const order = [...tiled, ...floaters];
+    for (const hwnd of order) {
+      this.tileGrid.delete(hwnd);
+      this.floating.delete(hwnd);
+    }
+
+    mg.grid = new Grid({
+      cols: tpl.cols,
+      rows: tpl.rows,
+      unitWidth: mon.workWidth / tpl.cols,
+      unitHeight: mon.workHeight / tpl.rows,
+      gravity: 'none',
+      enablePositioning: true,
+      pinUnits: 'cells',
+    });
+
+    const overlay = settings.mode === 'overlay';
+    order.forEach((hwnd, i) => {
+      const info = this.windows.get(hwnd);
+      const slot = i < tpl.slots.length ? tpl.slots[i] : undefined;
+      if (slot && this.addAtSlot(mg, hwnd, slot, overlay, info)) return;
+      // Extra window beyond the template's slots (or an unusable slot):
+      // auto-place with the usual first-fit/displacement/floating rules.
+      if (info) {
+        this.placeWindow(mg, info);
+      } else {
+        this.floating.set(hwnd, gridId);
+      }
+    });
+    this.flush();
+    this.emitSnapshot();
+  }
+
   exportConfig(): AppConfig {
     const layouts: Record<string, unknown> = { ...this.storedLayouts };
     for (const [id, mg] of this.grids) layouts[id] = mg.grid.toJSON();
@@ -546,6 +633,45 @@ export class WindowManagerBrain {
       this.floating.set(t.id, gridId);
       this.appliedRects.delete(t.id);
     }
+  }
+
+  /**
+   * Add a window's tile at an exact slot (template apply). Overlay grids and
+   * non-resizable windows get an absolute pinned tile (never collides);
+   * in-flow tiles take the slot outright when free, else displace. Returns
+   * whether the tile was created.
+   */
+  private addAtSlot(
+    mg: ManagedGrid,
+    hwnd: Hwnd,
+    slot: Slot,
+    overlay: boolean,
+    info: WindowInfo | undefined,
+  ): boolean {
+    if (overlay || !(info?.resizable ?? true)) {
+      mg.grid.addTile({
+        id: hwnd,
+        col: slot.col,
+        row: slot.row,
+        w: slot.w,
+        h: slot.h,
+        position: 'absolute',
+        pinned: { x: slot.col, y: slot.row },
+      });
+      this.tileGrid.set(hwnd, mg.settings.id);
+      return true;
+    }
+    const rect: CellRect = { col: slot.col, row: slot.row, w: slot.w, h: slot.h };
+    if (mg.grid.rectInBounds(rect) && mg.grid.tilesIn(rect).length === 0) {
+      mg.grid.addTile({ id: hwnd, ...rect });
+      this.tileGrid.set(hwnd, mg.settings.id);
+      return true;
+    }
+    if (mg.grid.addTileWithDisplacement({ id: hwnd, ...rect })) {
+      this.tileGrid.set(hwnd, mg.settings.id);
+      return true;
+    }
+    return false;
   }
 
   private monitorFor(settings: GridSettings): MonitorInfo | undefined {
