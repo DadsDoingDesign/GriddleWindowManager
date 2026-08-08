@@ -39,3 +39,20 @@ export. Verified against `node_modules/@griddle/core/dist/*.d.ts` and
 - `Grid.tilesIn` skipping out-of-flow tiles works well for the
   "non-resizable windows are always absolute" rule: in-flow first-fit
   placement transparently ignores them, no special-casing required.
+
+## Task 4 findings (2026-08-08)
+
+- **Clone-for-preview works as designed.** `Grid.fromJSON(grid.toJSON())`
+  yields a fully independent clone (`toJSON` copies config and each tile), so
+  running `moveTile`/`addTileWithDisplacement` on the clone and diffing slots
+  gives drag ghosts without ever mutating the live grid. `loadJSON` was not
+  needed — `fromJSON` is the more convenient cloning entry point.
+- **Rule 2 (same-footprint swap) is a great fit for drag previews**: dragging
+  a 1×1 tile onto an equal-size neighbor deterministically swaps, so the
+  ghost preview and the commit agree exactly (asserted in tests).
+- **Resize path**: as planned in Task 1 findings, `resizeTile` covers
+  same-origin grows/shrinks; origin-changing resizes (top/left window edges)
+  use remove + `addTileWithDisplacement`, restoring the original tile via
+  `addTile` when displacement returns `false`. No `updateTile` needed.
+- Minor: `Grid.removeTile(id)` on a missing id is a silent no-op (convenient
+  for the cross-grid ghost simulation); worth documenting in the README.

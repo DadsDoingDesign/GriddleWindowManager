@@ -7,11 +7,19 @@
 
 import { Grid } from '@griddle/core';
 import type { CellRect, Tile } from '@griddle/core';
-import { cellRect, type GridDims, type Rect, snapRectToSlot } from './coords';
+import {
+  cellRect,
+  type GridDims,
+  type Rect,
+  slotFromCursor,
+  snapRectToSlot,
+} from './coords';
 import type {
   AppConfig,
   ApplyLayout,
+  DragPos,
   FloatingWindow,
+  GhostMove,
   GridSettings,
   Hwnd,
   MonitorInfo,
@@ -41,6 +49,20 @@ interface RememberedSlot {
   absolute: boolean;
 }
 
+interface DragState {
+  hwnd: Hwnd;
+  /** Grid holding the tile when the drag started. */
+  sourceGridId: string;
+  startSlot: Slot;
+  /** Window rect when the drag started, to tell moves from resizes. */
+  startRect: Rect;
+  absolute: boolean;
+  /** Grid the currently visible preview was emitted for, if any. */
+  previewGridId: string | null;
+  lastFootprint: Slot | null;
+  lastGhosts: GhostMove[];
+}
+
 const DEFAULT_HOTKEY = 'Ctrl+Super+G';
 
 function clamp(v: number, lo: number, hi: number): number {
@@ -56,6 +78,18 @@ function tileSlotOf(tile: Tile): Slot {
 
 function sameRect(a: Rect, b: Rect): boolean {
   return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+}
+
+function sameSlot(a: Slot, b: Slot): boolean {
+  return a.col === b.col && a.row === b.row && a.w === b.w && a.h === b.h;
+}
+
+function sameGhosts(a: GhostMove[], b: GhostMove[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((g, i) => {
+    const o = b[i]!;
+    return g.hwnd === o.hwnd && sameSlot(g.from, o.from) && sameSlot(g.to, o.to);
+  });
 }
 
 export class WindowManagerBrain {
@@ -76,6 +110,8 @@ export class WindowManagerBrain {
   private remembered = new Map<Hwnd, RememberedSlot>();
   /** Last rect emitted per hwnd, so flush() only emits actual changes. */
   private appliedRects = new Map<Hwnd, Rect>();
+  /** In-progress user drag (between moveSizeStart and moveSizeEnd). */
+  private drag: DragState | null = null;
 
   private templates: Template[];
   private exclusions: Set<string>;
@@ -118,6 +154,7 @@ export class WindowManagerBrain {
   }
 
   windowDestroyed(hwnd: Hwnd): void {
+    this.cancelDrag(hwnd);
     let changed = false;
     const gridId = this.tileGrid.get(hwnd);
     if (gridId !== undefined) {
@@ -136,6 +173,7 @@ export class WindowManagerBrain {
   }
 
   windowMinimized(hwnd: Hwnd): void {
+    this.cancelDrag(hwnd);
     const info = this.windows.get(hwnd);
     if (info) this.windows.set(hwnd, { ...info, minimized: true });
 
@@ -206,6 +244,149 @@ export class WindowManagerBrain {
       }
     }
     if (!placed) this.placeWindow(mg, info);
+    this.flush();
+    this.emitSnapshot();
+  }
+
+  // ── drag pipeline ──────────────────────────────────────────────────────
+
+  moveSizeStart(hwnd: Hwnd): void {
+    const gridId = this.tileGrid.get(hwnd);
+    if (gridId === undefined) return;
+    const mg = this.grids.get(gridId);
+    const tile = mg?.grid.getTile(hwnd);
+    if (!mg || !tile) return;
+
+    const slot = tileSlotOf(tile);
+    const info = this.windows.get(hwnd);
+    const mon = this.monitorFor(mg.settings);
+    const startRect: Rect =
+      this.appliedRects.get(hwnd) ??
+      (info
+        ? { x: info.x, y: info.y, width: info.width, height: info.height }
+        : mon
+          ? cellRect(mon, this.dims(mg.settings), slot)
+          : { x: 0, y: 0, width: 0, height: 0 });
+
+    this.drag = {
+      hwnd,
+      sourceGridId: gridId,
+      startSlot: slot,
+      startRect,
+      absolute: tile.position === 'absolute',
+      previewGridId: gridId,
+      lastFootprint: slot,
+      lastGhosts: [],
+    };
+    this.cb.onPreview({ gridId, visible: true, footprint: slot, ghosts: [] });
+  }
+
+  dragMoved(p: DragPos): void {
+    const d = this.drag;
+    if (!d || d.hwnd !== p.hwnd) return;
+
+    const target = this.gridAtPoint(p.cursorX, p.cursorY);
+    if (!target) {
+      // Cursor over an ungridded area: nothing to preview.
+      this.hidePreview(d);
+      return;
+    }
+    const { mg, mon } = target;
+    const dims = this.dims(mg.settings);
+    const rect: Rect = { x: p.x, y: p.y, width: p.width, height: p.height };
+    const resizing =
+      !d.absolute &&
+      (p.width !== d.startRect.width || p.height !== d.startRect.height);
+
+    let footprint: Slot;
+    if (resizing) {
+      footprint = snapRectToSlot(mon, dims, rect);
+    } else {
+      const size =
+        mg.settings.id === d.sourceGridId
+          ? { w: d.startSlot.w, h: d.startSlot.h }
+          : snapRectToSlot(mon, dims, rect); // footprint in the target grid's cells
+      footprint = slotFromCursor(mon, dims, p.cursorX, p.cursorY, size);
+    }
+
+    const ghosts = d.absolute ? [] : this.simulateGhosts(mg, d, footprint, resizing);
+
+    const unchanged =
+      d.previewGridId === mg.settings.id &&
+      d.lastFootprint !== null &&
+      sameSlot(d.lastFootprint, footprint) &&
+      sameGhosts(d.lastGhosts, ghosts);
+    if (unchanged) return;
+
+    if (d.previewGridId !== null && d.previewGridId !== mg.settings.id) {
+      this.cb.onPreview({
+        gridId: d.previewGridId,
+        visible: false,
+        footprint: null,
+        ghosts: [],
+      });
+    }
+    d.previewGridId = mg.settings.id;
+    d.lastFootprint = footprint;
+    d.lastGhosts = ghosts;
+    this.cb.onPreview({ gridId: mg.settings.id, visible: true, footprint, ghosts });
+  }
+
+  moveSizeEnd(
+    hwnd: Hwnd,
+    rect: { x: number; y: number; width: number; height: number },
+  ): void {
+    const d = this.drag;
+    if (!d || d.hwnd !== hwnd) return;
+    this.drag = null;
+    this.hidePreview(d);
+
+    const source = this.grids.get(d.sourceGridId);
+    if (!source || !source.grid.getTile(hwnd)) return; // grid vanished mid-drag
+
+    const targetMon =
+      this.monitorAt(rect.x + rect.width / 2, rect.y + rect.height / 2) ??
+      this.monitorFor(source.settings);
+    if (!targetMon) return;
+
+    const info = this.windows.get(hwnd);
+    if (info) {
+      this.windows.set(hwnd, {
+        ...info,
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+        monitorId: targetMon.id,
+      });
+    }
+
+    const target = this.gridForMonitor(targetMon.id);
+    if (!target) {
+      // Dropped on an ungridded monitor: the window becomes unmanaged and
+      // stays exactly where the user left it — no move emitted.
+      source.grid.removeTile(hwnd);
+      this.tileGrid.delete(hwnd);
+      this.windows.delete(hwnd);
+      this.remembered.delete(hwnd);
+      this.appliedRects.delete(hwnd);
+      this.flush();
+      this.emitSnapshot();
+      return;
+    }
+
+    const mon = this.monitorFor(target.settings);
+    if (!mon) return;
+    const snapped = snapRectToSlot(mon, this.dims(target.settings), rect);
+
+    if (target === source) {
+      this.commitSameGrid(source, d, snapped);
+    } else {
+      this.commitTransfer(source, target, d, snapped);
+    }
+    // Always re-emit the dragged window: even an unchanged slot must snap the
+    // physically-moved window back onto its cell.
+    this.appliedRects.delete(hwnd);
     this.flush();
     this.emitSnapshot();
   }
@@ -282,6 +463,167 @@ export class WindowManagerBrain {
     return { cols: settings.cols, rows: settings.rows };
   }
 
+  private monitorAt(x: number, y: number): MonitorInfo | undefined {
+    for (const m of this.monitors.values()) {
+      if (x >= m.x && x < m.x + m.width && y >= m.y && y < m.y + m.height) {
+        return m;
+      }
+    }
+    return undefined;
+  }
+
+  private gridAtPoint(
+    x: number,
+    y: number,
+  ): { mg: ManagedGrid; mon: MonitorInfo } | undefined {
+    const hit = this.monitorAt(x, y);
+    if (!hit) return undefined;
+    const mg = this.gridForMonitor(hit.id);
+    if (!mg) return undefined;
+    const mon = this.monitorFor(mg.settings);
+    if (!mon) return undefined;
+    return { mg, mon };
+  }
+
+  /** Emit a hide for the grid whose preview is currently visible, if any. */
+  private hidePreview(d: DragState): void {
+    if (d.previewGridId === null) return;
+    this.cb.onPreview({
+      gridId: d.previewGridId,
+      visible: false,
+      footprint: null,
+      ghosts: [],
+    });
+    d.previewGridId = null;
+    d.lastFootprint = null;
+    d.lastGhosts = [];
+  }
+
+  /** Abort an in-progress drag (window destroyed/minimized, grid torn down). */
+  private cancelDrag(hwnd?: Hwnd): void {
+    const d = this.drag;
+    if (!d) return;
+    if (hwnd !== undefined && d.hwnd !== hwnd) return;
+    this.drag = null;
+    this.hidePreview(d);
+  }
+
+  /**
+   * Ghost preview: run the would-be commit on a clone (toJSON → fromJSON) and
+   * diff every other in-flow tile's slot. The live grid is never mutated.
+   */
+  private simulateGhosts(
+    target: ManagedGrid,
+    d: DragState,
+    footprint: Slot,
+    resizing: boolean,
+  ): GhostMove[] {
+    const clone = Grid.fromJSON(target.grid.toJSON());
+    const before = new Map<string, Slot>();
+    for (const t of clone.tiles) {
+      if (t.id === d.hwnd) continue;
+      if (t.position === 'absolute' || t.position === 'fixed') continue;
+      before.set(t.id, tileSlotOf(t));
+    }
+    const sameGrid = target.settings.id === d.sourceGridId;
+    if (sameGrid && !resizing) {
+      clone.moveTile(d.hwnd, { col: footprint.col, row: footprint.row });
+    } else {
+      if (sameGrid) clone.removeTile(d.hwnd);
+      clone.addTileWithDisplacement({
+        id: d.hwnd,
+        col: footprint.col,
+        row: footprint.row,
+        w: footprint.w,
+        h: footprint.h,
+      });
+    }
+    const ghosts: GhostMove[] = [];
+    for (const t of clone.tiles) {
+      const prev = before.get(t.id);
+      if (!prev) continue;
+      const now = tileSlotOf(t);
+      if (!sameSlot(prev, now)) ghosts.push({ hwnd: t.id, from: prev, to: now });
+    }
+    return ghosts;
+  }
+
+  /** Commit a drop that stays on the same grid: move, resize, or pin update. */
+  private commitSameGrid(mg: ManagedGrid, d: DragState, snapped: Slot): void {
+    const hwnd = d.hwnd;
+    const tile = mg.grid.getTile(hwnd);
+    if (!tile) return;
+
+    if (tile.position === 'absolute') {
+      mg.grid.setTilePinned(hwnd, { x: snapped.col, y: snapped.row });
+      return;
+    }
+
+    const cur = tileSlotOf(tile);
+    const sizeChanged = snapped.w !== cur.w || snapped.h !== cur.h;
+    if (!sizeChanged) {
+      // moveTile returning false leaves the grid unchanged → flush snaps the
+      // window back to its original cell.
+      mg.grid.moveTile(hwnd, { col: snapped.col, row: snapped.row });
+      return;
+    }
+    if (snapped.col === cur.col && snapped.row === cur.row) {
+      if (mg.grid.resizeTile(hwnd, { w: snapped.w, h: snapped.h })) return;
+    }
+    // Origin+size changed (or in-place resize failed): re-add with displacement.
+    mg.grid.removeTile(hwnd);
+    const ok = mg.grid.addTileWithDisplacement({
+      id: hwnd,
+      col: snapped.col,
+      row: snapped.row,
+      w: snapped.w,
+      h: snapped.h,
+    });
+    if (!ok) {
+      mg.grid.addTile({ id: hwnd, col: cur.col, row: cur.row, w: cur.w, h: cur.h });
+    }
+  }
+
+  /** Commit a drop onto a different gridded monitor: transfer the tile. */
+  private commitTransfer(
+    source: ManagedGrid,
+    target: ManagedGrid,
+    d: DragState,
+    snapped: Slot,
+  ): void {
+    const hwnd = d.hwnd;
+    source.grid.removeTile(hwnd);
+    this.tileGrid.delete(hwnd);
+    const info = this.windows.get(hwnd);
+
+    if (d.absolute || (info && !info.resizable)) {
+      target.grid.addTile({
+        id: hwnd,
+        col: snapped.col,
+        row: snapped.row,
+        w: snapped.w,
+        h: snapped.h,
+        position: 'absolute',
+        pinned: { x: snapped.col, y: snapped.row },
+      });
+      this.tileGrid.set(hwnd, target.settings.id);
+      return;
+    }
+    const ok = target.grid.addTileWithDisplacement({
+      id: hwnd,
+      col: snapped.col,
+      row: snapped.row,
+      w: snapped.w,
+      h: snapped.h,
+    });
+    if (ok) {
+      this.tileGrid.set(hwnd, target.settings.id);
+      return;
+    }
+    // Drop slot unusable: fall back to first-fit / displacement / floating.
+    if (info) this.placeWindow(target, info);
+  }
+
   private gridForMonitor(monitorId: string): ManagedGrid | undefined {
     for (const mg of this.grids.values()) {
       if (mg.settings.enabled && mg.settings.monitorIds.includes(monitorId)) {
@@ -345,6 +687,7 @@ export class WindowManagerBrain {
 
   /** Drop a grid instance and everything tracked under it. No snapshot emit. */
   private teardownGrid(gridId: string): void {
+    if (this.drag?.sourceGridId === gridId) this.cancelDrag();
     const settings = this.gridSettings.get(gridId);
     if (settings) this.gridSettings.set(gridId, { ...settings, enabled: false });
     const mg = this.grids.get(gridId);
