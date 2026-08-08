@@ -99,3 +99,21 @@ export. Verified against `node_modules/@griddle/core/dist/*.d.ts` and
   (its own add is the one that fails). The brain instead re-adds newest
   *first* (it claims its slot outright) and places older tiles via
   own-slot-if-free → first-fit → displacement → floating.
+
+## Task 7 findings (2026-08-08)
+
+- **`Grid.loadJSON`/`fromJSON` throw on corrupt snapshots** (unsupported
+  version, invalid layout), which is wrong for rehydrating from a possibly
+  hand-edited or damaged config.json. The brain therefore validates stored
+  `Grid.toJSON()` blobs itself (`persist.ts: extractLayoutTiles`) and re-adds
+  tiles one by one instead of calling `fromJSON` on untrusted data — corrupt
+  or missing entries just mean the grid starts empty. A non-throwing
+  `Grid.tryFromJSON(): Grid | null` (or a documented validation helper)
+  would make snapshot restore ergonomic.
+- **`setTilePinned` accepts out-of-bounds pins.** Pinning an absolute tile
+  near the right/bottom edge can leave `pinned.x + w > cols` with no error
+  and no clamping — the fuzz suite caught the brain doing exactly that
+  (a 5×6 absolute tile pinned at col 4 of an 8-col grid after a drag).
+  The brain now clamps pins against the tile's footprint itself; a
+  `clampToBounds` option (or documented behavior statement) on
+  `setTilePinned` would prevent this class of bug for consumers.

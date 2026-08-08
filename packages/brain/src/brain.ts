@@ -17,6 +17,7 @@ import {
   slotFromCursor,
   snapRectToSlot,
 } from './coords';
+import { extractLayoutTiles } from './persist';
 import { makeUserTemplate, mergeWithBuiltins } from './templates';
 import type {
   AppConfig,
@@ -78,6 +79,18 @@ function tileSlotOf(tile: Tile): Slot {
     return { col: tile.pinned.x, row: tile.pinned.y, w: tile.w, h: tile.h };
   }
   return { col: tile.col, row: tile.row, w: tile.w, h: tile.h };
+}
+
+/** Shrink/shift a slot so it lies fully inside a cols×rows grid. */
+function clampSlot(s: Slot, cols: number, rows: number): Slot {
+  const w = clamp(s.w, 1, cols);
+  const h = clamp(s.h, 1, rows);
+  return {
+    col: clamp(s.col, 0, cols - w),
+    row: clamp(s.row, 0, rows - h),
+    w,
+    h,
+  };
 }
 
 function sameRect(a: Rect, b: Rect): boolean {
@@ -226,18 +239,25 @@ export class WindowManagerBrain {
     let placed = false;
     if (rem && this.grids.get(rem.gridId) === mg) {
       if (rem.absolute) {
-        mg.grid.addTile({
-          id: w.hwnd,
+        // Grid dims may have changed (reflow/template) while minimized —
+        // only reuse the remembered slot if it still fits the grid.
+        const rect: CellRect = {
           col: rem.slot.col,
           row: rem.slot.row,
           w: rem.slot.w,
           h: rem.slot.h,
-          position: 'absolute',
-          pinned: { x: rem.slot.col, y: rem.slot.row },
-        });
-        this.tileGrid.set(w.hwnd, mg.settings.id);
-        this.touch(w.hwnd);
-        placed = true;
+        };
+        if (mg.grid.rectInBounds(rect)) {
+          mg.grid.addTile({
+            id: w.hwnd,
+            ...rect,
+            position: 'absolute',
+            pinned: { x: rect.col, y: rect.row },
+          });
+          this.tileGrid.set(w.hwnd, mg.settings.id);
+          this.touch(w.hwnd);
+          placed = true;
+        }
       } else {
         const rect: CellRect = {
           col: rem.slot.col,
@@ -437,6 +457,11 @@ export class WindowManagerBrain {
     };
     this.grids.set(g.id, mg);
 
+    // Rehydrate slots from the stored layout snapshot (config round-trip or
+    // re-enable) for windows that are still present; corrupt/missing
+    // snapshot → grid starts empty and everything places fresh below.
+    this.restoreLayout(mg, windows);
+
     for (const w of windows) {
       if (!settings.monitorIds.includes(w.monitorId)) continue;
       if (w.minimized) continue;
@@ -479,6 +504,84 @@ export class WindowManagerBrain {
       }
     } else {
       this.convertToCollision(mg);
+    }
+    this.flush();
+    this.emitSnapshot();
+  }
+
+  /**
+   * Change a grid's dimensions (settings steppers, contract §C3). Every tile
+   * is re-placed at its old slot clamped into the new bounds — most recent
+   * first, so it wins contested cells — falling back to first-fit /
+   * displacement / floating. This grid's floating windows get a retry (a
+   * bigger grid may now fit them), and everything lands in one apply.
+   */
+  reflowGrid(gridId: string, cols: number, rows: number): void {
+    const settings = this.gridSettings.get(gridId);
+    if (!settings) return;
+    cols = Math.max(1, Math.floor(cols));
+    rows = Math.max(1, Math.floor(rows));
+    if (settings.cols === cols && settings.rows === rows) return;
+    const updated: GridSettings = {
+      ...settings,
+      cols,
+      rows,
+      activeTemplateId: null,
+    };
+    this.gridSettings.set(gridId, updated);
+
+    const mg = this.grids.get(gridId);
+    if (!mg) {
+      this.emitSnapshot();
+      return;
+    }
+    mg.settings = updated;
+    const mon = this.monitorFor(updated);
+    if (!mon) {
+      this.emitSnapshot();
+      return;
+    }
+    if (this.drag?.sourceGridId === gridId) this.cancelDrag();
+
+    const byRecency = (a: Hwnd, b: Hwnd) => this.recencyOf(b) - this.recencyOf(a);
+    const entries = mg.grid.tiles
+      .map((t) => ({ id: t.id, slot: tileSlotOf(t) }))
+      .sort((a, b) => byRecency(a.id, b.id));
+    const floaters = [...this.floating.entries()]
+      .filter(([, gid]) => gid === gridId)
+      .map(([hwnd]) => hwnd)
+      .sort(byRecency);
+    for (const e of entries) this.tileGrid.delete(e.id);
+    for (const hwnd of floaters) this.floating.delete(hwnd);
+
+    mg.grid = new Grid({
+      cols,
+      rows,
+      unitWidth: mon.workWidth / cols,
+      unitHeight: mon.workHeight / rows,
+      gravity: 'none',
+      enablePositioning: true,
+      pinUnits: 'cells',
+    });
+
+    const overlay = updated.mode === 'overlay';
+    for (const e of entries) {
+      const info = this.windows.get(e.id);
+      const slot = clampSlot(e.slot, cols, rows);
+      if (this.addAtSlot(mg, e.id, slot, overlay, info)) continue;
+      if (info) {
+        this.placeWindow(mg, info);
+      } else {
+        this.floating.set(e.id, gridId);
+      }
+    }
+    for (const hwnd of floaters) {
+      const info = this.windows.get(hwnd);
+      if (info) {
+        this.placeWindow(mg, info);
+      } else {
+        this.floating.set(hwnd, gridId);
+      }
     }
     this.flush();
     this.emitSnapshot();
@@ -790,7 +893,16 @@ export class WindowManagerBrain {
           pinned: { x: snapped.col, y: snapped.row },
         });
       } else {
-        mg.grid.setTilePinned(hwnd, { x: snapped.col, y: snapped.row });
+        // The tile's footprint may be larger than the snapped one (e.g. a
+        // template assigned a non-resizable window a big slot); clamp the pin
+        // so the tile itself stays inside the grid.
+        const dims = this.dims(mg.settings);
+        const pin = clampSlot(
+          { col: snapped.col, row: snapped.row, w: tile.w, h: tile.h },
+          dims.cols,
+          dims.rows,
+        );
+        mg.grid.setTilePinned(hwnd, { x: pin.col, y: pin.row });
       }
       return;
     }
@@ -861,6 +973,57 @@ export class WindowManagerBrain {
     }
     // Drop slot unusable: fall back to first-fit / displacement / floating.
     if (info) this.placeWindow(target, info);
+  }
+
+  /**
+   * Rehydrate tiles from a stored `Grid.toJSON()` snapshot (config
+   * round-trip / re-enable). Only windows that are currently present and
+   * eligible get their slot back; every stored tile whose window is gone, or
+   * whose slot no longer fits the grid, silently falls through to normal
+   * placement. A corrupt or missing snapshot is ignored — the grid simply
+   * starts empty (no throw).
+   */
+  private restoreLayout(mg: ManagedGrid, windows: WindowInfo[]): void {
+    const stored = extractLayoutTiles(this.storedLayouts[mg.settings.id]);
+    if (!stored || stored.length === 0) return;
+
+    const present = new Map<Hwnd, WindowInfo>();
+    for (const w of windows) {
+      if (!mg.settings.monitorIds.includes(w.monitorId)) continue;
+      if (w.minimized) continue;
+      if (this.exclusions.has(w.exe)) continue;
+      if (this.tileGrid.has(w.hwnd) || this.floating.has(w.hwnd)) continue;
+      present.set(w.hwnd, w);
+    }
+
+    const overlay = mg.settings.mode === 'overlay';
+    for (const t of stored) {
+      const w = present.get(t.id);
+      if (!w || this.tileGrid.has(t.id)) continue;
+      const rect: CellRect = {
+        col: t.slot.col,
+        row: t.slot.row,
+        w: t.slot.w,
+        h: t.slot.h,
+      };
+      if (!mg.grid.rectInBounds(rect)) continue;
+      if (overlay || !w.resizable) {
+        mg.grid.addTile({
+          id: t.id,
+          ...rect,
+          position: 'absolute',
+          pinned: { x: rect.col, y: rect.row },
+        });
+      } else {
+        // In-flow restore (a tile stored as absolute by an overlay session
+        // still makes a fine in-flow target): only if the slot is free.
+        if (mg.grid.tilesIn(rect).length > 0) continue;
+        mg.grid.addTile({ id: t.id, ...rect });
+      }
+      this.windows.set(t.id, { ...w });
+      this.tileGrid.set(t.id, mg.settings.id);
+      this.touch(t.id);
+    }
   }
 
   private gridForMonitor(monitorId: string): ManagedGrid | undefined {
