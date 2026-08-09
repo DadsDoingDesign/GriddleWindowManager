@@ -128,10 +128,15 @@ pub fn sample_decision(alive: bool, frame: Option<Rect>, self_caused: bool) -> S
 // ---------------------------------------------------------------------------
 
 #[cfg(windows)]
-pub use win::{init, on_move_size_end, on_move_size_start, on_window_gone};
+pub use win::{init, is_dragging, on_move_size_end, on_move_size_start, on_window_gone};
 
 #[cfg(not(windows))]
 pub fn init(_app: tauri::AppHandle) {}
+
+#[cfg(not(windows))]
+pub fn is_dragging(_hwnd: isize) -> bool {
+    false
+}
 
 #[cfg(not(windows))]
 pub fn on_move_size_start(_hwnd: isize) {}
@@ -189,6 +194,13 @@ mod win {
     /// rect is carried by the tracker's `movesize-end` event, not by us.
     pub fn on_move_size_end(hwnd: isize) {
         state().end(hwnd);
+    }
+
+    /// Is a drag currently active for `hwnd`? The tracker defers
+    /// zoom-state transitions while the modal move-size loop runs so the
+    /// brain never fights the user's drag.
+    pub fn is_dragging(hwnd: isize) -> bool {
+        state().active().is_some_and(|d| d.hwnd == hwnd)
     }
 
     /// Tracker hook: the window left the managed universe mid-drag

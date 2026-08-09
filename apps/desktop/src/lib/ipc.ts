@@ -146,6 +146,16 @@ export function hideOverlay(monitorId: string): Promise<void> {
   return invoke('hide_overlay', { monitorId });
 }
 
+/**
+ * Contract extension (critique fix, event-storm hardening): O(1) check
+ * whether a hwnd is still in the tracker's live eligible set. The brain host
+ * uses it to vet `window-destroyed` events against forgery without running a
+ * full desktop sweep per event.
+ */
+export function windowIsTracked(hwnd: Hwnd): Promise<boolean> {
+  return invoke<boolean>('window_is_tracked', { hwnd });
+}
+
 export function readConfig(): Promise<AppConfig | null> {
   return invoke<AppConfig | null>('read_config');
 }

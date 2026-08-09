@@ -39,10 +39,11 @@ pub fn caller_allowed(command: &str, label: &str) -> bool {
     let settings = label == SETTINGS_LABEL;
     let overlay = label.starts_with(OVERLAY_LABEL_PREFIX);
     match command {
-        // Brain-host only: window actuation, config persistence, tray state
-        // and overlay lifecycle (host.ts is their sole legitimate caller).
+        // Brain-host only: window actuation, config persistence, tray state,
+        // overlay lifecycle and event vetting (host.ts is their sole
+        // legitimate caller).
         "apply_layout" | "focus_window" | "write_config" | "update_tray" | "show_overlay"
-        | "hide_overlay" => main,
+        | "hide_overlay" | "window_is_tracked" => main,
         // Brain host + settings UI.
         "read_config" | "set_paused" | "show_settings" | "list_windows" => main || settings,
         // Overlays additionally need the monitor list to draw their grid.
@@ -68,7 +69,7 @@ pub fn authorize(command: &str, label: &str) -> Result<(), String> {
 mod tests {
     use super::*;
 
-    const ALL_COMMANDS: [&str; 11] = [
+    const ALL_COMMANDS: [&str; 12] = [
         "list_windows",
         "list_monitors",
         "apply_layout",
@@ -80,6 +81,7 @@ mod tests {
         "set_paused",
         "show_settings",
         "update_tray",
+        "window_is_tracked",
     ];
 
     #[test]
@@ -102,6 +104,7 @@ mod tests {
             "update_tray",
             "show_overlay",
             "hide_overlay",
+            "window_is_tracked",
         ] {
             assert!(!caller_allowed(cmd, SETTINGS_LABEL), "{cmd} must be denied for settings");
             assert!(authorize(cmd, SETTINGS_LABEL).is_err());

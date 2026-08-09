@@ -43,6 +43,8 @@ pub mod style_bits {
     pub const WS_CAPTION: u32 = 0x00C0_0000;
     /// `WS_THICKFRAME` — resizable sizing border.
     pub const WS_THICKFRAME: u32 = 0x0004_0000;
+    /// `WS_MAXIMIZE` — window is currently maximized.
+    pub const WS_MAXIMIZE: u32 = 0x0100_0000;
     /// `WS_EX_TOOLWINDOW` — floating toolbars/palettes, never managed.
     pub const WS_EX_TOOLWINDOW: u32 = 0x0000_0080;
     /// `WS_EX_APPWINDOW` — forces a taskbar button; treated like a caption.
@@ -227,7 +229,14 @@ fn remove_tracked(hwnd: isize) -> Option<WindowInfo> {
 
 fn reseed_tracked(windows: &[WindowInfo]) {
     let mut lock = tracked_map().lock().unwrap_or_else(|p| p.into_inner());
-    lock.clear();
+    // Merge, don't clear+rebuild: a window the hook inserted while the
+    // enumeration was running would be wiped by a clear even though its
+    // window-appeared already reached the brain — leaving a tile the
+    // security rule then rejects on every apply. Removing only the hwnds the
+    // enumeration proves absent keeps that race window minimal.
+    let present: std::collections::HashSet<isize> =
+        windows.iter().filter_map(|w| w.hwnd.parse().ok()).collect();
+    lock.retain(|key, _| present.contains(key));
     for w in windows {
         if let Ok(key) = w.hwnd.parse::<isize>() {
             lock.insert(key, w.clone());
@@ -252,6 +261,21 @@ pub fn list_windows(window: tauri::Window) -> Vec<WindowInfo> {
         return Vec::new();
     }
     snapshot()
+}
+
+/// Contract C2 extension (critique fix, event-storm hardening): is `hwnd`
+/// still in the live eligible set? The brain host uses this O(1) check to
+/// vet `window-destroyed` events against forgery (Tauri events carry no
+/// sender identity) instead of running a full desktop sweep per event: a
+/// genuine destroy/hide/cloak was untracked by the hook before the event was
+/// emitted, so a *tracked* hwnd means the event is forged or stale.
+/// Brain-host only (security review: least privilege).
+#[tauri::command]
+pub fn window_is_tracked(window: tauri::Window, hwnd: Hwnd) -> bool {
+    if crate::guard::authorize("window_is_tracked", window.label()).is_err() {
+        return false;
+    }
+    hwnd.parse::<isize>().is_ok_and(is_tracked)
 }
 
 #[cfg(windows)]
@@ -304,16 +328,39 @@ mod win {
     use windows::Win32::UI::Accessibility::{SetWinEventHook, HWINEVENTHOOK};
     use windows::Win32::UI::WindowsAndMessaging::{
         DispatchMessageW, EnumWindows, GetMessageW, GetWindowLongPtrW, GetWindowRect,
-        GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindow, TranslateMessage,
-        EVENT_OBJECT_CLOAKED, EVENT_OBJECT_CREATE, EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE,
-        EVENT_OBJECT_SHOW, EVENT_OBJECT_UNCLOAKED, EVENT_SYSTEM_MINIMIZEEND,
-        EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MOVESIZEEND, EVENT_SYSTEM_MOVESIZESTART,
-        GWL_EXSTYLE, GWL_STYLE, MSG, OBJID_WINDOW, WINEVENT_OUTOFCONTEXT,
-        WINEVENT_SKIPOWNPROCESS,
+        GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindow, IsZoomed,
+        TranslateMessage, EVENT_OBJECT_CLOAKED, EVENT_OBJECT_CREATE, EVENT_OBJECT_DESTROY,
+        EVENT_OBJECT_HIDE, EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_SHOW,
+        EVENT_OBJECT_UNCLOAKED, EVENT_SYSTEM_MINIMIZEEND, EVENT_SYSTEM_MINIMIZESTART,
+        EVENT_SYSTEM_MOVESIZEEND, EVENT_SYSTEM_MOVESIZESTART, GWL_EXSTYLE, GWL_STYLE, MSG,
+        OBJID_WINDOW, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS,
     };
 
     /// Handle used by the hook callbacks to emit contract C2 events.
     static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
+
+    /// Tracked hwnds currently observed maximized (critique fix, untracked
+    /// window-state changes). Membership drives the maximize→`window-minimized`
+    /// / unmaximize→`window-restored` translation in [`sync_zoom_state`].
+    fn zoomed_lock() -> &'static std::sync::Mutex<std::collections::HashSet<isize>> {
+        static ZOOMED: OnceLock<std::sync::Mutex<std::collections::HashSet<isize>>> =
+            OnceLock::new();
+        ZOOMED.get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()))
+    }
+
+    fn zoomed_insert(key: isize) {
+        zoomed_lock()
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(key);
+    }
+
+    fn zoomed_remove(key: isize) {
+        zoomed_lock()
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(&key);
+    }
 
     // -- probing ------------------------------------------------------------
 
@@ -468,6 +515,15 @@ mod win {
     }
 
     /// Build the contract C1 `WindowInfo` for an (eligible) window.
+    ///
+    /// Critique fix (untracked window-state changes): a *maximized* window is
+    /// reported as `minimized` at this boundary. The brain treats minimized
+    /// windows as "not occupying a slot" — exactly the right semantics for
+    /// maximized ones too: they are never swept into a grid and never
+    /// repositioned while maximized (a tiling manager resizing a maximized
+    /// window is the classic embarrassment). The maximize/unmaximize
+    /// transitions themselves are translated to `window-minimized` /
+    /// `window-restored` by [`on_location_change`].
     pub(super) fn window_info(hwnd: HWND, probe: &WindowProbe) -> Option<WindowInfo> {
         let rect = extended_frame_bounds(hwnd)?;
         let exe = probe.exe.clone()?;
@@ -480,7 +536,8 @@ mod win {
             width: rect.right - rect.left,
             height: rect.bottom - rect.top,
             monitor_id: monitor_id_of(hwnd),
-            minimized: unsafe { IsIconic(hwnd) }.as_bool(),
+            minimized: unsafe { IsIconic(hwnd) }.as_bool()
+                || probe.style & style_bits::WS_MAXIMIZE != 0,
             resizable: probe.style & style_bits::WS_THICKFRAME != 0,
         })
     }
@@ -573,12 +630,17 @@ mod win {
     /// message loop, so this thread must live for the process lifetime.
     unsafe fn run_hook_pump() {
         // Contiguous ranges covering exactly the events we translate.
-        let ranges: [(u32, u32); 4] = [
+        let ranges: [(u32, u32); 5] = [
             (EVENT_SYSTEM_MOVESIZESTART, EVENT_SYSTEM_MOVESIZEEND),
             (EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MINIMIZEEND),
             // CREATE(0x8000), DESTROY(0x8001), SHOW(0x8002), HIDE(0x8003)
             (EVENT_OBJECT_CREATE, EVENT_OBJECT_HIDE),
             (EVENT_OBJECT_CLOAKED, EVENT_OBJECT_UNCLOAKED),
+            // Maximize/unmaximize produce no dedicated WinEvent; the zoom
+            // state is tracked through LOCATIONCHANGE transitions instead
+            // (critique fix: untracked window-state changes). The handler is
+            // a cheap early-out for untracked windows.
+            (EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_LOCATIONCHANGE),
         ];
         let mut installed = 0usize;
         for (min, max) in ranges {
@@ -646,6 +708,7 @@ mod win {
             EVENT_SYSTEM_MINIMIZEEND => on_restore(hwnd),
             EVENT_SYSTEM_MOVESIZESTART => on_movesize_start(hwnd),
             EVENT_SYSTEM_MOVESIZEEND => on_movesize_end(hwnd),
+            EVENT_OBJECT_LOCATIONCHANGE => sync_zoom_state(hwnd),
             _ => {}
         })
     }
@@ -679,6 +742,12 @@ mod win {
         let Some(info) = window_info(hwnd, &probe) else {
             return;
         };
+        // A window that appears already maximized stays out of the grid
+        // (window_info reports it minimized); seed the zoom set so the
+        // eventual unmaximize emits window-restored and it gets managed.
+        if probe.style & style_bits::WS_MAXIMIZE != 0 {
+            zoomed_insert(key);
+        }
         insert_tracked(key, info.clone());
         emit(events::WINDOW_APPEARED, info);
     }
@@ -688,6 +757,7 @@ mod win {
         // Stop any in-flight drag sampler for this window (Task 14: no
         // leaked pump threads when a window dies mid-drag).
         crate::drag_pump::on_window_gone(key);
+        zoomed_remove(key);
         if remove_tracked(key).is_some() {
             emit(
                 events::WINDOW_DESTROYED,
@@ -695,6 +765,46 @@ mod win {
                     hwnd: key.to_string(),
                 },
             );
+        }
+    }
+
+    /// Critique fix (untracked window-state changes): maximize / Win-Arrow
+    /// style transitions produce no dedicated WinEvent, so the zoom state is
+    /// derived from LOCATIONCHANGE. A tracked window turning maximized emits
+    /// `window-minimized` — the brain releases its tile (remembering the
+    /// slot) and leaves the maximized window alone; turning unmaximized
+    /// emits `window-restored`, re-managing it. Transitions are deferred
+    /// while a modal move-size loop runs (drag-to-unsnap) so the brain never
+    /// fights the user's drag — [`on_movesize_end`] re-syncs afterwards.
+    fn sync_zoom_state(hwnd: HWND) {
+        let key = hwnd.0 as isize;
+        if !is_tracked(key) {
+            return;
+        }
+        if crate::drag_pump::is_dragging(key) {
+            return;
+        }
+        if unsafe { IsIconic(hwnd) }.as_bool() {
+            return; // the minimize flow owns iconic transitions
+        }
+        let zoomed = unsafe { IsZoomed(hwnd) }.as_bool();
+        let mut set = zoomed_lock().lock().unwrap_or_else(|p| p.into_inner());
+        if set.contains(&key) == zoomed {
+            return;
+        }
+        if zoomed {
+            set.insert(key);
+            drop(set);
+            emit(
+                events::WINDOW_MINIMIZED,
+                HwndPayload {
+                    hwnd: key.to_string(),
+                },
+            );
+        } else {
+            set.remove(&key);
+            drop(set);
+            on_restore(hwnd);
         }
     }
 
@@ -727,6 +837,14 @@ mod win {
         let Some(mut info) = window_info(hwnd, &probe) else {
             return;
         };
+        if probe.style & style_bits::WS_MAXIMIZE != 0 {
+            // Restored from the taskbar straight back into the maximized
+            // state: it stays out of the grid; the unmaximize transition
+            // (sync_zoom_state) re-manages it later.
+            zoomed_insert(key);
+            insert_tracked(key, info);
+            return;
+        }
         // MINIMIZEEND can race the restore animation; the contract event is
         // definitionally "restored".
         info.minimized = false;
@@ -780,6 +898,9 @@ mod win {
         }
         drop(lock);
         emit(events::MOVESIZE_END, payload);
+        // Zoom transitions were deferred while the modal move-size loop ran
+        // (drag-to-unsnap unmaximizes mid-drag); converge now.
+        sync_zoom_state(hwnd);
     }
 }
 
@@ -1091,6 +1212,31 @@ mod win_tests {
         let frame = extended_frame_bounds(hwnd).unwrap();
         assert_eq!(info.x, frame.left);
         assert_eq!(info.y, frame.top);
+
+        unsafe { DestroyWindow(hwnd).expect("DestroyWindow") };
+    }
+
+    /// Critique fix (untracked window-state changes): a maximized window is
+    /// reported `minimized` at the contract boundary, so the brain never
+    /// sweeps it into a grid or repositions it while maximized.
+    #[test]
+    fn maximized_window_reports_as_minimized_at_the_contract_boundary() {
+        use windows::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_MAXIMIZE, SW_RESTORE};
+        let hwnd = create_test_window(WS_OVERLAPPEDWINDOW | WS_VISIBLE, Default::default());
+        unsafe {
+            let _ = ShowWindow(hwnd, SW_MAXIMIZE);
+        }
+        let probe = probe_window(hwnd).expect("probe maximized");
+        assert_ne!(probe.style & style_bits::WS_MAXIMIZE, 0, "WS_MAXIMIZE set");
+        let info = window_info(hwnd, &probe).expect("info maximized");
+        assert!(info.minimized, "maximized window must stay out of grids");
+
+        unsafe {
+            let _ = ShowWindow(hwnd, SW_RESTORE);
+        }
+        let probe = probe_window(hwnd).expect("probe restored");
+        let info = window_info(hwnd, &probe).expect("info restored");
+        assert!(!info.minimized, "restored window is manageable again");
 
         unsafe { DestroyWindow(hwnd).expect("DestroyWindow") };
     }

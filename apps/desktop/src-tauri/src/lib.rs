@@ -71,6 +71,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             tracker::list_windows,
+            tracker::window_is_tracked,
             monitors::list_monitors,
             actuator::apply_layout,
             actuator::focus_window,

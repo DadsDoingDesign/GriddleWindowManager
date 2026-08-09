@@ -37,6 +37,7 @@ import {
   onPausedChanged,
   onSettingsMove,
   onSettingsReady,
+  windowIsTracked,
   onSettingsSetDims,
   onSettingsSetExclusions,
   onSettingsSetMode,
@@ -284,23 +285,53 @@ export async function startBrainHost(): Promise<BrainHost> {
    * Security hardening (docs/security-review.md, "event spoofing between
    * webviews"): Tauri events carry no sender identity, so any webview in the
    * process could forge a `window-destroyed` for a live managed hwnd and
-   * make the brain drop its tile. Destroys are rare, so before acting we
-   * confirm against a fresh Rust-side sweep (`list_windows` re-seeds the
-   * tracker's live set from the actual desktop). If the sweep itself fails,
-   * the event is trusted: leaking a dead tile is worse than dropping one
-   * that the window's next appearance re-adds.
+   * make the brain drop its tile. A genuine destroy/hide/cloak is untracked
+   * by the hook *before* the event is emitted, so an O(1) `window_is_tracked`
+   * check exposes the forgery — no per-event desktop sweep (which serialized
+   * an EnumWindows + per-window probe walk behind every close/hide and could
+   * wipe concurrently-appearing windows from the live set). If the check
+   * itself fails, the event is trusted: leaking a dead tile is worse than
+   * dropping one that the window's next appearance re-adds.
    */
   const confirmedWindowDestroyed = async (hwnd: string) => {
     try {
-      const live = await listWindows();
-      if (live.some((w) => w.hwnd === hwnd)) {
+      if (await windowIsTracked(hwnd)) {
         console.warn(`ignoring window-destroyed for live hwnd ${hwnd} (forged or stale)`);
         return;
       }
     } catch (e) {
-      console.error('window-destroyed confirmation sweep failed:', e);
+      console.error('window-destroyed confirmation failed:', e);
     }
     brain.windowDestroyed(hwnd);
+  };
+
+  /**
+   * Pause→resume reconciliation (critique fix): while paused the tracker
+   * suppresses every event but keeps its live set current, so windows opened
+   * during the pause are tracked-but-unannounced (no window-appeared will
+   * ever fire again) and windows closed during it linger as ghost tiles. On
+   * resume, diff a fresh sweep against the brain's view: feed destroys for
+   * managed windows that no longer exist, and (idempotent) appearances for
+   * everything alive.
+   */
+  const reconcileAfterResume = async () => {
+    try {
+      const live = await listWindows();
+      const liveSet = new Set(live.map((w) => w.hwnd));
+      const known = new Set<string>();
+      if (lastSnapshot) {
+        for (const tiles of Object.values(lastSnapshot.tiles)) {
+          for (const t of tiles) known.add(t.hwnd);
+        }
+        for (const f of lastSnapshot.floating) known.add(f.hwnd);
+      }
+      for (const hwnd of known) {
+        if (!liveSet.has(hwnd)) brain.windowDestroyed(hwnd);
+      }
+      for (const w of live) brain.windowAppeared(w);
+    } catch (e) {
+      console.error('resume reconciliation failed:', e);
+    }
   };
 
   const unlisteners: UnlistenFn[] = await Promise.all([
@@ -374,7 +405,12 @@ export async function startBrainHost(): Promise<BrainHost> {
     // mirrored into the brain (persists + updates the settings UI via the
     // snapshot); the settings General card sends autostart/hotkey prefs; the
     // tray toggles grid coverage per monitor.
-    onPausedChanged((paused) => brain.setShellPrefs({ paused })),
+    onPausedChanged((paused) => {
+      brain.setShellPrefs({ paused });
+      // Spec §6 calls pause a panic button — resuming must reconcile the
+      // brain with whatever happened to the desktop while it was deaf.
+      if (!paused) void reconcileAfterResume();
+    }),
     onSettingsSetPrefs((p) => brain.setShellPrefs(p)),
     onTrayToggleGrid((p) =>
       toggleFromTray(p.monitorId).catch((e) => {

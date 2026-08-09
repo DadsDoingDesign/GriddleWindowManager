@@ -16,7 +16,8 @@
 //!    tracker's live eligible set (contract §C2 security rule: unknown hwnds
 //!    are skipped and logged), then moves the survivors in one
 //!    `BeginDeferWindowPos`/`DeferWindowPos`/`EndDeferWindowPos` batch with
-//!    `SWP_NOACTIVATE | SWP_NOZORDER`, falling back to per-window
+//!    `SWP_NOACTIVATE | SWP_NOZORDER | SWP_ASYNCWINDOWPOS` (a hung app can
+//!    never stall the whole transaction), falling back to per-window
 //!    `SetWindowPos` if the batch is rejected mid-build. Dead handles are
 //!    untracked and reported via `window-destroyed`.
 
@@ -237,9 +238,18 @@ mod win {
     use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS};
     use windows::Win32::UI::WindowsAndMessaging::{
         BeginDeferWindowPos, DeferWindowPos, EndDeferWindowPos, GetWindowRect, IsIconic, IsWindow,
-        SetForegroundWindow, SetWindowPos, ShowWindow, HDWP, SWP_NOACTIVATE, SWP_NOZORDER,
-        SW_RESTORE,
+        IsZoomed, SetForegroundWindow, SetWindowPos, ShowWindow, HDWP, SET_WINDOW_POS_FLAGS,
+        SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOZORDER, SW_RESTORE,
     };
+
+    /// Flags for every managed-window move. `SWP_ASYNCWINDOWPOS` posts the
+    /// reposition to the target's own thread instead of synchronously sending
+    /// `WM_WINDOWPOSCHANGING` into it — one hung (not-responding) app can
+    /// therefore never stall the whole layout transaction or the IPC thread
+    /// (critique fix, actuator robustness). Same-thread windows (our tests'
+    /// `CreateWindowExW` windows) are still applied synchronously by Win32.
+    const MOVE_FLAGS: SET_WINDOW_POS_FLAGS =
+        SET_WINDOW_POS_FLAGS(SWP_NOACTIVATE.0 | SWP_NOZORDER.0 | SWP_ASYNCWINDOWPOS.0);
 
     fn to_rect(r: RECT) -> Rect {
         Rect {
@@ -299,6 +309,16 @@ mod win {
         for &(key, target) in targets {
             let hwnd = HWND(key as *mut c_void);
             let verified = crate::tracker::verify_for_actuation(key);
+            // A maximized window must never be repositioned in place — it
+            // would stay "maximized" by state while arbitrarily sized. The
+            // brain releases maximized windows' tiles, so this only fires on
+            // races (maximize between layout computation and apply).
+            if verified && unsafe { IsZoomed(hwnd) }.as_bool() {
+                log::info!("apply_layout: hwnd {key} is maximized, restoring before move");
+                unsafe {
+                    let _ = ShowWindow(hwnd, SW_RESTORE);
+                }
+            }
             let rects = if verified { window_and_frame_rects(hwnd) } else { None };
             let Some((raw_now, frame_now)) = rects else {
                 log::info!(
@@ -352,7 +372,7 @@ mod win {
                     p.raw.y,
                     p.raw.width,
                     p.raw.height,
-                    SWP_NOACTIVATE | SWP_NOZORDER,
+                    MOVE_FLAGS,
                 ) {
                     Ok(next) => hdwp = next,
                     Err(e) => {
@@ -389,7 +409,7 @@ mod win {
                     p.raw.y,
                     p.raw.width,
                     p.raw.height,
-                    SWP_NOACTIVATE | SWP_NOZORDER,
+                    MOVE_FLAGS,
                 )
             };
             match result {
