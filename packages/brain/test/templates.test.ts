@@ -102,7 +102,7 @@ const TPL_8X6: Template = {
 
 function makeConfig(templates: Template[]): AppConfig {
   return {
-    version: 1,
+    version: 2,
     grids: [],
     templates,
     exclusions: [],
@@ -110,6 +110,9 @@ function makeConfig(templates: Template[]): AppConfig {
     hotkey: 'Ctrl+Super+G',
     autostart: false,
     paused: false,
+    appRules: [],
+    views: [],
+    startupViewId: null,
   };
 }
 

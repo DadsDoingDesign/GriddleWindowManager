@@ -9,13 +9,22 @@
 // grid-enable time — a corrupt entry just means that grid starts empty.
 
 import { MAX_SPACING_PX } from './coords';
-import type { AppConfig, AppRule, GridSettings, Slot, Template } from './types';
+import type {
+  AppConfig,
+  AppRule,
+  GridSettings,
+  Slot,
+  Template,
+  View,
+  ViewAssignment,
+  ViewGrid,
+} from './types';
 
 export const DEFAULT_HOTKEY = 'Ctrl+Super+G';
 
 export function defaultConfig(): AppConfig {
   return {
-    version: 1,
+    version: 2,
     grids: [],
     templates: [],
     exclusions: [],
@@ -24,6 +33,8 @@ export function defaultConfig(): AppConfig {
     autostart: false,
     paused: false,
     appRules: [],
+    views: [],
+    startupViewId: null,
   };
 }
 
@@ -140,13 +151,65 @@ function sanitizeAppRule(raw: unknown): AppRule | null {
 }
 
 /**
+ * Assignment validation (spec v0.2 §3), same slot philosophy as app rules:
+ * a sane ≥1×1 integer rect at a non-negative origin, NOT bounded to the
+ * grid's dims — it clamps into the grid's *current* dims when claimed.
+ */
+function sanitizeViewAssignment(raw: unknown): ViewAssignment | null {
+  if (!isRecord(raw)) return null;
+  if (typeof raw.exe !== 'string') return null;
+  const exe = raw.exe.trim().toLowerCase();
+  if (exe.length === 0) return null;
+  if (!isRecord(raw.slot)) return null;
+  const { col, row, w, h } = raw.slot;
+  if (!isInt(col) || !isInt(row) || !isInt(w) || !isInt(h)) return null;
+  if (col < 0 || row < 0 || w < 1 || h < 1) return null;
+  return { exe, slot: { col, row, w, h } };
+}
+
+/**
+ * View validation (spec v0.2 §3). A view with a bad id/name/grids shape is
+ * dropped whole; inside a valid view, malformed grids and assignments are
+ * dropped individually (keep-every-valid-entry philosophy). Duplicate grid
+ * ids within one view keep the first.
+ */
+function sanitizeView(raw: unknown): View | null {
+  if (!isRecord(raw)) return null;
+  if (!isNonEmptyString(raw.id) || !isNonEmptyString(raw.name)) return null;
+  if (!Array.isArray(raw.grids)) return null;
+  const grids: ViewGrid[] = [];
+  const gridIds = new Set<string>();
+  for (const g of raw.grids) {
+    if (!isRecord(g)) continue;
+    const settings = sanitizeGridSettings(g.settings);
+    if (settings === null || gridIds.has(settings.id)) continue;
+    const assignments: ViewAssignment[] = [];
+    if (Array.isArray(g.assignments)) {
+      for (const a of g.assignments) {
+        const asg = sanitizeViewAssignment(a);
+        if (asg !== null) assignments.push(asg);
+      }
+    }
+    gridIds.add(settings.id);
+    grids.push({ settings, assignments });
+  }
+  return { id: raw.id, name: raw.name, grids };
+}
+
+/**
  * Structural validation of a parsed config value. Returns `null` when the
  * value is not an AppConfig at all (not an object / unsupported version);
  * otherwise returns a config with every invalid grid/template/exclusion
  * entry dropped and missing scalars defaulted. Never throws.
+ *
+ * Versions (spec v0.2 §4): v2 is current; a v1 config (written by v0.1.0)
+ * migrates in place — `appRules: [], views: [], startupViewId: null`,
+ * spacing fields absent (absent means 0). Unknown future versions return
+ * `null`, which the host treats as corrupt (`.bak` + fresh start).
  */
 export function sanitizeConfig(raw: unknown): AppConfig | null {
-  if (!isRecord(raw) || raw.version !== 1) return null;
+  if (!isRecord(raw)) return null;
+  if (raw.version !== 1 && raw.version !== 2) return null;
 
   const grids: GridSettings[] = [];
   const gridIds = new Set<string>();
@@ -182,11 +245,9 @@ export function sanitizeConfig(raw: unknown): AppConfig | null {
   }
 
   // One rule per (exe, gridId): duplicates keep the first, like grids and
-  // templates. The field stays absent when the raw config had none (v1
-  // migration defaulting, same convention as gap/padding).
-  let appRules: AppRule[] | undefined;
+  // templates. Absent in a v1 config → migrates to [] (spec v0.2 §4).
+  const appRules: AppRule[] = [];
   if (Array.isArray(raw.appRules)) {
-    appRules = [];
     const ruleKeys = new Set<string>();
     for (const r of raw.appRules) {
       const rule = sanitizeAppRule(r);
@@ -198,8 +259,26 @@ export function sanitizeConfig(raw: unknown): AppConfig | null {
     }
   }
 
+  // Startup views (spec v0.2 §3/§4). Duplicate ids keep the first; a
+  // startupViewId pointing at no surviving view resets to null.
+  const views: View[] = [];
+  const viewIds = new Set<string>();
+  if (Array.isArray(raw.views)) {
+    for (const v of raw.views) {
+      const view = sanitizeView(v);
+      if (view !== null && !viewIds.has(view.id)) {
+        viewIds.add(view.id);
+        views.push(view);
+      }
+    }
+  }
+  const startupViewId =
+    isNonEmptyString(raw.startupViewId) && viewIds.has(raw.startupViewId)
+      ? raw.startupViewId
+      : null;
+
   return {
-    version: 1,
+    version: 2,
     grids,
     templates,
     exclusions,
@@ -209,7 +288,9 @@ export function sanitizeConfig(raw: unknown): AppConfig | null {
     hotkey: isNonEmptyString(raw.hotkey) ? raw.hotkey : DEFAULT_HOTKEY,
     autostart: raw.autostart === true,
     paused: raw.paused === true,
-    ...(appRules !== undefined ? { appRules } : {}),
+    appRules,
+    views,
+    startupViewId,
   };
 }
 

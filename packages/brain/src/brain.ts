@@ -43,6 +43,9 @@ import type {
   StateSnapshot,
   Template,
   TileSnapshot,
+  View,
+  ViewAssignment,
+  ViewGrid,
   WindowInfo,
 } from './types';
 
@@ -95,11 +98,48 @@ interface DragState {
 const DEFAULT_HOTKEY = 'Ctrl+Super+G';
 
 /**
+ * How long a view's assignments stay claimable after an apply (spec v0.2 §3:
+ * 120 s, configurable constant). During the window each `windowAppeared`
+ * matching an unclaimed exe assignment takes that slot, beating app rules;
+ * afterwards (or once every claim is taken) normal rules resume. Expiry is
+ * evaluated lazily against the injected clock — the brain runs no timers.
+ */
+export const CLAIM_WINDOW_MS = 120_000;
+
+/**
  * Map key of an app rule's (exe, gridId) identity (spec v0.2 §2: one rule
  * per pair). `\n` can appear in neither part, so keys cannot collide.
  */
 function appRuleKey(exe: string, gridId: string | null): string {
   return `${exe}\n${gridId ?? ''}`;
+}
+
+/** Deep copy of a view (constructor intake, snapshot/export output). */
+function copyView(v: View): View {
+  return {
+    id: v.id,
+    name: v.name,
+    grids: v.grids.map(
+      (g): ViewGrid => ({
+        settings: { ...g.settings, monitorIds: [...g.settings.monitorIds] },
+        assignments: g.assignments.map(
+          (a): ViewAssignment => ({ exe: a.exe, slot: { ...a.slot } }),
+        ),
+      }),
+    ),
+  };
+}
+
+/**
+ * One live pending claim (spec v0.2 §3): an assignment of the last applied
+ * view, waiting for the first window of `exe` to appear and take `slot` on
+ * `gridId`. First-come-first-claimed: a claim is consumed exactly once.
+ */
+interface PendingClaim {
+  gridId: string;
+  exe: string;
+  slot: Slot;
+  claimed: boolean;
 }
 
 function clamp(v: number, lo: number, hi: number): number {
@@ -169,14 +209,25 @@ export class WindowManagerBrain {
   private exclusions: Set<string>;
   /** Per-app placement rules keyed by (exe, gridId) — spec v0.2 §2. */
   private appRules = new Map<string, AppRule>();
+  /** Startup views (spec v0.2 §3), insertion order. */
+  private views: View[] = [];
+  /** View applied on app launch, or null for none (spec v0.2 §3). */
+  private startupViewId: string | null = null;
+  /** Assignments of the last applied view still inside the claim window. */
+  private pendingClaims: PendingClaim[] = [];
+  /** now()-timestamp at which the pending claims lapse. */
+  private claimsDeadline = 0;
+  /** Injected clock (tests pass a fake; the host uses Date.now). */
+  private readonly now: () => number;
   /** Layout snapshots for grids that are not live (from config / disable). */
   private storedLayouts: Record<string, unknown>;
   private hotkey: string;
   private autostart: boolean;
   private paused: boolean;
 
-  constructor(cb: BrainCallbacks, cfg?: AppConfig) {
+  constructor(cb: BrainCallbacks, cfg?: AppConfig, opts?: { now?: () => number }) {
     this.cb = cb;
+    this.now = opts?.now ?? Date.now;
     this.templates = mergeWithBuiltins(cfg?.templates ?? []);
     this.exclusions = new Set(cfg?.exclusions ?? []);
     this.storedLayouts = { ...(cfg?.layouts ?? {}) };
@@ -186,6 +237,12 @@ export class WindowManagerBrain {
     for (const r of cfg?.appRules ?? []) {
       this.appRules.set(appRuleKey(r.exe, r.gridId), { ...r, slot: { ...r.slot } });
     }
+    this.views = (cfg?.views ?? []).map(copyView);
+    // A dangling startup id (sanitizeConfig already resets it, but the
+    // constructor is not only fed sanitized configs) reads as "none".
+    const startup = cfg?.startupViewId ?? null;
+    this.startupViewId =
+      startup !== null && this.views.some((v) => v.id === startup) ? startup : null;
     for (const g of cfg?.grids ?? []) {
       this.gridSettings.set(g.id, { ...g });
     }
@@ -243,8 +300,20 @@ export class WindowManagerBrain {
       return;
     }
     const mg = this.gridForMonitor(w.monitorId);
-    if (!mg) return;
+    if (!mg && !this.claimsActive()) return;
     this.windows.set(w.hwnd, { ...w });
+    // Pending view claims beat every app rule during the claim window (spec
+    // v0.2 §3) — and can pull a matching window onto its assigned grid even
+    // from an ungridded monitor.
+    if (this.claimWindow(w)) {
+      this.flush();
+      this.emitSnapshot();
+      return;
+    }
+    if (!mg) {
+      this.windows.delete(w.hwnd);
+      return;
+    }
     this.placeAppeared(mg, w);
     this.flush();
     this.emitSnapshot();
@@ -1006,7 +1075,7 @@ export class WindowManagerBrain {
     const layouts: Record<string, unknown> = { ...this.storedLayouts };
     for (const [id, mg] of this.grids) layouts[id] = mg.grid.toJSON();
     return {
-      version: 1,
+      version: 2,
       grids: [...this.gridSettings.values()].map((g) => ({ ...g })),
       templates: [...this.templates],
       exclusions: [...this.exclusions],
@@ -1015,6 +1084,8 @@ export class WindowManagerBrain {
       autostart: this.autostart,
       paused: this.paused,
       appRules: this.appRuleList(),
+      views: this.views.map(copyView),
+      startupViewId: this.startupViewId,
     };
   }
 
@@ -1129,7 +1200,179 @@ export class WindowManagerBrain {
     return removed;
   }
 
+  /**
+   * Contract extension (spec v0.2 §3): snapshot every *live* enabled grid's
+   * settings (incl. gap/padding) and each tiled window's exe+slot as a named
+   * view. Exes, not hwnds — the view survives a reboot. The id is
+   * `view:<n>` with the smallest n not already taken (template convention).
+   * Throws when no grid is live, like captureTemplate.
+   */
+  captureView(name: string): View {
+    if (this.grids.size === 0) {
+      throw new Error('captureView: no enabled grid to capture');
+    }
+    const grids: ViewGrid[] = [];
+    for (const mg of this.grids.values()) {
+      const assignments: ViewAssignment[] = [];
+      for (const t of mg.grid.tiles) {
+        const info = this.windows.get(t.id);
+        if (!info) continue;
+        assignments.push({ exe: info.exe, slot: tileSlotOf(t) });
+      }
+      grids.push({
+        settings: { ...mg.settings, monitorIds: [...mg.settings.monitorIds] },
+        assignments,
+      });
+    }
+    const taken = new Set(this.views.map((v) => v.id));
+    let n = 1;
+    while (taken.has(`view:${n}`)) n++;
+    const trimmed = name.trim();
+    const view: View = {
+      id: `view:${n}`,
+      name: trimmed.length > 0 ? trimmed : `View ${n}`,
+      grids,
+    };
+    this.views.push(view);
+    this.emitSnapshot();
+    return copyView(view);
+  }
+
+  /**
+   * Contract extension (spec v0.2 §3): apply a view. Reconfigures every view
+   * grid to its captured settings (via enableGrid: overlapping grids tear
+   * down, an absent monitor leaves the grid inert until replug), registers
+   * every assignment as a pending claim for CLAIM_WINDOW_MS, then re-places
+   * the given window sweep: first-come-first-claimed by exe, everything
+   * unmatched auto-places (app rules do not fire here — they are for
+   * genuinely new windows). Windows tiled on grids outside the view are left
+   * exactly where they are. Returns false (no emissions) for an unknown id.
+   * Both the startup path and the settings card's "Apply now" run through
+   * here, so they share one claim mechanism.
+   */
+  applyView(viewId: string, windows: WindowInfo[] = []): boolean {
+    const view = this.views.find((v) => v.id === viewId);
+    if (!view) return false;
+    for (const vg of view.grids) {
+      // Empty sweep on purpose: placement is deferred to the claim pass
+      // below, which knows about assignments.
+      this.enableGrid({ ...vg.settings, enabled: true }, []);
+    }
+    this.pendingClaims = view.grids.flatMap((vg) =>
+      vg.assignments.map(
+        (a): PendingClaim => ({
+          gridId: vg.settings.id,
+          exe: a.exe,
+          slot: { ...a.slot },
+          claimed: false,
+        }),
+      ),
+    );
+    this.claimsDeadline = this.now() + CLAIM_WINDOW_MS;
+    for (const w of windows) {
+      if (w.minimized) continue;
+      if (this.exclusions.has(w.exe)) continue;
+      if (this.tileGrid.has(w.hwnd) || this.floating.has(w.hwnd)) continue;
+      const mg = this.gridForMonitor(w.monitorId);
+      this.windows.set(w.hwnd, { ...w });
+      if (this.claimWindow(w)) continue;
+      if (mg) {
+        this.placeWindow(mg, w);
+      } else {
+        this.windows.delete(w.hwnd);
+      }
+    }
+    this.flush();
+    this.emitSnapshot();
+    return true;
+  }
+
+  /**
+   * Contract extension (spec v0.2 §3): rename a view. The name is trimmed;
+   * empty names, unknown ids and no-op renames return false with no
+   * snapshot.
+   */
+  renameView(viewId: string, name: string): boolean {
+    const view = this.views.find((v) => v.id === viewId);
+    const trimmed = name.trim();
+    if (!view || trimmed.length === 0 || view.name === trimmed) return false;
+    view.name = trimmed;
+    this.emitSnapshot();
+    return true;
+  }
+
+  /**
+   * Contract extension (spec v0.2 §3): delete a view. Returns whether one
+   * existed (a miss emits no snapshot). Deleting the startup view resets
+   * `startupViewId` to null; already-registered pending claims are left to
+   * run out — they carry no view reference.
+   */
+  deleteView(viewId: string): boolean {
+    const idx = this.views.findIndex((v) => v.id === viewId);
+    if (idx === -1) return false;
+    this.views.splice(idx, 1);
+    if (this.startupViewId === viewId) this.startupViewId = null;
+    this.emitSnapshot();
+    return true;
+  }
+
+  /**
+   * Contract extension (spec v0.2 §3): choose the view applied on app launch
+   * (null = none — the settings card's "load at startup" radio). An unknown
+   * id and a repeat assignment are silent no-ops.
+   */
+  setStartupView(viewId: string | null): void {
+    if (viewId !== null && !this.views.some((v) => v.id === viewId)) return;
+    if (this.startupViewId === viewId) return;
+    this.startupViewId = viewId;
+    this.emitSnapshot();
+  }
+
   // ── internals ──────────────────────────────────────────────────────────
+
+  /**
+   * Whether pending claims are live, lazily clearing a lapsed or fully
+   * consumed set (spec v0.2 §3: after timeout or all-claimed, normal rules
+   * resume).
+   */
+  private claimsActive(): boolean {
+    if (this.pendingClaims.length === 0) return false;
+    if (
+      this.now() >= this.claimsDeadline ||
+      this.pendingClaims.every((c) => c.claimed)
+    ) {
+      this.pendingClaims = [];
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Try to place `w` via the first unclaimed matching assignment (its
+   * `WindowInfo` must already be in `this.windows`). The claim slot clamps
+   * into the target grid's current dims; a slot the grid cannot take (dead
+   * space, failed displacement) leaves the claim open and falls through to
+   * the next matching one. Returns whether a claim placed the window.
+   */
+  private claimWindow(w: WindowInfo): boolean {
+    if (!this.claimsActive()) return false;
+    for (const c of this.pendingClaims) {
+      if (c.claimed || c.exe !== w.exe) continue;
+      const target = this.grids.get(c.gridId);
+      if (!target) continue;
+      const dims = this.dims(target.settings);
+      const slot = clampSlot(c.slot, dims.cols, dims.rows);
+      if (
+        !this.addAtSlot(target, w.hwnd, slot, target.settings.mode === 'overlay', w)
+      ) {
+        continue;
+      }
+      c.claimed = true;
+      this.touch(w.hwnd);
+      return true;
+    }
+    return false;
+  }
 
   /** Mark `hwnd` as the most recently interacted-with window. */
   private touch(hwnd: Hwnd): void {
@@ -1860,6 +2103,8 @@ export class WindowManagerBrain {
       floating,
       exclusions: [...this.exclusions],
       appRules: this.appRuleList(),
+      views: this.views.map(copyView),
+      startupViewId: this.startupViewId,
       paused: this.paused,
     });
   }

@@ -424,7 +424,7 @@ describe('appRules persistence', () => {
     expect(tileSlots(last(b.snapshots)).get('1')).toEqual({ col: 0, row: 4, w: 3, h: 2 });
   });
 
-  it('a v1 config without appRules loads with none (field stays absent)', () => {
+  it('a v1 config without appRules migrates to an empty list (spec v0.2 §4)', () => {
     const cfg = sanitizeConfig({
       version: 1,
       grids: [],
@@ -436,7 +436,7 @@ describe('appRules persistence', () => {
       paused: false,
     });
     expect(cfg).not.toBeNull();
-    expect(cfg!.appRules).toBeUndefined();
+    expect(cfg!.appRules).toEqual([]);
     const { brain } = harness(cfg!);
     expect(brain.exportConfig().appRules).toEqual([]);
   });

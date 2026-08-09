@@ -81,8 +81,48 @@ On an enabled grid with a few managed windows (settings window open):
 - [ ] Persistence: quit and relaunch — the App defaults card shows the same
       rules, and they still fire.
 
-<!-- Later v0.2.0 tasks (startup views) append their GUI-only checks below
-     this line. -->
+## P0 — startup views (spec 2026-08-09 §3/§4, ~8 min)
+
+With a grid enabled and a few recognizable programs tiled (e.g. a browser,
+an editor, a terminal):
+
+- [ ] **Capture**: in the Views card, type a name and click "Save current as
+      view" — the view appears in the list with the right grid/window
+      counts. The button is disabled while the name is empty; with every
+      grid disabled, the card says to enable one first and the button stays
+      disabled.
+- [ ] **Apply now**: change the grid dims and gap, drag windows around,
+      then click Apply now — the grid returns to the captured dims/spacing
+      and each program's window lands back on its saved cells in one
+      visible batch.
+- [ ] **Claim window**: close one of the captured programs, click Apply
+      now, then launch the program within two minutes — its new window
+      lands on the saved cells (not where an app rule or auto-placement
+      would put it). Launch a *second* window of the same program: it
+      places normally (the claim is spent).
+- [ ] **Claim beats app rule**: save an app default for one captured
+      program on different cells (right-click its tile). Apply the view and
+      relaunch the program — during the two-minute window it takes the
+      *view's* cells; after the window lapses, a new window takes the app
+      rule's cells.
+- [ ] **Rename / delete**: Rename swaps to an inline input (Enter commits,
+      Esc cancels, focus lands in the input); Delete removes the row.
+      Deleting the view selected under "Load at startup" flips the radio
+      back to None.
+- [ ] **Startup view**: pick a view under "Load at startup", quit Griddle
+      WM, launch it again — the view's grids come up with their captured
+      settings, already-open captured programs snap to their saved cells,
+      and a captured program launched right after Griddle (within two
+      minutes) still lands on its cells. With "None" selected, launch
+      behaves exactly as v0.1.0 (layout restore only).
+- [ ] **Reboot with autostart**: with autostart on and a startup view
+      chosen, reboot Windows — as apps relaunch (auto-started or opened by
+      hand within two minutes), each captured program lands on its saved
+      cells even though every hwnd is new.
+- [ ] **v1 config upgrade**: launch this build over a v0.1.0 config —
+      it loads with no `.bak`, the Views card is empty, and after saving a
+      view + quitting, `%APPDATA%/griddle-wm/config.json` reads
+      `"version": 2` with the view and `startupViewId` persisted.
 
 ---
 

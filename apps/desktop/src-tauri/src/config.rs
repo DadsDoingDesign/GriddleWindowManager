@@ -16,8 +16,13 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-/// Only config schema version this build understands (contract C1).
-const CONFIG_VERSION: u32 = 1;
+/// Current config schema version (contract C1, spec v0.2 §4). Version 1
+/// files (written by v0.1.0) still load: the fields v2 added all carry
+/// `#[serde(default)]`, so a v1 file deserializes with empty defaults and is
+/// re-stamped as v2 on read — only *future* versions are quarantined.
+const CONFIG_VERSION: u32 = 2;
+/// Oldest schema version the migration path accepts.
+const MIN_CONFIG_VERSION: u32 = 1;
 
 const CONFIG_FILE: &str = "config.json";
 const TMP_FILE: &str = "config.json.tmp";
@@ -34,7 +39,10 @@ pub fn config_dir() -> Option<PathBuf> {
 }
 
 /// Read + validate the config under `dir`. Missing file → `None`. Corrupt or
-/// wrong-version file → quarantined to `config.json.bak`, then `None`.
+/// unknown-future-version file → quarantined to `config.json.bak`, then
+/// `None`. A supported older version (v1) migrates in place: the serde
+/// defaults fill the fields it lacked and the version is re-stamped, so the
+/// next write persists a v2 file (spec v0.2 §4).
 pub fn read_config_from(dir: &Path) -> Option<AppConfig> {
     let path = dir.join(CONFIG_FILE);
     let bytes = match fs::read(&path) {
@@ -46,7 +54,16 @@ pub fn read_config_from(dir: &Path) -> Option<AppConfig> {
         }
     };
     match serde_json::from_slice::<AppConfig>(&bytes) {
-        Ok(cfg) if cfg.version == CONFIG_VERSION => Some(cfg),
+        Ok(mut cfg) if (MIN_CONFIG_VERSION..=CONFIG_VERSION).contains(&cfg.version) => {
+            if cfg.version < CONFIG_VERSION {
+                log::info!(
+                    "read_config: migrating config version {} -> {CONFIG_VERSION}",
+                    cfg.version
+                );
+                cfg.version = CONFIG_VERSION;
+            }
+            Some(cfg)
+        }
         Ok(cfg) => {
             log::warn!(
                 "read_config: unsupported config version {} (expected {CONFIG_VERSION}); quarantining",
@@ -247,7 +264,7 @@ mod tests {
     fn sample_config() -> AppConfig {
         use crate::ipc::{AppRule, GridMode, GridSettings, Slot, Template};
         AppConfig {
-            version: 1,
+            version: 2,
             grids: vec![GridSettings {
                 id: "grid:\\\\.\\DISPLAY1@0,0".into(),
                 monitor_ids: vec!["\\\\.\\DISPLAY1@0,0".into()],
@@ -290,6 +307,33 @@ mod tests {
                     h: 6,
                 },
             }],
+            views: vec![crate::ipc::View {
+                id: "view:1".into(),
+                name: "Work".into(),
+                grids: vec![crate::ipc::ViewGrid {
+                    settings: GridSettings {
+                        id: "grid:\\\\.\\DISPLAY1@0,0".into(),
+                        monitor_ids: vec!["\\\\.\\DISPLAY1@0,0".into()],
+                        cols: 12,
+                        rows: 6,
+                        mode: GridMode::Collision,
+                        enabled: true,
+                        active_template_id: None,
+                        gap: 8,
+                        padding: 16,
+                    },
+                    assignments: vec![crate::ipc::ViewAssignment {
+                        exe: "code.exe".into(),
+                        slot: Slot {
+                            col: 0,
+                            row: 0,
+                            w: 6,
+                            h: 6,
+                        },
+                    }],
+                }],
+            }],
+            startup_view_id: Some("view:1".into()),
         }
     }
 
@@ -441,13 +485,78 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_version_is_treated_as_corrupt() {
+    fn unknown_future_version_is_treated_as_corrupt() {
         let dir = ScratchDir::new();
         let mut cfg = sample_config();
-        cfg.version = 2;
+        cfg.version = CONFIG_VERSION + 1;
         write_config_to(dir.path(), &cfg).expect("write");
         assert_eq!(read_config_from(dir.path()), None);
         assert!(dir.path().join(BAK_FILE).exists(), "quarantined");
+    }
+
+    /// Spec v0.2 §4: a complete v1 config (as written by v0.1.0 — no
+    /// `appRules`, `views`, `startupViewId`, no spacing fields) migrates in
+    /// place: version re-stamped to 2, the new fields empty-defaulted,
+    /// everything it did carry intact, and no `.bak` quarantine.
+    #[test]
+    fn v1_config_migrates_to_v2_with_defaults() {
+        let dir = ScratchDir::new();
+        fs::create_dir_all(dir.path()).unwrap();
+        let mut json = serde_json::to_value(sample_config()).unwrap();
+        let obj = json.as_object_mut().unwrap();
+        obj.insert("version".into(), serde_json::json!(1));
+        obj.remove("appRules");
+        obj.remove("views");
+        obj.remove("startupViewId");
+        let grid = json["grids"][0].as_object_mut().unwrap();
+        grid.remove("gap");
+        grid.remove("padding");
+        fs::write(
+            dir.path().join(CONFIG_FILE),
+            serde_json::to_vec(&json).unwrap(),
+        )
+        .unwrap();
+
+        let read = read_config_from(dir.path()).expect("v1 config must stay readable");
+        assert_eq!(read.version, CONFIG_VERSION, "re-stamped to v2");
+        assert!(read.app_rules.is_empty());
+        assert!(read.views.is_empty());
+        assert_eq!(read.startup_view_id, None);
+        assert_eq!(read.grids[0].gap, 0);
+        assert_eq!(read.grids[0].padding, 0);
+        // The v1 payload survives.
+        assert_eq!(read.exclusions, vec!["slack.exe"]);
+        assert_eq!(read.grids[0].cols, 12);
+        assert!(
+            !dir.path().join(BAK_FILE).exists(),
+            "a v1 config is migrated, not quarantined"
+        );
+
+        // Round-trip: the next write persists v2, which reads back intact.
+        write_config_to(dir.path(), &read).expect("persist migrated config");
+        assert_eq!(read_config_from(dir.path()), Some(read));
+    }
+
+    /// The camelCase wire shape of the view fields is part of contract C1:
+    /// views and `startupViewId` must round-trip, including `null` for none.
+    #[test]
+    fn views_round_trip_with_camel_case_field_names() {
+        let dir = ScratchDir::new();
+        let cfg = sample_config();
+        write_config_to(dir.path(), &cfg).expect("write");
+        let raw = fs::read_to_string(dir.path().join(CONFIG_FILE)).unwrap();
+        assert!(raw.contains("\"views\""), "camelCase views on disk");
+        assert!(raw.contains("\"startupViewId\""), "camelCase id on disk");
+        assert!(raw.contains("\"assignments\""), "assignments serialized");
+        assert_eq!(read_config_from(dir.path()), Some(cfg));
+
+        // startupViewId: None serializes as null and reads back as None.
+        let mut cfg = sample_config();
+        cfg.startup_view_id = None;
+        write_config_to(dir.path(), &cfg).expect("write");
+        let raw = fs::read_to_string(dir.path().join(CONFIG_FILE)).unwrap();
+        assert!(raw.contains("\"startupViewId\": null"));
+        assert_eq!(read_config_from(dir.path()), Some(cfg));
     }
 
     #[test]

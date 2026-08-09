@@ -15,19 +15,25 @@
     type GridSettings,
     type MonitorInfo,
     type StateSnapshot,
+    type View,
     type WindowInfo,
   } from '@griddle-wm/brain';
   import {
+    emitSettingsApplyView,
+    emitSettingsCaptureView,
+    emitSettingsDeleteView,
     emitSettingsDisableGrid,
     emitSettingsEnableGrid,
     emitSettingsEnableSpan,
     emitSettingsReady,
     emitSettingsRemoveAppRule,
+    emitSettingsRenameView,
     emitSettingsSetDims,
     emitSettingsSetExclusions,
     emitSettingsSetMode,
     emitSettingsSetPrefs,
     emitSettingsSetSpacing,
+    emitSettingsSetStartupView,
     listMonitors,
     listWindows,
     onMonitorsChanged,
@@ -427,6 +433,71 @@
 
   function removeAppRule(rule: AppRule): void {
     void emitSettingsRemoveAppRule({ exe: rule.exe, gridId: rule.gridId });
+  }
+
+  // ── startup views (spec v0.2 §3) ─────────────────────────────────────────
+
+  const views = $derived.by(() => snapshot?.views ?? []);
+  const startupViewId = $derived.by(() => snapshot?.startupViewId ?? null);
+  const anyGridEnabled = $derived.by(
+    (): boolean => snapshot?.grids.some((g) => g.enabled) ?? false,
+  );
+
+  let viewNameDraft = $state('');
+  /** View currently in inline rename, if any. */
+  let renamingViewId: string | null = $state(null);
+  let renameDraft = $state('');
+
+  const viewNameValid = $derived(viewNameDraft.trim() !== '');
+
+  function captureCurrentView(): void {
+    const name = viewNameDraft.trim();
+    if (name === '' || !anyGridEnabled) return;
+    void emitSettingsCaptureView({ name });
+    viewNameDraft = '';
+  }
+
+  function applyViewNow(viewId: string): void {
+    void emitSettingsApplyView({ viewId });
+  }
+
+  function startRename(view: View): void {
+    renamingViewId = view.id;
+    renameDraft = view.name;
+  }
+
+  function commitRename(): void {
+    if (renamingViewId === null) return;
+    const name = renameDraft.trim();
+    const current = views.find((v) => v.id === renamingViewId);
+    if (name !== '' && current && name !== current.name) {
+      void emitSettingsRenameView({ viewId: renamingViewId, name });
+    }
+    renamingViewId = null;
+  }
+
+  function deleteView(viewId: string): void {
+    if (renamingViewId === viewId) renamingViewId = null;
+    void emitSettingsDeleteView({ viewId });
+  }
+
+  function setStartupView(viewId: string | null): void {
+    void emitSettingsSetStartupView({ viewId });
+  }
+
+  /** "2 grids · 5 windows" — what applying this view brings back. */
+  function viewSummary(view: View): string {
+    const grids = view.grids.length;
+    const wins = view.grids.reduce((n, g) => n + g.assignments.length, 0);
+    return `${grids} ${grids === 1 ? 'grid' : 'grids'} · ${wins} ${
+      wins === 1 ? 'window' : 'windows'
+    }`;
+  }
+
+  /** Focus + select the inline rename input the moment it appears. */
+  function focusOnMount(node: HTMLInputElement): void {
+    node.focus();
+    node.select();
   }
 
   // ── first run (plan Task 19) ─────────────────────────────────────────────
@@ -1108,6 +1179,123 @@
     </p>
   </section>
 
+  <!-- Views (spec v0.2 §3): whole-desktop snapshots + load-at-startup. -->
+  <section class="card">
+    <div class="card-head">
+      <div class="mon-info">
+        <h2>Views</h2>
+        <p class="meta">Snapshots of your grids and which app sits where.</p>
+      </div>
+    </div>
+    {#if views.length > 0}
+      <ul class="view-list">
+        {#each views as view (view.id)}
+          <li class="view-row">
+            {#if renamingViewId === view.id}
+              <input
+                class="view-rename"
+                type="text"
+                bind:value={renameDraft}
+                spellcheck="false"
+                aria-label={`New name for view ${view.name}`}
+                use:focusOnMount
+                onkeydown={(e) => {
+                  if (e.key === 'Enter') commitRename();
+                  if (e.key === 'Escape') renamingViewId = null;
+                }}
+                onblur={commitRename}
+              />
+            {:else}
+              <span class="view-name">{view.name}</span>
+            {/if}
+            <span class="view-summary">{viewSummary(view)}</span>
+            <div class="view-actions">
+              <button
+                class="quiet small"
+                title="Rebuild these grids and put every saved app back in its place"
+                onclick={() => applyViewNow(view.id)}>Apply now</button
+              >
+              <button
+                class="quiet small"
+                onclick={() => startRename(view)}>Rename</button
+              >
+              <button
+                class="chip-x"
+                aria-label={`Delete view ${view.name}`}
+                title="Delete this view"
+                onclick={() => deleteView(view.id)}>×</button
+              >
+            </div>
+          </li>
+        {/each}
+      </ul>
+      <div
+        class="controls startup-pick"
+        role="radiogroup"
+        aria-label="View to load at startup"
+      >
+        <span class="lbl">Load at startup</span>
+        <label class="pick">
+          <input
+            type="radio"
+            name="startup-view"
+            checked={startupViewId === null}
+            onchange={() => setStartupView(null)}
+          />
+          <span>None</span>
+        </label>
+        {#each views as view (view.id)}
+          <label class="pick">
+            <input
+              type="radio"
+              name="startup-view"
+              checked={startupViewId === view.id}
+              onchange={() => setStartupView(view.id)}
+            />
+            <span>{view.name}</span>
+          </label>
+        {/each}
+      </div>
+    {:else}
+      <p class="hint">
+        No views yet — arrange your windows the way you like, then save the
+        whole arrangement here.
+      </p>
+    {/if}
+    <div class="controls">
+      <label class="field">
+        <span class="lbl">Name</span>
+        <input
+          class="view-input"
+          type="text"
+          placeholder="e.g. Deep work"
+          bind:value={viewNameDraft}
+          spellcheck="false"
+          onkeydown={(e) => {
+            if (e.key === 'Enter') captureCurrentView();
+          }}
+        />
+      </label>
+      <button
+        class="primary"
+        disabled={!viewNameValid || !anyGridEnabled}
+        onclick={captureCurrentView}>Save current as view</button
+      >
+    </div>
+    {#if !anyGridEnabled}
+      <p class="hint">
+        Enable a grid first — a view saves your enabled grids and the windows
+        on them.
+      </p>
+    {/if}
+    <p class="hint">
+      Applying a view restores its grids and puts each program's windows back
+      on their saved cells. Programs that start within the next two minutes
+      still land on their saved spots — with a startup view, that covers the
+      apps Windows relaunches after a reboot.
+    </p>
+  </section>
+
   {#if snapshot && snapshot.floating.length > 0}
     <section class="card">
       <h2>Floating windows</h2>
@@ -1670,6 +1858,78 @@
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
     margin-left: auto;
+  }
+
+  /* Views card (spec v0.2 §3) */
+  .view-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .view-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--well);
+    padding: 6px 8px 6px 12px;
+  }
+  .view-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-strong);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+  .view-summary {
+    font-size: 12px;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .view-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+  }
+  .quiet.small {
+    padding: 5px 10px;
+    font-size: 12px;
+  }
+  .view-input,
+  .view-rename {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--well);
+    color: var(--text-strong);
+    font: 500 13px/1.2 var(--sans);
+    padding: 7px 10px;
+    width: 200px;
+  }
+  .view-rename {
+    background: var(--card);
+    padding: 5px 8px;
+    width: 160px;
+  }
+  .view-input:focus-visible,
+  .view-rename:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .startup-pick {
+    gap: 12px;
+  }
+  .startup-pick .lbl {
+    font-size: 12.5px;
+    color: var(--text-dim);
   }
 
   .floating {

@@ -94,6 +94,35 @@ pub struct AppRule {
     pub slot: Slot,
 }
 
+/// One remembered window of a startup view (spec v0.2 §3): the lowercase
+/// exe basename and the slot it occupied when the view was captured. Views
+/// store exes, not hwnds — hwnds die with a reboot, exes come back.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ViewAssignment {
+    pub exe: String,
+    pub slot: Slot,
+}
+
+/// One grid of a view: its full settings plus the windows assigned to it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ViewGrid {
+    pub settings: GridSettings,
+    pub assignments: Vec<ViewAssignment>,
+}
+
+/// Startup view (spec v0.2 §3): a named snapshot of every enabled grid's
+/// settings and each tiled window's exe+slot. Opaque to Rust beyond
+/// (de)serialization — capture/apply/claims live in the brain.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct View {
+    pub id: String,
+    pub name: String,
+    pub grids: Vec<ViewGrid>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Template {
@@ -183,10 +212,16 @@ pub struct StateSnapshot {
     pub exclusions: Vec<String>,
     /// Live per-app placement rules (spec v0.2 §2 extension).
     pub app_rules: Vec<AppRule>,
+    /// Live startup views (spec v0.2 §3 extension).
+    pub views: Vec<View>,
+    /// View applied on app launch; `None` serializes as `null`.
+    pub startup_view_id: Option<String>,
     pub paused: bool,
 }
 
-/// Schema for `%APPDATA%/griddle-wm/config.json`.
+/// Schema for `%APPDATA%/griddle-wm/config.json`. Version 2 (spec v0.2 §4):
+/// adds `app_rules`, `views` and `startup_view_id` over v1; the loader in
+/// `config.rs` migrates v1 files in place via the serde defaults below.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
@@ -206,6 +241,12 @@ pub struct AppConfig {
     /// (same migration pattern as `GridSettings::gap`/`padding`).
     #[serde(default)]
     pub app_rules: Vec<AppRule>,
+    /// Startup views (spec v0.2 §3). Defaults like `app_rules`.
+    #[serde(default)]
+    pub views: Vec<View>,
+    /// View applied on app launch (spec v0.2 §3); absent/`null` = none.
+    #[serde(default)]
+    pub startup_view_id: Option<String>,
 }
 
 /// Payload of the hwnd-only events (`window-destroyed`, `window-minimized`,

@@ -113,7 +113,7 @@ describe('serializeConfig / parseConfig', () => {
 
   it('round-trips a populated config', () => {
     const cfg: AppConfig = {
-      version: 1,
+      version: 2,
       grids: [makeGridSettings(), makeGridSettings({ id: 'grid:other', enabled: false })],
       templates: [
         {
@@ -133,6 +133,24 @@ describe('serializeConfig / parseConfig', () => {
       hotkey: 'Ctrl+Alt+G',
       autostart: true,
       paused: true,
+      appRules: [
+        { exe: 'code.exe', gridId: null, slot: { col: 6, row: 0, w: 6, h: 6 } },
+      ],
+      views: [
+        {
+          id: 'view:1',
+          name: 'Work',
+          grids: [
+            {
+              settings: makeGridSettings(),
+              assignments: [
+                { exe: 'code.exe', slot: { col: 0, row: 0, w: 6, h: 6 } },
+              ],
+            },
+          ],
+        },
+      ],
+      startupViewId: 'view:1',
     };
     expect(parseConfig(serializeConfig(cfg))).toEqual(cfg);
   });
@@ -142,7 +160,7 @@ describe('serializeConfig / parseConfig', () => {
     expect(parseConfig('null')).toBeNull();
     expect(parseConfig('42')).toBeNull();
     expect(parseConfig('[]')).toBeNull();
-    expect(parseConfig('{"version":2}')).toBeNull();
+    expect(parseConfig('{"version":3}')).toBeNull();
     expect(parseConfig('{}')).toBeNull();
   });
 
@@ -290,7 +308,7 @@ describe('exportConfig / constructor round-trip', () => {
     const slotsA = tileSlots(last(a.snapshots));
 
     const cfg = a.brain.exportConfig();
-    expect(cfg.version).toBe(1);
+    expect(cfg.version).toBe(2);
     expect(cfg.grids).toEqual([makeGridSettings()]);
     expect(cfg.exclusions).toEqual(['excluded.exe']);
     expect(cfg.templates.filter((t) => !t.builtin).map((t) => t.name)).toEqual([

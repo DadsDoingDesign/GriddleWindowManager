@@ -39,13 +39,18 @@ import {
   onSettingsMove,
   onSettingsReady,
   windowIsTracked,
+  onSettingsApplyView,
+  onSettingsCaptureView,
+  onSettingsDeleteView,
   onSettingsRemoveAppRule,
+  onSettingsRenameView,
   onSettingsSetAppRule,
   onSettingsSetDims,
   onSettingsSetExclusions,
   onSettingsSetMode,
   onSettingsSetPrefs,
   onSettingsSetSpacing,
+  onSettingsSetStartupView,
   onTrayToggleGrid,
   onWindowAppeared,
   onWindowDestroyed,
@@ -248,6 +253,13 @@ export async function startBrainHost(): Promise<BrainHost> {
   const monitors = await listMonitors();
   const windows = await listWindows();
   brain.setMonitors(monitors, windows);
+  // Startup view (spec v0.2 §3): applied right after the boot placement, so
+  // it works with autostart — the view's grid settings land immediately and
+  // its assignments stay pending claims for 120 s, catching the apps that
+  // launch after us. `applyView` no-ops on a dangling id.
+  if (cfg.startupViewId !== null) {
+    brain.applyView(cfg.startupViewId, windows);
+  }
   for (const g of cfg.grids) {
     if (g.enabled) prewarmOverlays(g.monitorIds);
   }
@@ -332,6 +344,16 @@ export async function startBrainHost(): Promise<BrainHost> {
     }
     const remembered = grids.find((g) => g.id === `grid:${monitorId}`);
     await enableOnMonitor(monitorId, remembered?.cols ?? 12, remembered?.rows ?? 6);
+  };
+
+  /**
+   * Manual "Apply now" (spec v0.2 §3): same claim mechanism as startup —
+   * the brain re-places a fresh sweep and the assignments left over stay
+   * claimable for the 120 s window.
+   */
+  const applyViewNow = async (viewId: string) => {
+    markUserAction();
+    brain.applyView(viewId, await listWindows());
   };
 
   // Native events → brain, plus settings-window inputs (contract §C2).
@@ -482,6 +504,35 @@ export async function startBrainHost(): Promise<BrainHost> {
     onSettingsRemoveAppRule((p) => {
       markUserAction();
       brain.removeAppRule(p.exe, p.gridId);
+    }),
+    // Settings window → brain (spec v0.2 §3): startup views. Capture
+    // mirrors captureTemplate's disabled-grid race handling; apply sweeps
+    // the desktop so present windows claim their assignments immediately.
+    onSettingsCaptureView((p) => {
+      markUserAction();
+      try {
+        brain.captureView(p.name);
+      } catch (e) {
+        // Every grid was disabled between the click and the event.
+        console.error('settings-capture-view failed:', e);
+      }
+    }),
+    onSettingsApplyView((p) =>
+      applyViewNow(p.viewId).catch((e) =>
+        console.error('settings-apply-view failed:', e),
+      ),
+    ),
+    onSettingsRenameView((p) => {
+      markUserAction();
+      brain.renameView(p.viewId, p.name);
+    }),
+    onSettingsDeleteView((p) => {
+      markUserAction();
+      brain.deleteView(p.viewId);
+    }),
+    onSettingsSetStartupView((p) => {
+      markUserAction();
+      brain.setStartupView(p.viewId);
     }),
     // Settings window → brain (plan Task 19): exclusions editor. The brain
     // unmanages newly excluded windows immediately; the debounced config

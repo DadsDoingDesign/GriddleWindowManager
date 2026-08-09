@@ -68,6 +68,36 @@ export interface AppRule {
   slot: Slot;
 }
 
+/**
+ * One remembered window of a startup view (spec v0.2 §3): the lowercase exe
+ * basename and the slot it occupied when the view was captured. Views store
+ * exes, not hwnds — hwnds die with a reboot, exes come back.
+ */
+export interface ViewAssignment {
+  exe: string;
+  slot: Slot;
+}
+
+/** One grid of a view: its full settings plus the windows assigned to it. */
+export interface ViewGrid {
+  settings: GridSettings;
+  assignments: ViewAssignment[];
+}
+
+/**
+ * Startup view (spec v0.2 §3): a named snapshot of every enabled grid's
+ * settings (incl. gap/padding) and each tiled window's exe+slot. Applying a
+ * view reconfigures the grids and registers the assignments as pending
+ * claims: windows appearing within the claim window are first-come-first-
+ * claimed per assignment, beating app rules; after the timeout (or once all
+ * claims are taken) normal placement rules resume.
+ */
+export interface View {
+  id: string;
+  name: string;
+  grids: ViewGrid[];
+}
+
 export interface Template {
   id: string;
   name: string;
@@ -132,6 +162,9 @@ export interface FloatingWindow {
 // (lowercase exe names) so the settings editor always shows the truth.
 // Contract extension (spec v0.2 §2): `appRules` carries the live per-app
 // placement rules so the settings rules card always shows them.
+// Contract extension (spec v0.2 §3): `views` + `startupViewId` carry the
+// startup views so the settings Views card always shows the live list and
+// the load-at-startup radio.
 export interface StateSnapshot {
   grids: GridSettings[];
   templates: Template[];
@@ -139,12 +172,18 @@ export interface StateSnapshot {
   floating: FloatingWindow[];
   exclusions: string[];
   appRules: AppRule[];
+  views: View[];
+  startupViewId: string | null;
   paused: boolean;
 }
 
 export interface AppConfig {
   // schema for %APPDATA%/griddle-wm/config.json
-  version: 1;
+  // v2 (spec v0.2 §4): adds `appRules`, `views`, `startupViewId`;
+  // `GridSettings` gained `gap`/`padding`. The loaders (persist.ts and the
+  // Rust mirror's serde defaults) migrate v1 configs in place — defaults
+  // `appRules: [], views: [], startupViewId: null`, spacing absent-means-0.
+  version: 2;
   grids: GridSettings[];
   templates: Template[];
   exclusions: string[]; // lowercase exe names
@@ -152,12 +191,10 @@ export interface AppConfig {
   hotkey: string; // default "Ctrl+Super+G"
   autostart: boolean;
   paused: boolean;
-  /**
-   * Per-app placement rules (spec v0.2 §2). Optional like `gap`/`padding`:
-   * absent in every v1 config and reads as [] (persist.ts keeps the field
-   * only when the stored value was an array, the Rust mirror uses
-   * `#[serde(default)]` — spec §4 migration groundwork; the full v2 schema
-   * bump ships with startup views).
-   */
-  appRules?: AppRule[];
+  /** Per-app placement rules (spec v0.2 §2). */
+  appRules: AppRule[];
+  /** Startup views (spec v0.2 §3). */
+  views: View[];
+  /** View applied on app launch, or null for none (spec v0.2 §3). */
+  startupViewId: string | null;
 }

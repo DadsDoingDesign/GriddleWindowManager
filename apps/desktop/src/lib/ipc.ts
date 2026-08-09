@@ -143,6 +143,46 @@ export interface SettingsRemoveAppRulePayload {
 }
 
 /**
+ * Payload of `settings-capture-view` (settings → brain, spec v0.2 §3): the
+ * Views card's "Save current as view" button. Routed to `captureView`,
+ * which snapshots every live grid's settings plus each tiled window's
+ * exe+slot under the given name.
+ */
+export interface SettingsCaptureViewPayload {
+  name: string;
+}
+
+/**
+ * Payload of `settings-apply-view` (settings → brain, spec v0.2 §3): the
+ * Views card's "Apply now" button. The brain host sweeps the desktop
+ * (`list_windows`) and routes to `applyView`, which reconfigures the view's
+ * grids, re-places current windows by exe, and leaves the remaining
+ * assignments as pending claims for the 120 s window.
+ */
+export interface SettingsApplyViewPayload {
+  viewId: string;
+}
+
+/** Payload of `settings-rename-view` (settings → brain, spec v0.2 §3). */
+export interface SettingsRenameViewPayload {
+  viewId: string;
+  name: string;
+}
+
+/** Payload of `settings-delete-view` (settings → brain, spec v0.2 §3). */
+export interface SettingsDeleteViewPayload {
+  viewId: string;
+}
+
+/**
+ * Payload of `settings-set-startup-view` (settings → brain, spec v0.2 §3):
+ * the Views card's load-at-startup radio; `viewId: null` means none.
+ */
+export interface SettingsSetStartupViewPayload {
+  viewId: string | null;
+}
+
+/**
  * Payload of `settings-set-prefs` (settings → brain, plan Task 18): the
  * General-card toggles. Routed to `setShellPrefs`; the persisted config then
  * drives Rust's autostart registration and hotkey re-bind. Pause is absent
@@ -465,6 +505,58 @@ export function onSettingsRemoveAppRule(
   cb: (p: SettingsRemoveAppRulePayload) => void,
 ): Promise<UnlistenFn> {
   return on('settings-remove-app-rule', cb);
+}
+
+export function emitSettingsCaptureView(p: SettingsCaptureViewPayload): Promise<void> {
+  return emit('settings-capture-view', p);
+}
+
+export function onSettingsCaptureView(
+  cb: (p: SettingsCaptureViewPayload) => void,
+): Promise<UnlistenFn> {
+  return on('settings-capture-view', cb);
+}
+
+export function emitSettingsApplyView(p: SettingsApplyViewPayload): Promise<void> {
+  return emit('settings-apply-view', p);
+}
+
+export function onSettingsApplyView(
+  cb: (p: SettingsApplyViewPayload) => void,
+): Promise<UnlistenFn> {
+  return on('settings-apply-view', cb);
+}
+
+export function emitSettingsRenameView(p: SettingsRenameViewPayload): Promise<void> {
+  return emit('settings-rename-view', p);
+}
+
+export function onSettingsRenameView(
+  cb: (p: SettingsRenameViewPayload) => void,
+): Promise<UnlistenFn> {
+  return on('settings-rename-view', cb);
+}
+
+export function emitSettingsDeleteView(p: SettingsDeleteViewPayload): Promise<void> {
+  return emit('settings-delete-view', p);
+}
+
+export function onSettingsDeleteView(
+  cb: (p: SettingsDeleteViewPayload) => void,
+): Promise<UnlistenFn> {
+  return on('settings-delete-view', cb);
+}
+
+export function emitSettingsSetStartupView(
+  p: SettingsSetStartupViewPayload,
+): Promise<void> {
+  return emit('settings-set-startup-view', p);
+}
+
+export function onSettingsSetStartupView(
+  cb: (p: SettingsSetStartupViewPayload) => void,
+): Promise<UnlistenFn> {
+  return on('settings-set-startup-view', cb);
 }
 
 export function emitSettingsSetPrefs(p: SettingsSetPrefsPayload): Promise<void> {
