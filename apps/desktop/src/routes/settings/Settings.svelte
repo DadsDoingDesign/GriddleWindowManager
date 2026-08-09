@@ -81,6 +81,13 @@
   // until a grid gets enabled (or the user skips into the full settings).
   let firstRun = $state(false);
   let firstRunPick: string | null = $state(null);
+  /**
+   * Autostart offered at the point of first value (critique round 3): a
+   * window manager that isn't running delivers nothing, so the first-run
+   * card carries a pre-checked "Start with Windows" — the first config
+   * write captures the choice instead of burying the toggle in General.
+   */
+  let firstRunAutostart = $state(true);
 
   let unlisteners: UnlistenFn[] = [];
   onMount(async () => {
@@ -360,6 +367,12 @@
 
   function enableFirstRun(): void {
     if (firstRunPick === null) return;
+    if (firstRunAutostart) {
+      // Same path as the General toggle — the brain persists it with the
+      // grid it is about to enable, so one config write captures both.
+      autostart = true;
+      void emitSettingsSetPrefs({ autostart: true });
+    }
     void emitSettingsEnableGrid({
       monitorId: firstRunPick,
       cols: DEFAULT_DIMS.cols,
@@ -414,6 +427,11 @@
         </div>
       {/if}
 
+      <label class="pick">
+        <input type="checkbox" bind:checked={firstRunAutostart} />
+        <span>Start with Windows — keep your grids working after a reboot</span>
+      </label>
+
       <div class="controls">
         <button
           class="primary"
@@ -421,7 +439,7 @@
           onclick={enableFirstRun}>Enable grid</button
         >
         <span class="hint">
-          Starts as a 12 × 6 grid — your windows on this monitor snap into
+          Starts as a 12×6 grid — your windows on this monitor snap into
           place right away, and you can change everything later.
         </span>
         <!-- Honest label: this page never returns (the first config write
@@ -431,6 +449,10 @@
           Skip to Settings
         </button>
       </div>
+      <p class="hint">
+        Griddle WM lives in the system tray — closing this window keeps your
+        grids running.
+      </p>
     </section>
   {:else}
   <header>
@@ -574,6 +596,8 @@
           templates={snapshot?.templates ?? []}
           activeTemplateId={grid.activeTemplateId}
           tileCount={tiles.length}
+          gridCols={grid.cols}
+          gridRows={grid.rows}
         />
       {/if}
     </section>
@@ -587,7 +611,10 @@
     <section class="card">
       <div class="card-head">
         <div class="mon-info">
-          <h2>Spanning: {grid.monitorIds.map(monNameFromId).join(' + ')}</h2>
+          <h2>
+            Spanning: {grid.monitorIds.map(monNameFromId).join(' + ')}
+            <span class="badge experimental">Experimental</span>
+          </h2>
           <p class="meta">
             {#if union}
               {union.workWidth}×{union.workHeight} union work area
@@ -682,6 +709,8 @@
           templates={snapshot?.templates ?? []}
           activeTemplateId={grid.activeTemplateId}
           tileCount={tiles.length}
+          gridCols={grid.cols}
+          gridRows={grid.rows}
         />
       {/if}
     </section>
@@ -691,7 +720,7 @@
     <section class="card">
       <div class="card-head">
         <div class="mon-info">
-          <h2>Span monitors</h2>
+          <h2>Span monitors <span class="badge experimental">Experimental</span></h2>
           <p class="meta">
             One grid across several monitors. Per-monitor grids on the selected
             monitors are replaced by the spanning grid.
@@ -754,8 +783,60 @@
       {#if spanSelected.length === 1}
         <p class="hint">Select at least two monitors to span.</p>
       {/if}
+      <p class="hint">
+        Spanning is the newest feature and has had the least real-world
+        testing — please report anything odd.
+      </p>
     </section>
   {/if}
+
+  <!-- General sits above Excluded apps (critique round 3): startup and the
+       hotkey are universal settings; exclusions are an edge-case tool. -->
+  <section class="card">
+    <div class="card-head">
+      <div class="mon-info">
+        <h2>General</h2>
+        <p class="meta">Startup and the settings hotkey.</p>
+      </div>
+    </div>
+    <div class="controls">
+      <label class="switch">
+        <input
+          type="checkbox"
+          checked={autostart}
+          onchange={(e) => toggleAutostart(e.currentTarget.checked)}
+        />
+        <span class="track"><span class="thumb"></span></span>
+        <span class="switch-label wide">Start with Windows</span>
+      </label>
+    </div>
+    <div class="controls">
+      <label class="field">
+        <span class="lbl">Settings hotkey</span>
+        <input
+          class="hotkey-input"
+          type="text"
+          bind:value={hotkeyDraft}
+          placeholder={DISPLAY_DEFAULT_HOTKEY}
+          spellcheck="false"
+          oninput={() => (hotkeyError = null)}
+          onkeydown={(e) => {
+            if (e.key === 'Enter') applyHotkey();
+          }}
+        />
+      </label>
+      <button class="primary" disabled={!hotkeyDirty} onclick={applyHotkey}>
+        Apply
+      </button>
+    </div>
+    {#if hotkeyError}
+      <p class="hint error">{hotkeyError}</p>
+    {/if}
+    <p class="hint">
+      Global shortcut that opens this window — e.g. Ctrl+Win+G. If another
+      app already owns the new combination, the previous one stays active.
+    </p>
+  </section>
 
   <section class="card">
     <div class="card-head">
@@ -828,52 +909,6 @@
     </p>
   </section>
 
-  <section class="card">
-    <div class="card-head">
-      <div class="mon-info">
-        <h2>General</h2>
-        <p class="meta">Startup and the settings hotkey.</p>
-      </div>
-    </div>
-    <div class="controls">
-      <label class="switch">
-        <input
-          type="checkbox"
-          checked={autostart}
-          onchange={(e) => toggleAutostart(e.currentTarget.checked)}
-        />
-        <span class="track"><span class="thumb"></span></span>
-        <span class="switch-label wide">Start with Windows</span>
-      </label>
-    </div>
-    <div class="controls">
-      <label class="field">
-        <span class="lbl">Settings hotkey</span>
-        <input
-          class="hotkey-input"
-          type="text"
-          bind:value={hotkeyDraft}
-          placeholder={DISPLAY_DEFAULT_HOTKEY}
-          spellcheck="false"
-          oninput={() => (hotkeyError = null)}
-          onkeydown={(e) => {
-            if (e.key === 'Enter') applyHotkey();
-          }}
-        />
-      </label>
-      <button class="primary" disabled={!hotkeyDirty} onclick={applyHotkey}>
-        Apply
-      </button>
-    </div>
-    {#if hotkeyError}
-      <p class="hint error">{hotkeyError}</p>
-    {/if}
-    <p class="hint">
-      Global shortcut that opens this window — e.g. Ctrl+Win+G. If another
-      app already owns the new combination, the previous one stays active.
-    </p>
-  </section>
-
   {#if snapshot && snapshot.floating.length > 0}
     <section class="card">
       <h2>Floating windows</h2>
@@ -883,6 +918,14 @@
           <li><span class="ftitle">{f.title || `Window ${f.hwnd}`}</span> <code>{f.exe}</code></li>
         {/each}
       </ul>
+      <!-- The one card that names a problem must also name the way out.
+           These are the real retry triggers (brain reflowGrid /
+           applyTemplate / windowRestored) — not guesses. -->
+      <p class="hint">
+        Make room — add rows or columns, or apply a template — and they'll be
+        placed right away. Minimizing and restoring a floating window also
+        retries its placement.
+      </p>
     </section>
   {/if}
   {/if}
@@ -979,6 +1022,11 @@
     border: 1px solid rgba(139, 124, 246, 0.35);
   }
   .badge.paused {
+    background: rgba(246, 173, 85, 0.14);
+    color: #f6ad55;
+    border-color: rgba(246, 173, 85, 0.4);
+  }
+  .badge.experimental {
     background: rgba(246, 173, 85, 0.14);
     color: #f6ad55;
     border-color: rgba(246, 173, 85, 0.4);

@@ -136,6 +136,51 @@ placeholder fixes). What follows was deliberately not done, and why.
   brain retry logic; accepted as the same class of drift as external app
   moves (above).
 
+## Critique round 3 (pre-tag) — decisions and deferrals
+
+Third triage. Fixed this round (details in the git log): the brain-host
+heartbeat is now throttling-proof (90 s timeout + WebView2
+`--disable-background-timer-throttling` + `apply_layout`/`list_windows`
+count as beats + a 10-minute idle-soak smoke item), the five builtin
+templates were re-authored on the 12×6 default lattice so applying one never
+re-dimensions a fresh grid (this **supersedes the plan's Task 6 geometry**
+for `tpl:main-side` — 12×6 `{0,0,7,6}+{7,0,5,6}` instead of 8×6; a data
+change plus test updates, no logic change), the Apply button discloses
+re-gridding whenever a template's dims differ from the grid's, a maximized
+window racing an apply is skipped like a minimized one (no more SW_RESTORE
+fighting the user), fresh installs no longer write a default config before
+any user action (also un-racing the first-run page), the first-run card
+offers a pre-checked "Start with Windows", spanning-grid UI now carries the
+README's "Experimental" labeling, `read_config` is a pure read for the
+settings window, the tray works from a watcher-maintained monitor cache,
+overlays got their own minimal capability file, and `apps/desktop/README.md`
+lost its create-vite boilerplate. Deliberately not done:
+
+- **Hide-to-tray apps are treated as destroyed.** The tracker routes
+  `EVENT_OBJECT_HIDE` through the destroy flow, so a Slack/Discord-style
+  close-to-tray forgets the window's tile *and its remembered slot*. In
+  practice the window usually recovers its cell on unhide (the unchanged
+  rect snaps back to the same slot, gravity is `none`) — but if another
+  window took the cell meanwhile, the returning app lands elsewhere, unlike
+  minimize/restore which remembers the slot. Same drift class as the
+  external-move item in round 1. Fast-follow: route HIDE through the
+  minimize flow (slot remembered) instead of the destroy flow; needs care
+  around genuine hides (cloak transitions, virtual-desktop switches) that
+  must *not* hold slots forever.
+- **Template gallery rendered per grid card.** The gallery is a global
+  collection but appears inside every enabled grid card, so two gridded
+  monitors show it twice (the per-card placement does give Apply an
+  unambiguous target grid, and the shared-ness is now a hint line instead
+  of a label parenthetical). For 0.2: one Templates card with an explicit
+  "Apply to: [grid]" affordance, or collapsed-by-default galleries.
+- **Spanning grids ship Experimental rather than cut.** The two-physical-
+  monitor smoke item may go unrun before tagging (no second monitor in the
+  build environment). Decision per round 2 stands, now with the UI honest
+  about it: the Span monitors card and every span-grid card carry an
+  "Experimental" badge plus the README's caveat line. If that smoke item
+  ever *fails* (not merely goes unrun), the creation UI gets cut for 0.1.0
+  and the brain support stays dark.
+
 ## Upstream library feedback (@griddle/core, @griddle/svelte)
 
 Worked around in the brain/editor and recorded for upstream in

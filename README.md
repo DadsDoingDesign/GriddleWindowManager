@@ -65,12 +65,15 @@ stack-style tiles and never push neighbors.
 The settings window has a template gallery per grid:
 
 - **Built-ins**: two columns, three columns, 2×2 quarters, main + side
-  column, and two rows.
+  column, and two rows — all authored on the default 12×6 grid, so applying
+  one never changes your grid's dimensions.
 - **Capture** the current arrangement as a named template (slots only — no
   window identities are stored).
 - **Apply** a template: current windows are mapped to its slots by recency
   (most recent window gets the first slot), extras are auto-placed. Applying
-  a template with different dimensions re-dimensions the grid.
+  a template whose dimensions differ from the grid's re-dimensions the grid —
+  the Apply button says so ("Apply (re-grids to 8×6)") whenever that would
+  happen.
 - User templates can be deleted; built-ins cannot.
 
 ### Spanning grids
@@ -93,7 +96,8 @@ real-world testing — please report anything odd.
 - **Pause** is the panic button: all tracking and window actuation stop
   instantly, and every window is yours again until you unpause. The pause
   state survives restarts.
-- **Start with Windows** (autostart) is a toggle in Settings → General.
+- **Start with Windows** (autostart) is offered (pre-checked) on the
+  first-run page and lives as a toggle in Settings → General.
 
 ### Exclusions
 
@@ -103,7 +107,8 @@ from a list of currently open windows. Excluding a running app releases its
 windows in place; removing an exclusion manages them again without a restart.
 
 Configuration lives in `%APPDATA%\griddle-wm\config.json` — plain local JSON,
-written atomically, safe to back up.
+written atomically, safe to back up. (In the file, the Tile/Stack modes are
+stored as `"collision"`/`"overlay"`.)
 
 ## Limitations (v0.1.0)
 

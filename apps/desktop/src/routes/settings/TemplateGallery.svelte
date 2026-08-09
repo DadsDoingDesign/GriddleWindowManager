@@ -20,8 +20,23 @@
     activeTemplateId: string | null;
     /** Windows currently tiled on this grid (capture needs at least one). */
     tileCount: number;
+    /** The grid's current dims — Apply discloses when a template differs. */
+    gridCols: number;
+    gridRows: number;
   }
-  const { gridId, templates, activeTemplateId, tileCount }: Props = $props();
+  const { gridId, templates, activeTemplateId, tileCount, gridCols, gridRows }: Props =
+    $props();
+
+  /**
+   * Applying a template re-dimensions the grid to the template's cols/rows
+   * (brain `applyTemplate`). Built-ins are authored at the 12×6 default so
+   * this rarely fires, but a user template captured on other dims — or a
+   * builtin applied to a customized grid — must say what it is about to do
+   * at the point of action, not in a README footnote.
+   */
+  function regrids(t: Template): boolean {
+    return t.cols !== gridCols || t.rows !== gridRows;
+  }
 
   const MAX_NAME_LEN = 40;
 
@@ -97,7 +112,7 @@
 
 <div class="gallery">
   <div class="gallery-head">
-    <span class="lbl">Templates (shared across grids)</span>
+    <span class="lbl">Templates</span>
     {#if capturing}
       <div class="capture-form">
         <input
@@ -150,8 +165,14 @@
           </span>
         </div>
         <div class="tactions">
-          <button class="btn primary" onclick={() => apply(t)}>
-            {active ? 'Reapply' : 'Apply'}
+          <button
+            class="btn primary"
+            title={regrids(t)
+              ? `Re-dimensions this grid to ${t.cols}×${t.rows}, then lays windows out on the template`
+              : 'Lay windows out on this template'}
+            onclick={() => apply(t)}
+          >
+            {active ? 'Reapply' : regrids(t) ? `Apply (re-grids to ${t.cols}×${t.rows})` : 'Apply'}
           </button>
           {#if !t.builtin}
             <button
@@ -170,6 +191,7 @@
       </div>
     {/each}
   </div>
+  <p class="hint">Saved templates are shared across all grids.</p>
 </div>
 
 <style>
@@ -188,6 +210,12 @@
   }
   .lbl {
     font-size: 12.5px;
+    color: var(--text-dim);
+  }
+
+  .hint {
+    margin: 0;
+    font-size: 12px;
     color: var(--text-dim);
   }
 
