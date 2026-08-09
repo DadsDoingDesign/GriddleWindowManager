@@ -12,6 +12,7 @@
     type GridSettings,
     type MonitorInfo,
     type StateSnapshot,
+    type WindowInfo,
   } from '@griddle-wm/brain';
   import {
     emitSettingsDisableGrid,
@@ -19,9 +20,11 @@
     emitSettingsEnableSpan,
     emitSettingsReady,
     emitSettingsSetDims,
+    emitSettingsSetExclusions,
     emitSettingsSetMode,
     emitSettingsSetPrefs,
     listMonitors,
+    listWindows,
     onMonitorsChanged,
     onStateSnapshot,
     readConfig,
@@ -50,18 +53,41 @@
   let hotkeyDraft = $state(DEFAULT_HOTKEY);
   let savedHotkey = $state(DEFAULT_HOTKEY);
 
+  // Exclusions editor (plan Task 19). The snapshot is the truth; the config
+  // read at mount only bridges the gap until the first snapshot arrives.
+  let seedExclusions: string[] = $state([]);
+  let exclusionDraft = $state('');
+  let pickerOpen = $state(false);
+  /** null while list_windows is in flight. */
+  let pickerWindows: WindowInfo[] | null = $state(null);
+
+  // First-run (plan Task 19): no config on disk yet — show the welcome page
+  // until a grid gets enabled (or the user skips into the full settings).
+  let firstRun = $state(false);
+  let firstRunPick: string | null = $state(null);
+
   let unlisteners: UnlistenFn[] = [];
   onMount(async () => {
     unlisteners = await Promise.all([
-      onStateSnapshot((s) => (snapshot = s)),
+      onStateSnapshot((s) => {
+        snapshot = s;
+        // The first enabled grid ends the first-run experience for good
+        // (the brain persists it right after this snapshot).
+        if (s.grids.some((g) => g.enabled)) firstRun = false;
+      }),
       onMonitorsChanged((m) => (monitors = m)),
     ]);
     monitors = await listMonitors();
+    firstRunPick =
+      (monitors.find((m) => m.primary) ?? monitors[0])?.id ?? null;
     const cfg = await readConfig();
     if (cfg) {
       autostart = cfg.autostart;
       hotkeyDraft = cfg.hotkey;
       savedHotkey = cfg.hotkey;
+      seedExclusions = cfg.exclusions;
+    } else if (!snapshot?.grids.some((g) => g.enabled)) {
+      firstRun = true;
     }
     // Ask the brain to re-emit its latest snapshot for this fresh window.
     await emitSettingsReady();
@@ -189,9 +215,128 @@
     hotkeyDraft = hotkey;
     void emitSettingsSetPrefs({ hotkey });
   }
+
+  // ── exclusions (plan Task 19) ────────────────────────────────────────────
+
+  const exclusions = $derived.by(() => snapshot?.exclusions ?? seedExclusions);
+  const sortedExclusions = $derived([...exclusions].sort());
+
+  const draftExe = $derived(exclusionDraft.trim().toLowerCase());
+  const draftValid = $derived(draftExe !== '' && !exclusions.includes(draftExe));
+
+  function addExclusion(raw: string): void {
+    const exe = raw.trim().toLowerCase();
+    if (exe === '' || exclusions.includes(exe)) return;
+    void emitSettingsSetExclusions({ exclusions: [...exclusions, exe] });
+    exclusionDraft = '';
+  }
+
+  function removeExclusion(exe: string): void {
+    void emitSettingsSetExclusions({
+      exclusions: exclusions.filter((e) => e !== exe),
+    });
+  }
+
+  function togglePicker(): void {
+    pickerOpen = !pickerOpen;
+    if (!pickerOpen) return;
+    pickerWindows = null;
+    listWindows()
+      .then((ws) => (pickerWindows = ws))
+      .catch((e) => {
+        console.error('list_windows failed:', e);
+        pickerWindows = [];
+      });
+  }
+
+  interface PickerEntry {
+    exe: string;
+    titles: string;
+  }
+
+  /** Distinct exes of the open, still-manageable windows (excluded ones
+   *  never come back from list_windows, but filter defensively). */
+  const pickerEntries = $derived.by((): PickerEntry[] => {
+    if (pickerWindows === null) return [];
+    const byExe = new Map<string, string[]>();
+    for (const w of pickerWindows) {
+      if (exclusions.includes(w.exe)) continue;
+      const titles = byExe.get(w.exe) ?? [];
+      if (w.title !== '' && titles.length < 3) titles.push(w.title);
+      byExe.set(w.exe, titles);
+    }
+    return [...byExe.entries()]
+      .map(([exe, titles]) => ({ exe, titles: titles.join(' · ') }))
+      .sort((a, b) => a.exe.localeCompare(b.exe));
+  });
+
+  // ── first run (plan Task 19) ─────────────────────────────────────────────
+
+  function enableFirstRun(): void {
+    if (firstRunPick === null) return;
+    void emitSettingsEnableGrid({
+      monitorId: firstRunPick,
+      cols: DEFAULT_DIMS.cols,
+      rows: DEFAULT_DIMS.rows,
+    });
+  }
 </script>
 
 <div class="page">
+  {#if firstRun}
+    <header>
+      <div>
+        <h1>Griddle WM</h1>
+        <p class="tagline">Window grids for your desktop</p>
+      </div>
+    </header>
+
+    <section class="card first-run">
+      <h2>Put your windows on a grid</h2>
+      <p class="fr-copy">
+        Enable a grid on a monitor and every window there gets its own cell.
+        Drag a window and a faint grid fades in with a live preview of where
+        it will land and how its neighbors make room — nothing moves until
+        you let go. Reshape the grid, save layouts as templates, exclude apps
+        you'd rather leave alone, and pause everything from the tray whenever
+        you want your desktop back.
+      </p>
+
+      {#if sortedMonitors.length === 0}
+        <p class="hint">Looking for monitors…</p>
+      {:else}
+        <div class="fr-monitors" role="radiogroup" aria-label="Monitor to grid">
+          {#each sortedMonitors as mon (mon.id)}
+            <label class="fr-mon" class:selected={firstRunPick === mon.id}>
+              <input
+                type="radio"
+                name="first-run-monitor"
+                value={mon.id}
+                checked={firstRunPick === mon.id}
+                onchange={() => (firstRunPick = mon.id)}
+              />
+              <span class="fr-mon-name">{monName(mon)}</span>
+              <span class="fr-mon-meta">
+                {mon.width}×{mon.height}{mon.primary ? ' · primary' : ''}
+              </span>
+            </label>
+          {/each}
+        </div>
+      {/if}
+
+      <div class="controls">
+        <button
+          class="primary"
+          disabled={firstRunPick === null}
+          onclick={enableFirstRun}>Enable grid</button
+        >
+        <span class="hint">Starts as a 12 × 6 grid — change it any time.</span>
+        <button class="quiet" onclick={() => (firstRun = false)}>
+          Skip for now
+        </button>
+      </div>
+    </section>
+  {:else}
   <header>
     <div>
       <h1>Griddle WM</h1>
@@ -491,6 +636,77 @@
   <section class="card">
     <div class="card-head">
       <div class="mon-info">
+        <h2>Excluded apps</h2>
+        <p class="meta">Windows from these programs are never managed.</p>
+      </div>
+    </div>
+    {#if sortedExclusions.length > 0}
+      <ul class="excl-list">
+        {#each sortedExclusions as exe (exe)}
+          <li class="excl-chip">
+            <code>{exe}</code>
+            <button
+              class="chip-x"
+              aria-label={`Stop excluding ${exe}`}
+              title="Stop excluding"
+              onclick={() => removeExclusion(exe)}>×</button
+            >
+          </li>
+        {/each}
+      </ul>
+    {:else}
+      <p class="hint">Nothing is excluded — every eligible window is managed.</p>
+    {/if}
+    <div class="controls">
+      <label class="field">
+        <span class="lbl">Program</span>
+        <input
+          class="excl-input"
+          type="text"
+          placeholder="e.g. slack.exe"
+          bind:value={exclusionDraft}
+          spellcheck="false"
+          onkeydown={(e) => {
+            if (e.key === 'Enter') addExclusion(exclusionDraft);
+          }}
+        />
+      </label>
+      <button
+        class="primary"
+        disabled={!draftValid}
+        onclick={() => addExclusion(exclusionDraft)}>Exclude</button
+      >
+      <button class="quiet" onclick={togglePicker}>
+        {pickerOpen ? 'Hide open windows' : 'Pick from open windows'}
+      </button>
+    </div>
+    {#if pickerOpen}
+      {#if pickerWindows === null}
+        <p class="hint">Looking at open windows…</p>
+      {:else if pickerEntries.length === 0}
+        <p class="hint">No manageable windows are open right now.</p>
+      {:else}
+        <ul class="pick-list">
+          {#each pickerEntries as entry (entry.exe)}
+            <li>
+              <button class="pick-row" onclick={() => addExclusion(entry.exe)}>
+                <code>{entry.exe}</code>
+                <span class="pick-titles">{entry.titles}</span>
+              </button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    {/if}
+    <p class="hint">
+      Excluding a program releases its windows immediately — they stay exactly
+      where they are. Remove an entry and its windows are managed again.
+    </p>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <div class="mon-info">
         <h2>General</h2>
         <p class="meta">Pause, startup and the settings hotkey.</p>
       </div>
@@ -552,6 +768,7 @@
         {/each}
       </ul>
     </section>
+  {/if}
   {/if}
 </div>
 
@@ -844,6 +1061,182 @@
     margin: 0;
     font-size: 12px;
     color: var(--text-dim);
+  }
+
+  .quiet {
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: transparent;
+    color: var(--text-dim);
+    font: 600 12.5px/1 var(--sans);
+    padding: 8px 14px;
+    cursor: pointer;
+    transition: border-color 0.12s ease, color 0.12s ease;
+  }
+  .quiet:hover {
+    border-color: var(--accent);
+    color: var(--text);
+  }
+
+  /* First-run (plan Task 19) */
+  .first-run h2 {
+    font-size: 17px;
+  }
+  .fr-copy {
+    margin: 0;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--text);
+    max-width: 58ch;
+  }
+  .fr-monitors {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .fr-mon {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    background: var(--well);
+    padding: 12px 16px;
+    min-width: 150px;
+    cursor: pointer;
+    user-select: none;
+    transition: border-color 0.12s ease, background 0.12s ease;
+  }
+  .fr-mon:hover {
+    border-color: var(--accent);
+  }
+  .fr-mon.selected {
+    border-color: var(--accent);
+    background: rgba(139, 124, 246, 0.12);
+  }
+  .fr-mon input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+  .fr-mon:has(input:focus-visible) {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .fr-mon-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-strong);
+  }
+  .fr-mon-meta {
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  /* Exclusions editor (plan Task 19) */
+  .excl-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .excl-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--well);
+    padding: 4px 6px 4px 12px;
+  }
+  .excl-chip code {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text);
+  }
+  .chip-x {
+    width: 18px;
+    height: 18px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text-dim);
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .chip-x:hover {
+    background: rgba(246, 106, 106, 0.18);
+    color: #f66a6a;
+  }
+  .chip-x:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .excl-input {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--well);
+    color: var(--text-strong);
+    font: 500 13px/1.2 var(--mono);
+    padding: 7px 10px;
+    width: 200px;
+  }
+  .excl-input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .pick-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 220px;
+    overflow-y: auto;
+  }
+  .pick-row {
+    width: 100%;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    padding: 6px 10px;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.12s ease, border-color 0.12s ease;
+  }
+  .pick-row:hover {
+    background: rgba(139, 124, 246, 0.1);
+    border-color: var(--border);
+  }
+  .pick-row:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+  .pick-row code {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-strong);
+    white-space: nowrap;
+  }
+  .pick-titles {
+    font-size: 12px;
+    color: var(--text-dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
   }
 
   .floating {

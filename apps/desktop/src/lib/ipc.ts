@@ -101,6 +101,16 @@ export interface SettingsDeleteTemplatePayload {
 }
 
 /**
+ * Payload of `settings-set-exclusions` (settings → brain, plan Task 19): the
+ * full exclusion list as edited (exe basenames; the brain normalizes). The
+ * brain unmanages windows of newly excluded exes immediately and persists the
+ * list; `write_config` then re-syncs the tracker's live filter.
+ */
+export interface SettingsSetExclusionsPayload {
+  exclusions: string[];
+}
+
+/**
  * Payload of `settings-set-prefs` (settings → brain, plan Task 18): the
  * General-card toggles. Routed to `setShellPrefs`; the persisted config then
  * drives Rust's autostart registration and hotkey re-bind. Pause is absent
@@ -353,6 +363,18 @@ export function onSettingsDeleteTemplate(
   cb: (p: SettingsDeleteTemplatePayload) => void,
 ): Promise<UnlistenFn> {
   return on('settings-delete-template', cb);
+}
+
+export function emitSettingsSetExclusions(
+  p: SettingsSetExclusionsPayload,
+): Promise<void> {
+  return emit('settings-set-exclusions', p);
+}
+
+export function onSettingsSetExclusions(
+  cb: (p: SettingsSetExclusionsPayload) => void,
+): Promise<UnlistenFn> {
+  return on('settings-set-exclusions', cb);
 }
 
 export function emitSettingsSetPrefs(p: SettingsSetPrefsPayload): Promise<void> {

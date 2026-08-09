@@ -107,7 +107,12 @@ pub fn write_config_to(dir: &Path, config: &AppConfig) -> io::Result<()> {
 pub fn read_config(app: tauri::AppHandle) -> Option<AppConfig> {
     let dir = config_dir()?;
     let cfg = read_config_from(&dir)?;
-    crate::tracker::set_exclusions(cfg.exclusions.clone());
+    // Task 19: an exclusion-list change re-sweeps the desktop so the live
+    // eligible set (and the brain, via the emitted diff events) converges
+    // without a restart.
+    if crate::tracker::set_exclusions(cfg.exclusions.clone()) {
+        crate::tracker::resync();
+    }
     crate::shell::sync_from_config(&app, &cfg);
     Some(cfg)
 }
@@ -117,7 +122,10 @@ pub fn read_config(app: tauri::AppHandle) -> Option<AppConfig> {
 /// with what is being persisted.
 #[tauri::command]
 pub fn write_config(app: tauri::AppHandle, config: AppConfig) -> Result<(), String> {
-    crate::tracker::set_exclusions(config.exclusions.clone());
+    // Task 19: see read_config — exclusion edits take effect live.
+    if crate::tracker::set_exclusions(config.exclusions.clone()) {
+        crate::tracker::resync();
+    }
     crate::shell::sync_from_config(&app, &config);
     let dir = config_dir().ok_or_else(|| "APPDATA is not set".to_string())?;
     write_config_to(&dir, &config).map_err(|e| {

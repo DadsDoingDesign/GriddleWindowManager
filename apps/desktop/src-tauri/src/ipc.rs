@@ -159,6 +159,8 @@ pub struct StateSnapshot {
     /// gridId -> tiles in placement order.
     pub tiles: HashMap<String, Vec<TileSnapshot>>,
     pub floating: Vec<FloatingWindow>,
+    /// Live exclusion list, lowercase exe names (Task 19 extension).
+    pub exclusions: Vec<String>,
     pub paused: bool,
 }
 

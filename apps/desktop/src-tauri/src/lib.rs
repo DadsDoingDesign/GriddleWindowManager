@@ -51,6 +51,20 @@ pub fn run() {
             // Register the default hotkey now; read_config re-registers the
             // user's binding as soon as the brain host loads the config.
             shell::apply_hotkey(app.handle(), shell::DEFAULT_HOTKEY);
+            // First run (plan Task 19): no readable config on disk means
+            // nothing is set up yet — open the settings window, whose
+            // welcome page explains the app and offers a monitor picker.
+            // (A corrupt config gets quarantined here exactly as the brain
+            // host's later read_config would have done; peeking never
+            // creates the file.)
+            let first_run = config::config_dir()
+                .is_none_or(|dir| config::read_config_from(&dir).is_none());
+            if first_run {
+                log::info!("no config found; opening first-run settings window");
+                if let Err(e) = shell::open_settings(app.handle()) {
+                    log::error!("first-run: failed to open settings: {e}");
+                }
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

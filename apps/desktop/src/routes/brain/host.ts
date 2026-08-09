@@ -38,6 +38,7 @@ import {
   onSettingsMove,
   onSettingsReady,
   onSettingsSetDims,
+  onSettingsSetExclusions,
   onSettingsSetMode,
   onSettingsSetPrefs,
   onTrayToggleGrid,
@@ -322,6 +323,10 @@ export async function startBrainHost(): Promise<BrainHost> {
     }),
     onSettingsApplyTemplate((p) => brain.applyTemplate(p.gridId, p.templateId)),
     onSettingsDeleteTemplate((p) => brain.deleteTemplate(p.templateId)),
+    // Settings window → brain (plan Task 19): exclusions editor. The brain
+    // unmanages newly excluded windows immediately; the debounced config
+    // save then re-syncs the tracker's live filter (write_config).
+    onSettingsSetExclusions((p) => brain.setExclusions(p.exclusions)),
     // Shell events (plan Task 18): Rust's authoritative pause flag is
     // mirrored into the brain (persists + updates the settings UI via the
     // snapshot); the settings General card sends autostart/hotkey prefs; the

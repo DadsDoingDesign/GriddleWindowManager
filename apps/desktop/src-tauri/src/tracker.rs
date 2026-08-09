@@ -27,7 +27,7 @@
 //! authority the contract C2 security rule checks against: `apply_layout` /
 //! `focus_window` (Task 11) must refuse hwnds that are not in this set.
 
-use crate::ipc::WindowInfo;
+use crate::ipc::{Hwnd, WindowInfo};
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
@@ -110,10 +110,45 @@ fn exclusions_lock() -> &'static Mutex<Vec<String>> {
 
 /// Replace the exclusion list (lowercase exe basenames). Called when config
 /// loads/changes (Task 12+); entries are normalized to lowercase here so the
-/// pure filter can compare verbatim.
-pub fn set_exclusions(exes: Vec<String>) {
+/// pure filter can compare verbatim. Returns `true` when the stored list
+/// actually changed — the caller then owes a [`resync`] so exclusion edits
+/// take effect on live windows without a restart (Task 19).
+pub fn set_exclusions(exes: Vec<String>) -> bool {
+    let normalized: Vec<String> = exes.into_iter().map(|e| e.to_ascii_lowercase()).collect();
     let mut lock = exclusions_lock().lock().unwrap_or_else(|p| p.into_inner());
-    *lock = exes.into_iter().map(|e| e.to_ascii_lowercase()).collect();
+    if *lock == normalized {
+        return false;
+    }
+    *lock = normalized;
+    true
+}
+
+/// Pure diff behind [`resync`]: which tracked hwnds are gone from a fresh
+/// snapshot (→ `window-destroyed`) and which snapshot windows are new
+/// (→ `window-appeared`). Gone hwnds are returned in ascending order for
+/// deterministic emission.
+pub(crate) fn diff_live_set(
+    before: &HashMap<isize, WindowInfo>,
+    after: &[WindowInfo],
+) -> (Vec<Hwnd>, Vec<WindowInfo>) {
+    let after_keys: std::collections::HashSet<isize> =
+        after.iter().filter_map(|w| w.hwnd.parse().ok()).collect();
+    let mut gone: Vec<isize> = before
+        .keys()
+        .copied()
+        .filter(|k| !after_keys.contains(k))
+        .collect();
+    gone.sort_unstable();
+    let appeared: Vec<WindowInfo> = after
+        .iter()
+        .filter(|w| {
+            w.hwnd
+                .parse::<isize>()
+                .is_ok_and(|k| !before.contains_key(&k))
+        })
+        .cloned()
+        .collect();
+    (gone.into_iter().map(|k| k.to_string()).collect(), appeared)
 }
 
 /// Current exclusion list (lowercase exe basenames).
@@ -206,7 +241,7 @@ pub fn list_windows() -> Vec<WindowInfo> {
 }
 
 #[cfg(windows)]
-pub use win::{is_eligible, snapshot, start_tracker};
+pub use win::{is_eligible, resync, snapshot, start_tracker};
 #[cfg(windows)]
 pub(crate) use win::extended_frame_bounds;
 
@@ -218,11 +253,14 @@ pub fn snapshot() -> Vec<WindowInfo> {
 #[cfg(not(windows))]
 pub fn start_tracker(_app: tauri::AppHandle) {}
 
+#[cfg(not(windows))]
+pub fn resync() {}
+
 #[cfg(windows)]
 mod win {
     use super::{
-        exclusions, insert_tracked, is_eligible_probe, is_tracked, remove_tracked, reseed_tracked,
-        style_bits, tracked_map, WindowProbe,
+        diff_live_set, exclusions, insert_tracked, is_eligible_probe, is_tracked, remove_tracked,
+        reseed_tracked, style_bits, tracked_map, WindowProbe,
     };
     use crate::ipc::{events, HwndPayload, MoveSizeEnd, WindowInfo};
     use crate::monitors::monitor_id;
@@ -413,6 +451,34 @@ mod win {
         }
         reseed_tracked(&out);
         out
+    }
+
+    /// Re-sweep the desktop after an eligibility input changed (exclusion
+    /// list edit, plan Task 19) and translate the difference into contract C2
+    /// events: windows that left the managed universe emit
+    /// `window-destroyed`, newly eligible ones emit `window-appeared`. The
+    /// sweep itself reseeds the live set, so the security rule is truthful
+    /// the moment this returns.
+    pub fn resync() {
+        let before = tracked_map()
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone();
+        let after = snapshot();
+        let (gone, appeared) = diff_live_set(&before, &after);
+        if !gone.is_empty() || !appeared.is_empty() {
+            log::info!(
+                "tracker resync: {} window(s) left, {} appeared",
+                gone.len(),
+                appeared.len()
+            );
+        }
+        for hwnd in gone {
+            emit(events::WINDOW_DESTROYED, HwndPayload { hwnd });
+        }
+        for w in appeared {
+            emit(events::WINDOW_APPEARED, w);
+        }
     }
 
     unsafe extern "system" fn enum_windows_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
@@ -797,11 +863,49 @@ mod tests {
     // -- exclusion-list state ------------------------------------------------
 
     #[test]
-    fn set_exclusions_normalizes_to_lowercase() {
-        set_exclusions(vec!["Slack.EXE".into(), "FIGMA.exe".into()]);
+    fn set_exclusions_normalizes_to_lowercase_and_reports_changes() {
+        assert!(set_exclusions(vec!["Slack.EXE".into(), "FIGMA.exe".into()]));
         assert_eq!(exclusions(), vec!["slack.exe", "figma.exe"]);
-        set_exclusions(Vec::new());
+        // Same normalized content (case differences only) is not a change.
+        assert!(!set_exclusions(vec!["slack.exe".into(), "Figma.EXE".into()]));
+        assert!(set_exclusions(Vec::new()));
         assert!(exclusions().is_empty());
+        assert!(!set_exclusions(Vec::new()));
+    }
+
+    // -- resync diff (plan Task 19) -------------------------------------------
+
+    #[test]
+    fn diff_live_set_reports_gone_and_appeared() {
+        let before = HashMap::from([(10, fake_info(10)), (20, fake_info(20))]);
+        let after = vec![fake_info(20), fake_info(30)];
+        let (gone, appeared) = diff_live_set(&before, &after);
+        assert_eq!(gone, vec!["10".to_string()]);
+        assert_eq!(
+            appeared.iter().map(|w| w.hwnd.as_str()).collect::<Vec<_>>(),
+            vec!["30"]
+        );
+    }
+
+    #[test]
+    fn diff_live_set_of_identical_sets_is_empty() {
+        let before = HashMap::from([(10, fake_info(10)), (20, fake_info(20))]);
+        let after = vec![fake_info(10), fake_info(20)];
+        let (gone, appeared) = diff_live_set(&before, &after);
+        assert!(gone.is_empty());
+        assert!(appeared.is_empty());
+    }
+
+    #[test]
+    fn diff_live_set_gone_hwnds_are_sorted_ascending() {
+        let before = HashMap::from([
+            (30, fake_info(30)),
+            (10, fake_info(10)),
+            (20, fake_info(20)),
+        ]);
+        let (gone, appeared) = diff_live_set(&before, &[]);
+        assert_eq!(gone, vec!["10".to_string(), "20".into(), "30".into()]);
+        assert!(appeared.is_empty());
     }
 
     // -- live-set bookkeeping -------------------------------------------------

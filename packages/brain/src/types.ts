@@ -107,11 +107,14 @@ export interface FloatingWindow {
 // Payload of the `state-snapshot` event (contract §C2).
 // Contract extension (Task 3): `floating` lists eligible windows a full grid
 // could not fit — they float free until space opens up.
+// Contract extension (Task 19): `exclusions` carries the live exclusion list
+// (lowercase exe names) so the settings editor always shows the truth.
 export interface StateSnapshot {
   grids: GridSettings[];
   templates: Template[];
   tiles: Record<string, TileSnapshot[]>; // gridId -> tiles in placement order
   floating: FloatingWindow[];
+  exclusions: string[];
   paused: boolean;
 }
 

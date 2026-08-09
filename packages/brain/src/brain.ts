@@ -807,6 +807,46 @@ export class WindowManagerBrain {
     if (changed) this.emitSnapshot();
   }
 
+  /**
+   * Contract extension (Task 19): replace the exclusion list. Entries are
+   * normalized (trim, lowercase, dedupe, empties dropped). Every managed
+   * window of a newly excluded exe is unmanaged on the spot: its tile is
+   * removed and the window stays exactly where it is — no move is emitted
+   * for it or its neighbors (no auto-compact, same as minimize). Removing an
+   * exclusion re-manages nothing by itself: the tracker's resync re-announces
+   * those windows through the normal `window-appeared` flow. A normalized
+   * list identical to the current one is a no-op (no snapshot).
+   */
+  setExclusions(exes: string[]): void {
+    const next = new Set<string>();
+    for (const e of exes) {
+      const exe = e.trim().toLowerCase();
+      if (exe.length > 0) next.add(exe);
+    }
+    const same =
+      next.size === this.exclusions.size &&
+      [...next].every((e) => this.exclusions.has(e));
+    if (same) return;
+    this.exclusions = next;
+
+    for (const [hwnd, info] of [...this.windows]) {
+      if (!next.has(info.exe)) continue;
+      this.cancelDrag(hwnd);
+      const gridId = this.tileGrid.get(hwnd);
+      if (gridId !== undefined) {
+        this.grids.get(gridId)?.grid.removeTile(hwnd);
+        this.tileGrid.delete(hwnd);
+      }
+      this.floating.delete(hwnd);
+      this.remembered.delete(hwnd);
+      this.windows.delete(hwnd);
+      this.recency.delete(hwnd);
+      this.appliedRects.delete(hwnd);
+    }
+    this.flush(); // removals shift nothing (gravity 'none'); defensive only
+    this.emitSnapshot();
+  }
+
   // ── internals ──────────────────────────────────────────────────────────
 
   /** Mark `hwnd` as the most recently interacted-with window. */
@@ -1428,6 +1468,7 @@ export class WindowManagerBrain {
       templates: [...this.templates],
       tiles,
       floating,
+      exclusions: [...this.exclusions],
       paused: this.paused,
     });
   }
