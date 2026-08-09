@@ -1,4 +1,4 @@
-# Deferred items — Griddle WM v0.1.0
+# Deferred items — Griddle WM v0.1.0 → v0.2.0
 
 Everything consciously *not* done for v0.1.0, collected from the design spec
 (§6, §7, §10), the security review's accepted findings, and per-task commit
@@ -180,6 +180,58 @@ lost its create-vite boilerplate. Deliberately not done:
   "Experimental" badge plus the README's caveat line. If that smoke item
   ever *fails* (not merely goes unrun), the creation UI gets cut for 0.1.0
   and the brain support stays dark.
+
+## v0.2.0 critique round — decisions and deferrals
+
+Triage of the spacing / app-rules / startup-views critique. Everything the
+panel raised as **blocking or important was fixed** (git log: context-menu
+label redesign with a non-truncatable exe header, the Views card's
+"a view doesn't launch programs" + templates-vs-views + claim-precedence
+copy, armed two-step view deletion, the card reorder putting App defaults and
+Views above General/Excluded, and claims honored by the monitor-hotplug
+revive path). The minor batch landed too: a visible spacing hint line, honest
+gap-coercion display on the steppers, "Update…" labels when a rule already
+exists, mini SVG slot previews on rule rows, the General→Views
+cross-reference, aligned capture verbs, press-and-hold stepper repeat,
+dead-space repair after `setSpacing`/`setMonitors` (plus a spanning grid in
+the fuzz harness), constructor-side config normalization, a pause-frozen
+claim window, and the refreshed security-review inventory.
+
+Deliberately **not** done:
+
+- **Clamping the gap stepper's maximum to the largest non-coerced value.**
+  The critique offered this as an alternative to showing the coerced value;
+  showing it won. A hard clamp is wrong here because the cap is a function of
+  the *current* dims: a user who wants 48px on a grid they are about to make
+  coarser would find the stepper refusing a value that becomes legal one
+  click later, with no explanation. The stepper now reads "64px → 41px" with
+  a hint naming the cap, so the number on screen never disagrees with the
+  editor or the desktop, and lowering the column count immediately restores
+  the full gap.
+- **Debouncing the live re-apply behind the steppers.** Press-and-hold makes
+  the 0–64 range one gesture, but it does not reduce the number of full
+  re-layouts — each step still re-applies the grid. Coalescing them would buy
+  smoothness at the cost of the thing that makes spacing legible in the first
+  place (spec v0.2 §1: "changing either value live re-applies the grid in one
+  batch"), and `flush()` already emits only the tiles whose rect actually
+  changed. Revisit only if a real desktop with many windows visibly stutters
+  under a held button — it is a P0 line item in the v0.2.0 smoke pass.
+- **A grid-accurate preview for all-grids app rules.** The rule-row miniature
+  draws an `gridId: null` rule against the first enabled grid's dims, because
+  such a rule genuinely has no single home and its slot re-clamps per grid.
+  Drawing one miniature per grid would turn a one-line list row into a
+  gallery; the text summary remains the authoritative, accessible label and
+  the scope chip already says "All grids".
+- **Non-resizable windows and spanning dead space.** `desiredRect` keeps a
+  non-resizable window's own size and clamps it into the grid's *effective*
+  area, so an oversized window pinned near an L-shaped union's seam can still
+  overhang dead space even though its slot is usable. Fixing it properly
+  means either shrinking such windows (which the "position-snap only" rule
+  forbids, spec §5.4) or a nearest-fully-covered-position search that has no
+  answer when the window is wider than every covered strip. Same drift class
+  as the accepted external-move item above; the fuzz gate's spanning
+  invariants are therefore stated over in-flow tiles and cell usability
+  rather than over every emitted rect.
 
 ## Upstream library feedback (@griddle/core, @griddle/svelte)
 

@@ -10,10 +10,12 @@
   import {
     DEFAULT_HOTKEY,
     MAX_SPACING_PX,
+    effectiveSpacing,
     unionWorkArea,
     type AppRule,
     type GridSettings,
     type MonitorInfo,
+    type Slot,
     type StateSnapshot,
     type View,
     type WindowInfo,
@@ -53,6 +55,63 @@
    * actually use; the brain accepts any integer in range.
    */
   const SPACING_STEP = 4;
+  /**
+   * Press-and-hold auto-repeat for every stepper button (critique round):
+   * 4px per click meant 16 clicks to cross the 0–64 spacing range, and
+   * cols/rows had the same problem. Hold delay is long enough that a normal
+   * click never repeats.
+   */
+  const HOLD_DELAY_MS = 400;
+  const HOLD_REPEAT_MS = 110;
+
+  /**
+   * Svelte action: while the button is held down, keep running `run` after a
+   * short delay. The button's own `onclick` still fires once on release, so a
+   * plain click behaves exactly as before. Repeating stops the moment the
+   * button becomes disabled (a stepper hitting its bound), on pointer
+   * release/cancel anywhere, and when the window loses focus.
+   */
+  function holdRepeat(node: HTMLButtonElement, run: () => void) {
+    let fire = run;
+    let startTimer: ReturnType<typeof setTimeout> | null = null;
+    let repeatTimer: ReturnType<typeof setInterval> | null = null;
+    const stop = () => {
+      if (startTimer !== null) clearTimeout(startTimer);
+      if (repeatTimer !== null) clearInterval(repeatTimer);
+      startTimer = null;
+      repeatTimer = null;
+    };
+    const onDown = (e: PointerEvent) => {
+      if (e.button !== 0 || node.disabled) return;
+      stop();
+      startTimer = setTimeout(() => {
+        startTimer = null;
+        repeatTimer = setInterval(() => {
+          if (node.disabled) {
+            stop();
+            return;
+          }
+          fire();
+        }, HOLD_REPEAT_MS);
+      }, HOLD_DELAY_MS);
+    };
+    node.addEventListener('pointerdown', onDown);
+    window.addEventListener('pointerup', stop);
+    window.addEventListener('pointercancel', stop);
+    window.addEventListener('blur', stop);
+    return {
+      update(next: () => void) {
+        fire = next;
+      },
+      destroy() {
+        stop();
+        node.removeEventListener('pointerdown', onDown);
+        window.removeEventListener('pointerup', stop);
+        window.removeEventListener('pointercancel', stop);
+        window.removeEventListener('blur', stop);
+      },
+    };
+  }
 
   let monitors: MonitorInfo[] = $state([]);
   let snapshot: StateSnapshot | null = $state(null);
@@ -138,6 +197,7 @@
   });
   onDestroy(() => {
     for (const u of unlisteners) u();
+    if (viewDisarmTimer !== null) clearTimeout(viewDisarmTimer);
   });
 
   function gridFor(monitorId: string): GridSettings | undefined {
@@ -207,10 +267,53 @@
     void emitSettingsSetMode({ gridId: grid.id, mode });
   }
 
-  /** Live gap/padding of a monitor's grid; 0 until one exists. */
-  function spacingFor(mon: MonitorInfo): { gap: number; padding: number } {
-    const g = gridFor(mon.id);
-    return { gap: g?.gap ?? 0, padding: g?.padding ?? 0 };
+  /**
+   * A grid's stored gap/padding *and* the gap actually in force (critique
+   * round). When `gap*(cols-1)` would leave cells under 16px the brain
+   * coerces the gap down (spec v0.2 §1) — the editor preview and the desktop
+   * then show a smaller gutter than the stepper's stored number. Surfacing
+   * both keeps the stepper from disagreeing with the pixels underneath it.
+   */
+  interface SpacingView {
+    gap: number;
+    padding: number;
+    effGapX: number;
+    effGapY: number;
+    coerced: boolean;
+  }
+
+  function spacingView(
+    mon: MonitorInfo | null,
+    g: GridSettings | undefined,
+  ): SpacingView {
+    const gap = g?.gap ?? 0;
+    const padding = g?.padding ?? 0;
+    if (!mon || !g) {
+      return { gap, padding, effGapX: gap, effGapY: gap, coerced: false };
+    }
+    const eff = effectiveSpacing(mon, { cols: g.cols, rows: g.rows, gap, padding });
+    return {
+      gap,
+      padding,
+      effGapX: eff.gapX,
+      effGapY: eff.gapY,
+      coerced: eff.gapX < gap || eff.gapY < gap,
+    };
+  }
+
+  /** "8px", or "64px → 41px" when the grid coerces the gap down. */
+  function gapLabel(s: SpacingView): string {
+    if (!s.coerced) return `${s.gap}px`;
+    const eff =
+      s.effGapX === s.effGapY ? `${s.effGapX}px` : `${s.effGapX}/${s.effGapY}px`;
+    return `${s.gap}px → ${eff}`;
+  }
+
+  /** The capped value named in the hint sentence. */
+  function cappedGap(s: SpacingView): string {
+    return s.effGapX === s.effGapY
+      ? `${s.effGapX}px`
+      : `${s.effGapX}px across and ${s.effGapY}px down`;
   }
 
   /** Spacing steppers (spec v0.2 §1) — the brain clamps and re-applies live. */
@@ -431,6 +534,33 @@
     return `${s.w}×${s.h} · column ${s.col + 1}, row ${s.row + 1}`;
   }
 
+  /**
+   * Dims to draw a rule's slot against (critique round): its own grid when
+   * the rule names one, else the first enabled grid — an all-grids rule has
+   * no single home, so the preview shows where it lands on the grid the user
+   * is most likely looking at. Null when no grid is known at all, which
+   * simply drops the preview; the text summary stays the accessible truth.
+   */
+  function ruleDims(rule: AppRule): { cols: number; rows: number } | null {
+    const grids = snapshot?.grids ?? [];
+    const own =
+      rule.gridId !== null ? grids.find((g) => g.id === rule.gridId) : undefined;
+    const g = own ?? grids.find((x) => x.enabled) ?? grids[0];
+    return g ? { cols: g.cols, rows: g.rows } : null;
+  }
+
+  /** Rule slots are stored unbounded and clamp when they fire — do the same. */
+  function clampRuleSlot(s: Slot, dims: { cols: number; rows: number }): Slot {
+    const w = clamp(s.w, 1, dims.cols);
+    const h = clamp(s.h, 1, dims.rows);
+    return {
+      col: clamp(s.col, 0, dims.cols - w),
+      row: clamp(s.row, 0, dims.rows - h),
+      w,
+      h,
+    };
+  }
+
   function removeAppRule(rule: AppRule): void {
     void emitSettingsRemoveAppRule({ exe: rule.exe, gridId: rule.gridId });
   }
@@ -479,6 +609,31 @@
   function deleteView(viewId: string): void {
     if (renamingViewId === viewId) renamingViewId = null;
     void emitSettingsDeleteView({ viewId });
+  }
+
+  /**
+   * Two-step armed delete (critique round), the same guard TemplateGallery
+   * uses — a view is the richer object (every grid, its spacing, every app
+   * assignment, possibly the startup selection) and there is no undo, so it
+   * cannot be weaker than a template's. WebView2 dialogs are disabled, hence
+   * arm-and-confirm rather than a native confirm.
+   */
+  let armedDeleteViewId: string | null = $state(null);
+  let viewDisarmTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function requestDeleteView(view: View): void {
+    if (viewDisarmTimer !== null) clearTimeout(viewDisarmTimer);
+    viewDisarmTimer = null;
+    if (armedDeleteViewId === view.id) {
+      armedDeleteViewId = null;
+      deleteView(view.id);
+      return;
+    }
+    armedDeleteViewId = view.id;
+    viewDisarmTimer = setTimeout(() => {
+      armedDeleteViewId = null;
+      viewDisarmTimer = null;
+    }, 2500);
   }
 
   function setStartupView(viewId: string | null): void {
@@ -627,7 +782,7 @@
     {@const spanned = spanFor(mon.id)}
     {@const enabled = grid?.enabled ?? false}
     {@const dims = dimsFor(mon)}
-    {@const spacing = spacingFor(mon)}
+    {@const spacing = spacingView(mon, grid)}
     {@const tiles = (grid && snapshot?.tiles[grid.id]) || []}
     <section class="card">
       <div class="card-head">
@@ -665,13 +820,15 @@
           <button
             aria-label="Fewer columns"
             disabled={!enabled || dims.cols <= 1}
-            onclick={() => setDims(mon, dims.cols - 1, dims.rows)}>−</button
+            onclick={() => setDims(mon, dims.cols - 1, dims.rows)}
+            use:holdRepeat={() => setDims(mon, dims.cols - 1, dims.rows)}>−</button
           >
           <span class="val">{dims.cols}</span>
           <button
             aria-label="More columns"
             disabled={!enabled || dims.cols >= MAX_COLS}
-            onclick={() => setDims(mon, dims.cols + 1, dims.rows)}>+</button
+            onclick={() => setDims(mon, dims.cols + 1, dims.rows)}
+            use:holdRepeat={() => setDims(mon, dims.cols + 1, dims.rows)}>+</button
           >
         </div>
         <div class="stepper">
@@ -679,13 +836,15 @@
           <button
             aria-label="Fewer rows"
             disabled={!enabled || dims.rows <= 1}
-            onclick={() => setDims(mon, dims.cols, dims.rows - 1)}>−</button
+            onclick={() => setDims(mon, dims.cols, dims.rows - 1)}
+            use:holdRepeat={() => setDims(mon, dims.cols, dims.rows - 1)}>−</button
           >
           <span class="val">{dims.rows}</span>
           <button
             aria-label="More rows"
             disabled={!enabled || dims.rows >= MAX_ROWS}
-            onclick={() => setDims(mon, dims.cols, dims.rows + 1)}>+</button
+            onclick={() => setDims(mon, dims.cols, dims.rows + 1)}
+            use:holdRepeat={() => setDims(mon, dims.cols, dims.rows + 1)}>+</button
           >
         </div>
         {#if enabled && grid}
@@ -718,13 +877,23 @@
             disabled={!enabled || !grid || spacing.gap <= 0}
             onclick={() =>
               grid && setGridSpacing(grid, spacing.gap - SPACING_STEP, spacing.padding)}
+            use:holdRepeat={() =>
+              grid && setGridSpacing(grid, spacing.gap - SPACING_STEP, spacing.padding)}
             >−</button
           >
-          <span class="val px">{spacing.gap}px</span>
+          <span
+            class="val px"
+            class:coerced={spacing.coerced}
+            title={spacing.coerced
+              ? `Capped at ${cappedGap(spacing)} — this grid's cells are too small for ${spacing.gap}px`
+              : undefined}>{gapLabel(spacing)}</span
+          >
           <button
             aria-label="Larger gap"
             disabled={!enabled || !grid || spacing.gap >= MAX_SPACING_PX}
             onclick={() =>
+              grid && setGridSpacing(grid, spacing.gap + SPACING_STEP, spacing.padding)}
+            use:holdRepeat={() =>
               grid && setGridSpacing(grid, spacing.gap + SPACING_STEP, spacing.padding)}
             >+</button
           >
@@ -738,6 +907,8 @@
             disabled={!enabled || !grid || spacing.padding <= 0}
             onclick={() =>
               grid && setGridSpacing(grid, spacing.gap, spacing.padding - SPACING_STEP)}
+            use:holdRepeat={() =>
+              grid && setGridSpacing(grid, spacing.gap, spacing.padding - SPACING_STEP)}
             >−</button
           >
           <span class="val px">{spacing.padding}px</span>
@@ -746,10 +917,24 @@
             disabled={!enabled || !grid || spacing.padding >= MAX_SPACING_PX}
             onclick={() =>
               grid && setGridSpacing(grid, spacing.gap, spacing.padding + SPACING_STEP)}
+            use:holdRepeat={() =>
+              grid && setGridSpacing(grid, spacing.gap, spacing.padding + SPACING_STEP)}
             >+</button
           >
         </div>
       </div>
+      {#if !spanned}
+        <!-- The definitions used to live only in title tooltips on the two
+             labels — undiscoverable, and nothing at all for keyboard and
+             touch. Grid mode gets a visible hint; spacing needs one too. -->
+        <p class="hint" class:dimmed={!enabled}>
+          Gap spaces neighboring windows apart; padding insets the whole grid
+          from the monitor edges.{#if spacing.coerced}
+            This grid's cells are too small for a {spacing.gap}px gap, so it is
+            capped at {cappedGap(spacing)} — the editor below and your desktop
+            both show the capped value.{/if}
+        </p>
+      {/if}
       {#if enabled && grid && !spanned}
         <p class="hint">
           {grid.mode === 'collision'
@@ -792,6 +977,7 @@
     {@const members = spanMonitors(grid)}
     {@const union =
       members.length === grid.monitorIds.length ? unionWorkArea(members) : null}
+    {@const spacing = spacingView(union, grid)}
     {@const tiles = snapshot?.tiles[grid.id] ?? []}
     <section class="card">
       <div class="card-head">
@@ -825,13 +1011,15 @@
           <button
             aria-label="Fewer columns"
             disabled={grid.cols <= 1}
-            onclick={() => setSpanDims(grid, grid.cols - 1, grid.rows)}>−</button
+            onclick={() => setSpanDims(grid, grid.cols - 1, grid.rows)}
+            use:holdRepeat={() => setSpanDims(grid, grid.cols - 1, grid.rows)}>−</button
           >
           <span class="val">{grid.cols}</span>
           <button
             aria-label="More columns"
             disabled={grid.cols >= MAX_COLS}
-            onclick={() => setSpanDims(grid, grid.cols + 1, grid.rows)}>+</button
+            onclick={() => setSpanDims(grid, grid.cols + 1, grid.rows)}
+            use:holdRepeat={() => setSpanDims(grid, grid.cols + 1, grid.rows)}>+</button
           >
         </div>
         <div class="stepper">
@@ -839,13 +1027,15 @@
           <button
             aria-label="Fewer rows"
             disabled={grid.rows <= 1}
-            onclick={() => setSpanDims(grid, grid.cols, grid.rows - 1)}>−</button
+            onclick={() => setSpanDims(grid, grid.cols, grid.rows - 1)}
+            use:holdRepeat={() => setSpanDims(grid, grid.cols, grid.rows - 1)}>−</button
           >
           <span class="val">{grid.rows}</span>
           <button
             aria-label="More rows"
             disabled={grid.rows >= MAX_ROWS}
-            onclick={() => setSpanDims(grid, grid.cols, grid.rows + 1)}>+</button
+            onclick={() => setSpanDims(grid, grid.cols, grid.rows + 1)}
+            use:holdRepeat={() => setSpanDims(grid, grid.cols, grid.rows + 1)}>+</button
           >
         </div>
         <div class="segmented" role="group" aria-label="Grid mode">
@@ -877,13 +1067,23 @@
             disabled={(grid.gap ?? 0) <= 0}
             onclick={() =>
               setGridSpacing(grid, (grid.gap ?? 0) - SPACING_STEP, grid.padding ?? 0)}
+            use:holdRepeat={() =>
+              setGridSpacing(grid, (grid.gap ?? 0) - SPACING_STEP, grid.padding ?? 0)}
             >−</button
           >
-          <span class="val px">{grid.gap ?? 0}px</span>
+          <span
+            class="val px"
+            class:coerced={spacing.coerced}
+            title={spacing.coerced
+              ? `Capped at ${cappedGap(spacing)} — this grid's cells are too small for ${spacing.gap}px`
+              : undefined}>{gapLabel(spacing)}</span
+          >
           <button
             aria-label="Larger gap"
             disabled={(grid.gap ?? 0) >= MAX_SPACING_PX}
             onclick={() =>
+              setGridSpacing(grid, (grid.gap ?? 0) + SPACING_STEP, grid.padding ?? 0)}
+            use:holdRepeat={() =>
               setGridSpacing(grid, (grid.gap ?? 0) + SPACING_STEP, grid.padding ?? 0)}
             >+</button
           >
@@ -897,6 +1097,8 @@
             disabled={(grid.padding ?? 0) <= 0}
             onclick={() =>
               setGridSpacing(grid, grid.gap ?? 0, (grid.padding ?? 0) - SPACING_STEP)}
+            use:holdRepeat={() =>
+              setGridSpacing(grid, grid.gap ?? 0, (grid.padding ?? 0) - SPACING_STEP)}
             >−</button
           >
           <span class="val px">{grid.padding ?? 0}px</span>
@@ -905,10 +1107,19 @@
             disabled={(grid.padding ?? 0) >= MAX_SPACING_PX}
             onclick={() =>
               setGridSpacing(grid, grid.gap ?? 0, (grid.padding ?? 0) + SPACING_STEP)}
+            use:holdRepeat={() =>
+              setGridSpacing(grid, grid.gap ?? 0, (grid.padding ?? 0) + SPACING_STEP)}
             >+</button
           >
         </div>
       </div>
+      <p class="hint">
+        Gap spaces neighboring windows apart; padding insets the whole grid
+        from the union work-area edges.{#if spacing.coerced}
+          This grid's cells are too small for a {spacing.gap}px gap, so it is
+          capped at {cappedGap(spacing)} — the editor below and your desktop
+          both show the capped value.{/if}
+      </p>
       <p class="hint">
         {grid.mode === 'collision'
           ? 'Tile: windows push each other aside — they never overlap.'
@@ -981,6 +1192,7 @@
             aria-label="Fewer columns"
             disabled={spanDraft.cols <= 1}
             onclick={() => (spanDraft.cols = clamp(spanDraft.cols - 1, 1, MAX_COLS))}
+            use:holdRepeat={() => (spanDraft.cols = clamp(spanDraft.cols - 1, 1, MAX_COLS))}
             >−</button
           >
           <span class="val">{spanDraft.cols}</span>
@@ -988,6 +1200,7 @@
             aria-label="More columns"
             disabled={spanDraft.cols >= MAX_COLS}
             onclick={() => (spanDraft.cols = clamp(spanDraft.cols + 1, 1, MAX_COLS))}
+            use:holdRepeat={() => (spanDraft.cols = clamp(spanDraft.cols + 1, 1, MAX_COLS))}
             >+</button
           >
         </div>
@@ -997,6 +1210,7 @@
             aria-label="Fewer rows"
             disabled={spanDraft.rows <= 1}
             onclick={() => (spanDraft.rows = clamp(spanDraft.rows - 1, 1, MAX_ROWS))}
+            use:holdRepeat={() => (spanDraft.rows = clamp(spanDraft.rows - 1, 1, MAX_ROWS))}
             >−</button
           >
           <span class="val">{spanDraft.rows}</span>
@@ -1004,6 +1218,7 @@
             aria-label="More rows"
             disabled={spanDraft.rows >= MAX_ROWS}
             onclick={() => (spanDraft.rows = clamp(spanDraft.rows + 1, 1, MAX_ROWS))}
+            use:holdRepeat={() => (spanDraft.rows = clamp(spanDraft.rows + 1, 1, MAX_ROWS))}
             >+</button
           >
         </div>
@@ -1021,13 +1236,221 @@
     </section>
   {/if}
 
-  <!-- General sits above Excluded apps (critique round 3): startup and the
-       hotkey are universal settings; exclusions are an edge-case tool. -->
+  <!-- App defaults (spec v0.2 §2): the rules the tile context menu saves. -->
+  <section class="card">
+    <div class="card-head">
+      <div class="mon-info">
+        <h2>App defaults</h2>
+        <p class="meta">Where new windows of these programs are placed.</p>
+      </div>
+    </div>
+    {#if sortedAppRules.length > 0}
+      <ul class="rule-list">
+        {#each sortedAppRules as rule (`${rule.exe} ${rule.gridId ?? ''}`)}
+          {@const dims = ruleDims(rule)}
+          <li class="rule-row">
+            <!-- Coordinates alone make people map "column 4, row 1" onto
+                 their grid in their head; the miniature (same idea as the
+                 template previews) shows the spot. The text stays the
+                 accessible label — the drawing is decorative. -->
+            {#if dims}
+              {@const s = clampRuleSlot(rule.slot, dims)}
+              <svg
+                class="rule-preview"
+                viewBox="0 0 {dims.cols} {dims.rows}"
+                preserveAspectRatio="xMidYMid meet"
+                aria-hidden="true"
+              >
+                <rect
+                  class="frame"
+                  x="0.05"
+                  y="0.05"
+                  width={dims.cols - 0.1}
+                  height={dims.rows - 0.1}
+                  rx="0.3"
+                />
+                <rect
+                  class="slot"
+                  x={s.col + 0.1}
+                  y={s.row + 0.1}
+                  width={Math.max(s.w - 0.2, 0.1)}
+                  height={Math.max(s.h - 0.2, 0.1)}
+                  rx="0.25"
+                />
+              </svg>
+            {/if}
+            <code class="rule-exe">{rule.exe}</code>
+            <span class="rule-scope" class:all={rule.gridId === null}>
+              {ruleScope(rule)}
+            </span>
+            <span class="rule-slot">{ruleSlotSummary(rule)}</span>
+            <button
+              class="chip-x"
+              aria-label={`Remove default for ${rule.exe} (${ruleScope(rule)})`}
+              title="Remove this default"
+              onclick={() => removeAppRule(rule)}>×</button
+            >
+          </li>
+        {/each}
+      </ul>
+    {:else}
+      <p class="hint">
+        No defaults yet — right-click a window tile in a grid editor above and
+        choose “Save for this grid”.
+      </p>
+    {/if}
+    <p class="hint">
+      A default places every new window of that program into the saved cells.
+      A rule for a specific grid beats an all-grids rule; windows already on
+      screen never move when a default is saved or removed.
+    </p>
+  </section>
+
+  <!-- Views (spec v0.2 §3): whole-desktop snapshots + load-at-startup. -->
+  <section class="card">
+    <div class="card-head">
+      <div class="mon-info">
+        <h2>Views</h2>
+        <p class="meta">Snapshots of your grids and which app sits where.</p>
+      </div>
+    </div>
+    {#if views.length > 0}
+      <ul class="view-list">
+        {#each views as view (view.id)}
+          <li class="view-row">
+            {#if renamingViewId === view.id}
+              <input
+                class="view-rename"
+                type="text"
+                bind:value={renameDraft}
+                spellcheck="false"
+                aria-label={`New name for view ${view.name}`}
+                use:focusOnMount
+                onkeydown={(e) => {
+                  if (e.key === 'Enter') commitRename();
+                  if (e.key === 'Escape') renamingViewId = null;
+                }}
+                onblur={commitRename}
+              />
+            {:else}
+              <span class="view-name">{view.name}</span>
+            {/if}
+            <span class="view-summary">{viewSummary(view)}</span>
+            <div class="view-actions">
+              <button
+                class="quiet small"
+                title="Rebuild these grids and move every already-running saved app back to its place — this does not launch anything"
+                onclick={() => applyViewNow(view.id)}>Apply now</button
+              >
+              <button
+                class="quiet small"
+                onclick={() => startRename(view)}>Rename</button
+              >
+              <!-- Armed two-step, matching the template gallery: a view
+                   carries every grid, its spacing, every app assignment and
+                   possibly the startup choice, and there is no undo. -->
+              <button
+                class="quiet small danger"
+                class:armed={armedDeleteViewId === view.id}
+                aria-label={armedDeleteViewId === view.id
+                  ? `Confirm deleting view ${view.name}`
+                  : `Delete view ${view.name}`}
+                onclick={() => requestDeleteView(view)}
+              >
+                {armedDeleteViewId === view.id ? 'Sure?' : 'Delete'}
+              </button>
+            </div>
+          </li>
+        {/each}
+      </ul>
+      <div
+        class="controls startup-pick"
+        role="radiogroup"
+        aria-label="View to load at startup"
+      >
+        <span class="lbl">Load at startup</span>
+        <label class="pick">
+          <input
+            type="radio"
+            name="startup-view"
+            checked={startupViewId === null}
+            onchange={() => setStartupView(null)}
+          />
+          <span>None</span>
+        </label>
+        {#each views as view (view.id)}
+          <label class="pick">
+            <input
+              type="radio"
+              name="startup-view"
+              checked={startupViewId === view.id}
+              onchange={() => setStartupView(view.id)}
+            />
+            <span>{view.name}</span>
+          </label>
+        {/each}
+      </div>
+    {:else}
+      <p class="hint">
+        No views yet — arrange your windows the way you like, then capture the
+        whole arrangement here.
+      </p>
+    {/if}
+    <div class="controls">
+      <label class="field">
+        <span class="lbl">Name</span>
+        <input
+          class="view-input"
+          type="text"
+          placeholder="e.g. Deep work"
+          bind:value={viewNameDraft}
+          spellcheck="false"
+          onkeydown={(e) => {
+            if (e.key === 'Enter') captureCurrentView();
+          }}
+        />
+      </label>
+      <button
+        class="primary"
+        disabled={!viewNameValid || !anyGridEnabled}
+        onclick={captureCurrentView}>Capture view</button
+      >
+    </div>
+    {#if !anyGridEnabled}
+      <p class="hint">
+        Enable a grid first — a view saves your enabled grids and the windows
+        on them.
+      </p>
+    {/if}
+    <!-- Three things this card has to say plainly (critique round):
+         what a view is *versus* a template, that applying one places windows
+         but never starts programs, and that during the claim window a view
+         outranks the app defaults card above. -->
+    <p class="hint">
+      A template saves a slot arrangement for one grid; a view saves every
+      grid — dimensions, spacing — and remembers which program goes where.
+    </p>
+    <p class="hint">
+      Applying a view rebuilds its grids and puts each program's windows back
+      on their saved cells. It does not launch programs: apps already running,
+      or started within the next two minutes, land on their saved spots —
+      taking priority over app defaults during that window. With a startup
+      view, that covers the apps Windows relaunches after a reboot.
+    </p>
+  </section>
+
+  <!-- General and Excluded apps sit below the placement cards (critique
+       round, v0.2): App defaults and Views are what users come back to, and
+       they belong next to the grid editors that feed them. Within this pair
+       General still comes first (critique round 3) — universal settings
+       above an edge-case tool. -->
   <section class="card">
     <div class="card-head">
       <div class="mon-info">
         <h2>General</h2>
-        <p class="meta">Startup and the settings hotkey.</p>
+        <!-- Not "Startup": the startup *layout* lives in Views, and this
+             card must not claim to be its home. -->
+        <p class="meta">Launch at sign-in and the settings hotkey.</p>
       </div>
     </div>
     <div class="controls">
@@ -1066,6 +1489,10 @@
     <p class="hint">
       Global shortcut that opens this window — e.g. Ctrl+Win+G. If another
       app already owns the new combination, the previous one stays active.
+    </p>
+    <p class="hint">
+      Looking for what your desktop looks like after a restart? That's “Load
+      at startup” in the Views card above.
     </p>
   </section>
 
@@ -1137,162 +1564,6 @@
     <p class="hint">
       Excluding a program releases its windows immediately — they stay exactly
       where they are. Remove an entry and its windows are managed again.
-    </p>
-  </section>
-
-  <!-- App defaults (spec v0.2 §2): the rules the tile context menu saves. -->
-  <section class="card">
-    <div class="card-head">
-      <div class="mon-info">
-        <h2>App defaults</h2>
-        <p class="meta">Where new windows of these programs are placed.</p>
-      </div>
-    </div>
-    {#if sortedAppRules.length > 0}
-      <ul class="rule-list">
-        {#each sortedAppRules as rule (`${rule.exe} ${rule.gridId ?? ''}`)}
-          <li class="rule-row">
-            <code class="rule-exe">{rule.exe}</code>
-            <span class="rule-scope" class:all={rule.gridId === null}>
-              {ruleScope(rule)}
-            </span>
-            <span class="rule-slot">{ruleSlotSummary(rule)}</span>
-            <button
-              class="chip-x"
-              aria-label={`Remove default for ${rule.exe} (${ruleScope(rule)})`}
-              title="Remove this default"
-              onclick={() => removeAppRule(rule)}>×</button
-            >
-          </li>
-        {/each}
-      </ul>
-    {:else}
-      <p class="hint">
-        No defaults yet — right-click a window tile in a grid editor above and
-        choose “Save as default”.
-      </p>
-    {/if}
-    <p class="hint">
-      A default places every new window of that program into the saved cells.
-      A rule for a specific grid beats an all-grids rule; windows already on
-      screen never move when a default is saved or removed.
-    </p>
-  </section>
-
-  <!-- Views (spec v0.2 §3): whole-desktop snapshots + load-at-startup. -->
-  <section class="card">
-    <div class="card-head">
-      <div class="mon-info">
-        <h2>Views</h2>
-        <p class="meta">Snapshots of your grids and which app sits where.</p>
-      </div>
-    </div>
-    {#if views.length > 0}
-      <ul class="view-list">
-        {#each views as view (view.id)}
-          <li class="view-row">
-            {#if renamingViewId === view.id}
-              <input
-                class="view-rename"
-                type="text"
-                bind:value={renameDraft}
-                spellcheck="false"
-                aria-label={`New name for view ${view.name}`}
-                use:focusOnMount
-                onkeydown={(e) => {
-                  if (e.key === 'Enter') commitRename();
-                  if (e.key === 'Escape') renamingViewId = null;
-                }}
-                onblur={commitRename}
-              />
-            {:else}
-              <span class="view-name">{view.name}</span>
-            {/if}
-            <span class="view-summary">{viewSummary(view)}</span>
-            <div class="view-actions">
-              <button
-                class="quiet small"
-                title="Rebuild these grids and put every saved app back in its place"
-                onclick={() => applyViewNow(view.id)}>Apply now</button
-              >
-              <button
-                class="quiet small"
-                onclick={() => startRename(view)}>Rename</button
-              >
-              <button
-                class="chip-x"
-                aria-label={`Delete view ${view.name}`}
-                title="Delete this view"
-                onclick={() => deleteView(view.id)}>×</button
-              >
-            </div>
-          </li>
-        {/each}
-      </ul>
-      <div
-        class="controls startup-pick"
-        role="radiogroup"
-        aria-label="View to load at startup"
-      >
-        <span class="lbl">Load at startup</span>
-        <label class="pick">
-          <input
-            type="radio"
-            name="startup-view"
-            checked={startupViewId === null}
-            onchange={() => setStartupView(null)}
-          />
-          <span>None</span>
-        </label>
-        {#each views as view (view.id)}
-          <label class="pick">
-            <input
-              type="radio"
-              name="startup-view"
-              checked={startupViewId === view.id}
-              onchange={() => setStartupView(view.id)}
-            />
-            <span>{view.name}</span>
-          </label>
-        {/each}
-      </div>
-    {:else}
-      <p class="hint">
-        No views yet — arrange your windows the way you like, then save the
-        whole arrangement here.
-      </p>
-    {/if}
-    <div class="controls">
-      <label class="field">
-        <span class="lbl">Name</span>
-        <input
-          class="view-input"
-          type="text"
-          placeholder="e.g. Deep work"
-          bind:value={viewNameDraft}
-          spellcheck="false"
-          onkeydown={(e) => {
-            if (e.key === 'Enter') captureCurrentView();
-          }}
-        />
-      </label>
-      <button
-        class="primary"
-        disabled={!viewNameValid || !anyGridEnabled}
-        onclick={captureCurrentView}>Save current as view</button
-      >
-    </div>
-    {#if !anyGridEnabled}
-      <p class="hint">
-        Enable a grid first — a view saves your enabled grids and the windows
-        on them.
-      </p>
-    {/if}
-    <p class="hint">
-      Applying a view restores its grids and puts each program's windows back
-      on their saved cells. Programs that start within the next two minutes
-      still land on their saved spots — with a startup view, that covers the
-      apps Windows relaunches after a reboot.
     </p>
   </section>
 
@@ -1588,6 +1859,13 @@
   .stepper .val.px {
     min-width: 38px;
   }
+  /* "64px → 41px" when the grid coerces the gap down: wider, and dimmed so
+     the arrow reads as a consequence rather than a second setting. */
+  .stepper .val.px.coerced {
+    min-width: 92px;
+    font-size: 12.5px;
+    color: var(--text-dim);
+  }
 
   .segmented {
     display: inline-flex;
@@ -1632,6 +1910,10 @@
     font-size: 12px;
     color: var(--text-dim);
   }
+  /* Matches the dimming of the disabled controls the hint explains. */
+  .hint.dimmed {
+    opacity: 0.55;
+  }
 
   .quiet {
     border: 1px solid var(--border);
@@ -1646,6 +1928,13 @@
   .quiet:hover {
     border-color: var(--accent);
     color: var(--text);
+  }
+  /* Armed destructive action, same palette as the template gallery's. */
+  .quiet.danger:hover,
+  .quiet.danger.armed {
+    border-color: rgba(245, 101, 101, 0.6);
+    background: rgba(245, 101, 101, 0.12);
+    color: #f56565;
   }
 
   /* First-run (plan Task 19) */
@@ -1826,6 +2115,28 @@
     border-radius: 9px;
     background: var(--well);
     padding: 6px 8px 6px 12px;
+  }
+  /* Miniature of the rule's slot inside its grid — the same visual idea as
+     the template gallery's previews, so the two read as one language. */
+  .rule-preview {
+    width: 34px;
+    height: 20px;
+    flex: none;
+    display: block;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.03);
+  }
+  .rule-preview .frame {
+    fill: none;
+    stroke: var(--border);
+    stroke-width: 1px;
+    vector-effect: non-scaling-stroke;
+  }
+  .rule-preview .slot {
+    fill: rgba(139, 124, 246, 0.35);
+    stroke: rgba(139, 124, 246, 0.8);
+    stroke-width: 1px;
+    vector-effect: non-scaling-stroke;
   }
   .rule-exe {
     font-family: var(--mono);

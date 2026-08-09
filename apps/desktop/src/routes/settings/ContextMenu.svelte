@@ -23,10 +23,16 @@
     y: number;
     /** Accessible name of the menu. */
     label: string;
+    /**
+     * Optional non-interactive title row. Item labels are short and fixed —
+     * anything variable-length (an exe name) belongs here, where truncation
+     * costs context instead of meaning.
+     */
+    header?: string;
     items: MenuItem[];
     onclose: () => void;
   }
-  const { x, y, label, items, onclose }: Props = $props();
+  const { x, y, label, header, items, onclose }: Props = $props();
 
   /** Gap kept between the menu and the viewport edges when clamping. */
   const EDGE_MARGIN = 6;
@@ -139,6 +145,9 @@
   onkeydown={onKeydown}
   oncontextmenu={(e) => e.preventDefault()}
 >
+  {#if header}
+    <div class="menu-header" aria-hidden="true">{header}</div>
+  {/if}
   {#each items as item, i (i)}
     <button
       type="button"
@@ -166,6 +175,17 @@
     border-radius: 10px;
     background: var(--card);
     box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  }
+
+  /* Non-interactive title. The exe can be long, so it wraps and breaks
+     rather than eating the room the item labels need. */
+  .menu-header {
+    padding: 6px 10px 7px;
+    margin-bottom: 2px;
+    border-bottom: 1px solid var(--border);
+    font: 600 11.5px/1.35 var(--sans);
+    color: var(--text-dim);
+    overflow-wrap: anywhere;
   }
 
   button {

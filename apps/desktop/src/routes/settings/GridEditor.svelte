@@ -191,34 +191,48 @@
     return m ? infoByHwnd.get(m.hwnd) : undefined;
   });
 
+  /**
+   * Menu entries (critique round). Every label is short and fixed-length,
+   * and the differentiating word ("this grid" / "all grids") is never at the
+   * end of a variable-length string: the exe lives in the menu's header row
+   * instead. With the menu's nowrap+ellipsis at 340px, a long exe
+   * (msedgewebview2.exe, ApplicationFrameHost.exe) used to truncate exactly
+   * the part that told the four entries apart.
+   *
+   * Save vs Update: the menu already knows whether a rule exists for a scope
+   * (it decides the Remove entries on it), so the save entry says which it
+   * is instead of calling an overwrite "Save".
+   */
   const menuItems = $derived.by((): MenuItem[] => {
     const t = menuTile;
     if (!t || t.exe === '') return [];
     const { exe, slot } = t;
+    const hasGridRule = appRules.some((r) => r.exe === exe && r.gridId === gridId);
+    const hasAnyRule = appRules.some((r) => r.exe === exe && r.gridId === null);
     const items: MenuItem[] = [
       {
-        label: `Save as default for ${exe} on this grid`,
+        label: hasGridRule ? 'Update for this grid' : 'Save for this grid',
         action: () =>
           void emitSettingsSetAppRule({ rule: { exe, gridId, slot: { ...slot } } }),
       },
       {
-        label: `Save as default for ${exe} on all grids`,
+        label: hasAnyRule ? 'Update for all grids' : 'Save for all grids',
         action: () =>
           void emitSettingsSetAppRule({ rule: { exe, gridId: null, slot: { ...slot } } }),
       },
     ];
     // Remove entries appear only for rules that exist, one per scope — the
     // menu never pretends there is something to remove.
-    if (appRules.some((r) => r.exe === exe && r.gridId === gridId)) {
+    if (hasGridRule) {
       items.push({
-        label: `Remove default for ${exe} on this grid`,
+        label: 'Remove for this grid',
         danger: true,
         action: () => void emitSettingsRemoveAppRule({ exe, gridId }),
       });
     }
-    if (appRules.some((r) => r.exe === exe && r.gridId === null)) {
+    if (hasAnyRule) {
       items.push({
-        label: `Remove default for ${exe} on all grids`,
+        label: 'Remove for all grids',
         danger: true,
         action: () => void emitSettingsRemoveAppRule({ exe, gridId: null }),
       });
@@ -297,6 +311,7 @@
     x={menu.x}
     y={menu.y}
     label={`App default for ${menuTile?.exe ?? ''}`}
+    header={`${menuTile?.exe ?? ''} — default spot`}
     items={menuItems}
     onclose={() => (menu = null)}
   />

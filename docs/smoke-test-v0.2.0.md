@@ -44,7 +44,19 @@ On a Tile grid with a few managed windows:
       monitor edge while padding is on.
 - [ ] Set an extreme combination (many columns + gap 64) on a small/scaled
       monitor: cells visibly refuse to collapse (gap coerces down instead
-      of producing sliver cells), and nothing overlaps.
+      of producing sliver cells), and nothing overlaps. The stepper itself
+      must say so — it reads "64px → \<smaller\>px" and the hint under the
+      row explains the cap. The number shown must match the gutters in the
+      editor preview and on the desktop.
+- [ ] **Spacing is explained without hovering**: with the mouse parked away
+      from the controls, the sentence "Gap spaces neighboring windows apart;
+      padding insets the whole grid from the monitor edges." is visible under
+      the Gap/Padding row (also reachable by keyboard — Tab through the
+      steppers, nothing important is tooltip-only).
+- [ ] **Press-and-hold**: hold the Gap "+" button down — after a short pause
+      the value climbs on its own and stops at 64 (and at 0 on "−"); the
+      windows keep up. The same works on Columns/Rows. A single quick click
+      still moves exactly one step.
 - [ ] Disable and re-enable the grid, then quit and relaunch: gap and
       padding survive both round-trips (steppers and desktop agree).
 
@@ -53,9 +65,16 @@ On a Tile grid with a few managed windows:
 On an enabled grid with a few managed windows (settings window open):
 
 - [ ] Right-click a tile in the settings editor: a menu opens at the cursor
-      with "Save as default for \<exe\> on this grid" and "…on all grids";
-      no remove entries appear yet (none exist). Right-clicking must **not**
-      pick the tile up for a drag.
+      with a header naming the tile's program ("chrome.exe — default spot")
+      above "Save for this grid" and "Save for all grids"; no remove entries
+      appear yet (none exist). Right-clicking must **not** pick the tile up
+      for a drag.
+- [ ] **Long exe names stay readable**: do the same on a tile whose program
+      has a long name (msedgewebview2.exe, ApplicationFrameHost.exe,
+      WindowsTerminal.exe). The two save entries must still read as two
+      *different* entries — no ellipsis may swallow "this grid" / "all
+      grids" — and the exe in the header may wrap but must not be cut off
+      mid-word into meaninglessness.
 - [ ] Dismissal: Esc closes the menu; clicking anywhere outside closes it,
       and the dismissing press never picks up a tile for a drag;
       right-clicking a *different* tile closes it and opens that tile's
@@ -64,10 +83,13 @@ On an enabled grid with a few managed windows (settings window open):
       Shift+F10 (or the menu key) — the same menu opens with the first item
       focused; ArrowUp/ArrowDown cycle through items, Enter activates,
       focus returns to the tile after the menu closes.
-- [ ] Save "on this grid" for a tile: the App defaults card lists the rule —
+- [ ] Save "for this grid" for a tile: the App defaults card lists the rule —
+      a miniature drawing of the grid with the saved cells highlighted, the
       exe, the monitor's name as scope, and a slot summary matching the
-      tile's cells. Right-click the tile again: "Remove default for \<exe\>
-      on this grid" now appears (danger-colored).
+      tile's cells. The miniature's highlighted block must sit where the tile
+      sits in the editor above. Right-click the tile again: the first entry
+      now reads "Update for this grid" and "Remove for this grid" appears
+      (danger-colored).
 - [ ] Rule fires: close every window of that program, move another window
       onto the saved cells, then launch the program again — its new window
       displaces the squatter and lands exactly on the saved cells (Tile
@@ -86,11 +108,10 @@ On an enabled grid with a few managed windows (settings window open):
 With a grid enabled and a few recognizable programs tiled (e.g. a browser,
 an editor, a terminal):
 
-- [ ] **Capture**: in the Views card, type a name and click "Save current as
-      view" — the view appears in the list with the right grid/window
-      counts. The button is disabled while the name is empty; with every
-      grid disabled, the card says to enable one first and the button stays
-      disabled.
+- [ ] **Capture**: in the Views card, type a name and click "Capture view" —
+      the view appears in the list with the right grid/window counts. The
+      button is disabled while the name is empty; with every grid disabled,
+      the card says to enable one first and the button stays disabled.
 - [ ] **Apply now**: change the grid dims and gap, drag windows around,
       then click Apply now — the grid returns to the captured dims/spacing
       and each program's window lands back on its saved cells in one
@@ -105,10 +126,17 @@ an editor, a terminal):
       relaunch the program — during the two-minute window it takes the
       *view's* cells; after the window lapses, a new window takes the app
       rule's cells.
+- [ ] **A view does not launch apps**: close every window of one captured
+      program, then click Apply now. The grids rebuild and the remaining
+      windows land, and the closed program stays closed — the card's hint
+      says exactly that, so nothing about the outcome should read as a bug.
 - [ ] **Rename / delete**: Rename swaps to an inline input (Enter commits,
-      Esc cancels, focus lands in the input); Delete removes the row.
-      Deleting the view selected under "Load at startup" flips the radio
-      back to None.
+      Esc cancels, focus lands in the input). Delete is a **two-step**:
+      the first click arms it ("Sure?", danger-colored), a second click
+      inside a couple of seconds deletes, and letting it sit disarms it — the
+      same guard template deletion uses. One stray click must never destroy a
+      view. Deleting the view selected under "Load at startup" flips the
+      radio back to None.
 - [ ] **Startup view**: pick a view under "Load at startup", quit Griddle
       WM, launch it again — the view's grids come up with their captured
       settings, already-open captured programs snap to their saved cells,
@@ -123,6 +151,36 @@ an editor, a terminal):
       it loads with no `.bak`, the Views card is empty, and after saving a
       view + quitting, `%APPDATA%/griddle-wm/config.json` reads
       `"version": 2` with the view and `startupViewId` persisted.
+
+## P1 — information architecture + copy (critique round, ~3 min)
+
+- [ ] Scroll the settings page top to bottom with a grid enabled. Card order
+      reads: monitor card(s) → spanning grid card(s) → Span monitors → **App
+      defaults** → **Views** → General → Excluded apps → Floating windows.
+      The two placement cards must sit above General/Excluded, near the grid
+      editors that feed them.
+- [ ] The Views card says, in visible copy, both (a) how a view differs from
+      a template and (b) that applying one places windows but never launches
+      programs, and that during the two-minute window a view outranks app
+      defaults.
+- [ ] The General card's subtitle reads "Launch at sign-in and the settings
+      hotkey" and its last line points at "Load at startup" in the Views card
+      — a user hunting for startup behavior in General is not left stranded.
+- [ ] Snapshot verbs match: the template gallery's button says "Capture
+      layout", the Views card's says "Capture view".
+
+## P1 — claim window edge cases (critique round, ~5 min)
+
+- [ ] **Docking**: with a startup view whose grid lives on an external
+      monitor, undock, quit Griddle WM, relaunch, then dock within two
+      minutes with one of the view's programs already running. When the
+      monitor appears, that program's window lands on its saved cells (not
+      auto-placed). Automated coverage exists in `views.test.ts`; this checks
+      the real hotplug burst.
+- [ ] **Pause**: with a startup view selected, pause from the tray, relaunch
+      Griddle WM (it comes back paused), wait more than two minutes, then
+      resume and launch one of the view's programs. Its window still lands on
+      the saved cells — the pause does not spend the claim window.
 
 ---
 

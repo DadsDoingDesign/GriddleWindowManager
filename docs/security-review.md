@@ -1,6 +1,9 @@
 # Security Review — Griddle WM v0.1.0
 
 Review date: 2026-08-08. Fixes landed: 2026-08-09.
+Re-checked against v0.2.0 (spacing / app rules / startup views) on
+2026-08-09: no new commands, no new capability grants, no new Rust-side
+event handlers — see the refreshed residual-risk inventory under finding 2.
 Scope: `apps/desktop/src-tauri` (Rust shell), `apps/desktop/src` (webviews),
 capability/CSP configuration, against spec §7 (security model) in
 `docs/superpowers/specs/2026-08-08-griddle-window-manager-design.md`.
@@ -75,6 +78,32 @@ actuation-time identity re-verification, so arbitrary handles can never be
 moved; spec §7 holds). Full event-sender authentication is not expressible in
 Tauri v2's event system; the command surface (which is where side effects
 live) is label-gated per finding 1.
+
+*Inventory refresh (v0.2.0, 2026-08-09.)* v0.2.0 adds **no**
+`#[tauri::command]`s — `guard.rs` is unchanged and the default-deny policy
+table above is still complete — but it does add eight webview↔webview
+`settings-*` events the brain host acts on, and forgeable ones now reach
+further than "cosmetic":
+
+| Event | Forged effect |
+| --- | --- |
+| `settings-set-spacing` | re-spaces one grid (bounded: integers clamped to 0–64, cells never smaller than 16 px) |
+| `settings-set-app-rule` / `settings-remove-app-rule` | adds/removes a placement rule; **persisted** by the host's debounced `write_config`. Never moves a live window (rules fire on `window-appeared` only) |
+| `settings-capture-view` / `settings-rename-view` / `settings-delete-view` | adds/renames/removes a stored view; persisted |
+| `settings-set-startup-view` | changes which view is applied at next launch; persisted |
+| `settings-apply-view` | **re-tiles the whole desktop** — reconfigures every grid in the view and re-places the current window sweep |
+
+This is the same class as v0.1.0's `settings-enable-grid` /
+`settings-set-dims` / `settings-set-exclusions` (already able to re-tile
+everything and to persist), so the posture is unchanged: the blast radius is
+still "rearrange the user's own managed windows and rewrite their own config",
+never arbitrary window handles or arbitrary files. Two properties keep it
+bounded, and both still hold in v0.2.0: (a) actuation goes through
+`apply_layout`, which is `main`-only and validates every hwnd against the
+tracker's live set with actuation-time identity re-verification; (b)
+`write_config` is `main`-only and re-stamps the authoritative `paused` flag.
+The acceptance stands — the entry above is refreshed only so the inventory
+backing it is not stale.
 
 ### 3. Actuator handle reuse (`actuator.rs`, `tracker.rs`)
 
