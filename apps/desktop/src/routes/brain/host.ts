@@ -104,6 +104,8 @@ export async function startBrainHost(): Promise<BrainHost> {
   // preview shows the overlay(s) of the grid's monitor(s); a hidden preview
   // hides them after the overlay page's fade-out has played.
   const overlayHideTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Monitors whose overlay window is currently shown (or being shown). */
+  const overlaysShown = new Set<string>();
 
   /** Monitors covered by a grid id, from the last snapshot or the id itself. */
   const monitorIdsForGrid = (gridId: string): string[] => {
@@ -124,12 +126,21 @@ export async function startBrainHost(): Promise<BrainHost> {
           clearTimeout(pending);
           overlayHideTimers.delete(monitorId);
         }
-        showOverlay(monitorId).catch((e) => console.error('show_overlay failed:', e));
-      } else if (pending === undefined) {
+        // Preview emits arrive on every footprint change during a drag; the
+        // native window only needs showing on the hidden→visible transition.
+        if (!overlaysShown.has(monitorId)) {
+          overlaysShown.add(monitorId);
+          showOverlay(monitorId).catch((e) => {
+            overlaysShown.delete(monitorId); // retry on the next emit
+            console.error('show_overlay failed:', e);
+          });
+        }
+      } else if (pending === undefined && overlaysShown.has(monitorId)) {
         overlayHideTimers.set(
           monitorId,
           setTimeout(() => {
             overlayHideTimers.delete(monitorId);
+            overlaysShown.delete(monitorId);
             hideOverlay(monitorId).catch((e) => console.error('hide_overlay failed:', e));
           }, OVERLAY_FADE_OUT_MS),
         );

@@ -66,6 +66,45 @@ export function unionWorkArea(mons: MonitorInfo[]): MonitorInfo {
   };
 }
 
+/**
+ * What an overlay window on `monitorId` should render (plan Task 15/17).
+ * Resolves the single *enabled* grid covering the monitor — per-monitor or
+ * spanning — and the monitor the grid does its cell math against: the
+ * monitor itself, or the synthetic union monitor for a spanning grid. Cell
+ * rects computed against `layoutMon` are absolute virtual-desktop pixels;
+ * the overlay clips them to its own monitor simply by translating into
+ * window-local coordinates. Returns null when no enabled grid covers the
+ * monitor or a spanning member is absent (grid inert).
+ */
+export interface OverlayGridView {
+  gridId: string;
+  dims: GridDims;
+  /** The monitor the grid lays out against (union for spanning grids). */
+  layoutMon: MonitorInfo;
+}
+
+export function resolveOverlayGrid(
+  grids: ReadonlyArray<{ id: string; monitorIds: string[]; cols: number; rows: number; enabled: boolean }>,
+  monitors: readonly MonitorInfo[],
+  monitorId: string,
+): OverlayGridView | null {
+  const grid = grids.find((g) => g.enabled && g.monitorIds.includes(monitorId));
+  if (!grid) return null;
+  const members: MonitorInfo[] = [];
+  for (const id of grid.monitorIds) {
+    const m = monitors.find((mon) => mon.id === id);
+    if (!m) return null; // spanning member unplugged: grid is inert
+    members.push(m);
+  }
+  if (members.length === 0) return null;
+  const layoutMon = members.length === 1 ? members[0]! : unionWorkArea(members);
+  return {
+    gridId: grid.id,
+    dims: { cols: grid.cols, rows: grid.rows },
+    layoutMon,
+  };
+}
+
 function intersects(a: Rect, b: Rect): boolean {
   return (
     a.x < b.x + b.width &&

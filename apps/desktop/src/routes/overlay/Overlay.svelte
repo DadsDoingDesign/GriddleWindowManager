@@ -16,13 +16,21 @@
   // The whole stage fades in/out over 120 ms with the preview's `visible`
   // flag; the native window is hidden by the brain host only after the fade.
   //
-  // Grid geometry arrives via the broadcast `state-snapshot` (requested once
-  // with `overlay-ready`) and `list_monitors`; cell rects reuse the brain's
-  // own `cellRect` so overlay pixels always agree with committed layouts.
+  // The overlay window belongs to a *monitor* (`?monitorId=`), not to a
+  // grid: the grid it renders is whatever enabled grid covers that monitor —
+  // per-monitor or spanning — resolved from the broadcast `state-snapshot`
+  // via the brain's own `resolveOverlayGrid` (requested once with
+  // `overlay-ready`), monitors via `list_monitors`. Cell rects reuse the
+  // brain's `cellRect` against the grid's layout monitor (the union monitor
+  // for spanning grids) so overlay pixels always agree with committed
+  // layouts; translating into window-local coordinates clips them to this
+  // monitor naturally.
   import { onDestroy, onMount } from 'svelte';
   import {
     cellRect,
+    resolveOverlayGrid,
     type GhostMove,
+    type GridSettings,
     type MonitorInfo,
     type PreviewState,
     type Slot,
@@ -48,18 +56,24 @@
   const FOOTPRINT_INSET = 3;
   const GHOST_INSET = 5;
 
-  const gridId = new URLSearchParams(window.location.search).get('gridId') ?? '';
+  const monitorId =
+    new URLSearchParams(window.location.search).get('monitorId') ?? '';
 
   let monitors: MonitorInfo[] = $state([]);
-  let dims: { cols: number; rows: number } | null = $state(null);
-  let monitorIds: string[] = $state([]);
+  let grids: GridSettings[] = $state([]);
   let visible = $state(false);
   let footprint: Slot | null = $state(null);
   /** hwnd -> currently displayed ghost rect (reassigned to trigger updates). */
   let ghostRects: ReadonlyMap<string, Rect> = $state(new Map());
 
   /** The monitor this overlay window covers. */
-  const mon = $derived(monitors.find((m) => monitorIds.includes(m.id)) ?? null);
+  const mon = $derived(monitors.find((m) => m.id === monitorId) ?? null);
+
+  /** The enabled grid covering this monitor (per-monitor or spanning). */
+  const view = $derived(resolveOverlayGrid(grids, monitors, monitorId));
+  const dims = $derived(view?.dims ?? null);
+  /** Monitor the grid's cell math runs against (union for spanning grids). */
+  const layoutMon = $derived(view?.layoutMon ?? null);
 
   /** Absolute virtual-desktop rect -> overlay-window-local rect. */
   function toLocal(m: MonitorInfo, r: Rect): Rect {
@@ -67,8 +81,8 @@
   }
 
   function slotRect(slot: Slot): Rect | null {
-    if (!mon || !dims) return null;
-    return toLocal(mon, cellRect(mon, dims, slot));
+    if (!mon || !layoutMon || !dims) return null;
+    return toLocal(mon, cellRect(layoutMon, dims, slot));
   }
 
   function inset(r: Rect, by: number): Rect {
@@ -78,33 +92,38 @@
     return { x: r.x + dx, y: r.y + dy, width: r.width - 2 * dx, height: r.height - 2 * dy };
   }
 
+  /**
+   * The grid's work area in window-local coordinates. For a spanning grid
+   * this is the union work area — parts beyond this monitor fall outside the
+   * SVG viewBox and are clipped, which is exactly the monitor-local slice.
+   */
   const workRect = $derived(
-    mon
+    mon && layoutMon
       ? {
-          x: mon.workX - mon.x,
-          y: mon.workY - mon.y,
-          width: mon.workWidth,
-          height: mon.workHeight,
+          x: layoutMon.workX - mon.x,
+          y: layoutMon.workY - mon.y,
+          width: layoutMon.workWidth,
+          height: layoutMon.workHeight,
         }
       : null,
   );
 
   /** Interior column line positions (window-local x), matching cellRect edges. */
   const columnEdges = $derived.by(() => {
-    if (!mon || !dims) return [];
+    if (!mon || !layoutMon || !dims) return [];
     const xs: number[] = [];
     for (let col = 1; col < dims.cols; col++) {
-      xs.push(cellRect(mon, dims, { col, row: 0, w: 1, h: 1 }).x - mon.x);
+      xs.push(cellRect(layoutMon, dims, { col, row: 0, w: 1, h: 1 }).x - mon.x);
     }
     return xs;
   });
 
   /** Interior row line positions (window-local y). */
   const rowEdges = $derived.by(() => {
-    if (!mon || !dims) return [];
+    if (!mon || !layoutMon || !dims) return [];
     const ys: number[] = [];
     for (let row = 1; row < dims.rows; row++) {
-      ys.push(cellRect(mon, dims, { col: 0, row, w: 1, h: 1 }).y - mon.y);
+      ys.push(cellRect(layoutMon, dims, { col: 0, row, w: 1, h: 1 }).y - mon.y);
     }
     return ys;
   });
@@ -165,7 +184,9 @@
   }
 
   function handlePreview(p: PreviewState) {
-    if (p.gridId !== gridId) return; // the brain hides us explicitly
+    // Accept previews for whichever enabled grid covers this monitor —
+    // per-monitor or spanning (the brain hides us explicitly otherwise).
+    if (p.gridId !== view?.gridId) return;
     if (!p.visible) {
       // Keep the last footprint/ghosts on screen while the stage fades out.
       visible = false;
@@ -178,9 +199,7 @@
   }
 
   function handleSnapshot(s: StateSnapshot) {
-    const grid = s.grids.find((g) => g.id === gridId);
-    dims = grid ? { cols: grid.cols, rows: grid.rows } : null;
-    monitorIds = grid ? grid.monitorIds : [];
+    grids = s.grids;
   }
 
   let unlisteners: UnlistenFn[] = [];

@@ -2,7 +2,9 @@
 //!
 //! Each gridded monitor gets one transparent, undecorated, always-on-top,
 //! click-through webview window covering the monitor's *full* bounds and
-//! loading `/overlay?gridId=grid:<monitorId>`. The brain host shows it when a
+//! loading `/overlay?monitorId=<monitorId>` (the page resolves the covering
+//! grid — per-monitor or spanning — from the broadcast state snapshot). The
+//! brain host shows it when a
 //! managed drag starts (`show_overlay`) and hides it shortly after the drag
 //! commits (`hide_overlay`), leaving the overlay page time to play its fade.
 //!
@@ -80,9 +82,11 @@ pub fn percent_encode(s: &str) -> String {
 }
 
 /// Route loaded by the overlay window for `monitor_id` — `/overlay` with the
-/// grid id (`grid:<monitorId>`, contract global constraints) in the query.
+/// *monitor* id in the query. The page resolves which enabled grid covers
+/// that monitor (per-monitor or spanning) from the broadcast state snapshot,
+/// so spanning grids get a working overlay on every member monitor.
 pub fn overlay_url(monitor_id: &str) -> String {
-    format!("/overlay?gridId={}", percent_encode(&format!("grid:{monitor_id}")))
+    format!("/overlay?monitorId={}", percent_encode(monitor_id))
 }
 
 /// monitor id -> window label for overlays created so far.
@@ -153,7 +157,7 @@ fn ensure_overlay(app: &AppHandle, monitor_id: &str) -> Result<WebviewWindow, St
         .find(|m| m.id == monitor_id)
         .ok_or_else(|| format!("show/hide_overlay: unknown monitor id {monitor_id:?}"))?;
 
-    let mut reg = registry().lock().expect("overlay registry poisoned");
+    let mut reg = registry().lock().unwrap_or_else(|p| p.into_inner());
     if let Some(label) = reg.get(monitor_id) {
         if let Some(win) = app.get_webview_window(label) {
             position_to(&win, &mon)?;
@@ -248,10 +252,10 @@ mod tests {
     }
 
     #[test]
-    fn overlay_url_embeds_the_grid_id() {
+    fn overlay_url_embeds_the_monitor_id() {
         assert_eq!(
             overlay_url(r"\\.\DISPLAY1@0,0"),
-            "/overlay?gridId=grid%3A%5C%5C.%5CDISPLAY1%400%2C0"
+            "/overlay?monitorId=%5C%5C.%5CDISPLAY1%400%2C0"
         );
     }
 
@@ -259,7 +263,7 @@ mod tests {
     fn overlay_url_negative_origin_monitor() {
         assert_eq!(
             overlay_url(r"\\.\DISPLAY2@-1920,-240"),
-            "/overlay?gridId=grid%3A%5C%5C.%5CDISPLAY2%40-1920%2C-240"
+            "/overlay?monitorId=%5C%5C.%5CDISPLAY2%40-1920%2C-240"
         );
     }
 
