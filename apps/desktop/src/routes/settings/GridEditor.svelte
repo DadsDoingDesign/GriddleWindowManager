@@ -10,11 +10,17 @@
   import type { Tile } from '@griddle/core';
   import {
     effectiveSpacing,
+    type AppRule,
     type MonitorInfo,
     type Slot,
     type TileSnapshot,
   } from '@griddle-wm/brain';
-  import { emitSettingsMove } from '../../lib/ipc';
+  import {
+    emitSettingsMove,
+    emitSettingsRemoveAppRule,
+    emitSettingsSetAppRule,
+  } from '../../lib/ipc';
+  import ContextMenu, { type MenuItem } from './ContextMenu.svelte';
 
   interface Props {
     gridId: string;
@@ -26,8 +32,11 @@
     /** Grid spacing (spec v0.2 §1), physical px — scaled into editor space. */
     gap: number;
     padding: number;
+    /** Live per-app rules (spec v0.2 §2) — drive the tile context menu. */
+    appRules: AppRule[];
   }
-  const { gridId, cols, rows, mode, monitor, tiles, gap, padding }: Props = $props();
+  const { gridId, cols, rows, mode, monitor, tiles, gap, padding, appRules }: Props =
+    $props();
 
   // Editor mirrors the monitor's aspect ratio at a fixed width. The grid's
   // gap/padding pass through the same effectiveSpacing (incl. the coercion
@@ -169,6 +178,85 @@
       pending = null;
     }
   }
+
+  // ── tile context menu: per-app defaults (spec v0.2 §2) ───────────────────
+  // Right-click (or Shift+F10 / the menu key on a focused tile) offers to
+  // save the tile's current slot as the default spot for its program — on
+  // this grid or on every grid — and to remove a default that exists.
+
+  let menu: { x: number; y: number; hwnd: string } | null = $state(null);
+
+  const menuTile = $derived.by(() => {
+    const m = menu;
+    return m ? infoByHwnd.get(m.hwnd) : undefined;
+  });
+
+  const menuItems = $derived.by((): MenuItem[] => {
+    const t = menuTile;
+    if (!t || t.exe === '') return [];
+    const { exe, slot } = t;
+    const items: MenuItem[] = [
+      {
+        label: `Save as default for ${exe} on this grid`,
+        action: () =>
+          void emitSettingsSetAppRule({ rule: { exe, gridId, slot: { ...slot } } }),
+      },
+      {
+        label: `Save as default for ${exe} on all grids`,
+        action: () =>
+          void emitSettingsSetAppRule({ rule: { exe, gridId: null, slot: { ...slot } } }),
+      },
+    ];
+    // Remove entries appear only for rules that exist, one per scope — the
+    // menu never pretends there is something to remove.
+    if (appRules.some((r) => r.exe === exe && r.gridId === gridId)) {
+      items.push({
+        label: `Remove default for ${exe} on this grid`,
+        danger: true,
+        action: () => void emitSettingsRemoveAppRule({ exe, gridId }),
+      });
+    }
+    if (appRules.some((r) => r.exe === exe && r.gridId === null)) {
+      items.push({
+        label: `Remove default for ${exe} on all grids`,
+        danger: true,
+        action: () => void emitSettingsRemoveAppRule({ exe, gridId: null }),
+      });
+    }
+    return items;
+  });
+
+  function openMenuAt(x: number, y: number, hwnd: string): void {
+    // A tile without a known exe has nothing to save a rule for.
+    const info = infoByHwnd.get(hwnd);
+    if (!info || info.exe === '') return;
+    menu = { x, y, hwnd };
+  }
+
+  function onTileContextMenu(e: MouseEvent, hwnd: string): void {
+    e.preventDefault();
+    e.stopPropagation();
+    openMenuAt(e.clientX, e.clientY, hwnd);
+  }
+
+  /**
+   * GriddleGrid starts a drag on *any* tile pointerdown (it never checks
+   * e.button — see docs/library-feedback.md), so the secondary button must
+   * be stopped before it bubbles to the library's handler.
+   */
+  function onTilePointerDown(e: PointerEvent): void {
+    if (e.button !== 0) e.stopPropagation();
+  }
+
+  /** Keyboard path to the same menu: Shift+F10 or the dedicated menu key. */
+  function onTileKeydown(e: KeyboardEvent, hwnd: string): void {
+    if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+      e.preventDefault();
+      e.stopPropagation();
+      const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      openMenuAt(r.left + 12, r.bottom - 6, hwnd);
+    }
+  }
 </script>
 
 <div class="editor" style:width="{EDITOR_W}px">
@@ -184,13 +272,35 @@
       on:resizeStart={beginInteraction}
       on:resizeEnd={endInteraction}
     >
-      <div slot="tile" let:tile class="wtile" title={infoByHwnd.get(tile.id)?.title}>
+      <div
+        slot="tile"
+        let:tile
+        class="wtile"
+        title={infoByHwnd.get(tile.id)?.title}
+        role="button"
+        tabindex="0"
+        aria-haspopup="menu"
+        aria-label={`${infoByHwnd.get(tile.id)?.title || `Window ${tile.id}`} — Shift+F10 for app-default options`}
+        oncontextmenu={(e) => onTileContextMenu(e, tile.id)}
+        onpointerdown={onTilePointerDown}
+        onkeydown={(e) => onTileKeydown(e, tile.id)}
+      >
         <span class="wtitle">{infoByHwnd.get(tile.id)?.title || `Window ${tile.id}`}</span>
         <span class="wexe">{infoByHwnd.get(tile.id)?.exe ?? ''}</span>
       </div>
     </GriddleGrid>
   </div>
 </div>
+
+{#if menu && menuItems.length > 0}
+  <ContextMenu
+    x={menu.x}
+    y={menu.y}
+    label={`App default for ${menuTile?.exe ?? ''}`}
+    items={menuItems}
+    onclose={() => (menu = null)}
+  />
+{/if}
 
 <style>
   .editor {
@@ -215,6 +325,10 @@
     border-color: var(--well);
   }
 
+  .wtile:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
   .wtile {
     box-sizing: border-box;
     width: 100%;

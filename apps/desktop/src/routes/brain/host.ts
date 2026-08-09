@@ -39,6 +39,8 @@ import {
   onSettingsMove,
   onSettingsReady,
   windowIsTracked,
+  onSettingsRemoveAppRule,
+  onSettingsSetAppRule,
   onSettingsSetDims,
   onSettingsSetExclusions,
   onSettingsSetMode,
@@ -468,6 +470,18 @@ export async function startBrainHost(): Promise<BrainHost> {
     onSettingsDeleteTemplate((p) => {
       markUserAction();
       brain.deleteTemplate(p.templateId);
+    }),
+    // Settings window → brain (spec v0.2 §2): per-app defaults. The tile
+    // context menu saves/removes rules; the App-defaults card deletes them.
+    // Neither ever moves an already-managed window (rules fire on
+    // window-appeared only), so these just mutate + persist.
+    onSettingsSetAppRule((p) => {
+      markUserAction();
+      brain.setAppRule(p.rule);
+    }),
+    onSettingsRemoveAppRule((p) => {
+      markUserAction();
+      brain.removeAppRule(p.exe, p.gridId);
     }),
     // Settings window → brain (plan Task 19): exclusions editor. The brain
     // unmanages newly excluded windows immediately; the debounced config

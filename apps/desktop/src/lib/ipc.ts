@@ -7,6 +7,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { emit, listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type {
   AppConfig,
+  AppRule,
   ApplyLayout,
   DragPos,
   Hwnd,
@@ -119,6 +120,26 @@ export interface SettingsDeleteTemplatePayload {
  */
 export interface SettingsSetExclusionsPayload {
   exclusions: string[];
+}
+
+/**
+ * Payload of `settings-set-app-rule` (settings → brain, spec v0.2 §2): a
+ * per-app default saved from the editor tile context menu. Routed to
+ * `setAppRule` — upsert by (exe, gridId); `gridId: null` scopes the rule to
+ * every grid. Never moves already-managed windows.
+ */
+export interface SettingsSetAppRulePayload {
+  rule: AppRule;
+}
+
+/**
+ * Payload of `settings-remove-app-rule` (settings → brain, spec v0.2 §2):
+ * the context menu's remove entries and the App-defaults card's delete
+ * button. Routed to `removeAppRule` for exactly that (exe, gridId) scope.
+ */
+export interface SettingsRemoveAppRulePayload {
+  exe: string;
+  gridId: string | null;
 }
 
 /**
@@ -422,6 +443,28 @@ export function onSettingsSetExclusions(
   cb: (p: SettingsSetExclusionsPayload) => void,
 ): Promise<UnlistenFn> {
   return on('settings-set-exclusions', cb);
+}
+
+export function emitSettingsSetAppRule(p: SettingsSetAppRulePayload): Promise<void> {
+  return emit('settings-set-app-rule', p);
+}
+
+export function onSettingsSetAppRule(
+  cb: (p: SettingsSetAppRulePayload) => void,
+): Promise<UnlistenFn> {
+  return on('settings-set-app-rule', cb);
+}
+
+export function emitSettingsRemoveAppRule(
+  p: SettingsRemoveAppRulePayload,
+): Promise<void> {
+  return emit('settings-remove-app-rule', p);
+}
+
+export function onSettingsRemoveAppRule(
+  cb: (p: SettingsRemoveAppRulePayload) => void,
+): Promise<UnlistenFn> {
+  return on('settings-remove-app-rule', cb);
 }
 
 export function emitSettingsSetPrefs(p: SettingsSetPrefsPayload): Promise<void> {

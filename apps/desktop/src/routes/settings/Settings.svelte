@@ -11,6 +11,7 @@
     DEFAULT_HOTKEY,
     MAX_SPACING_PX,
     unionWorkArea,
+    type AppRule,
     type GridSettings,
     type MonitorInfo,
     type StateSnapshot,
@@ -21,6 +22,7 @@
     emitSettingsEnableGrid,
     emitSettingsEnableSpan,
     emitSettingsReady,
+    emitSettingsRemoveAppRule,
     emitSettingsSetDims,
     emitSettingsSetExclusions,
     emitSettingsSetMode,
@@ -386,6 +388,47 @@
       .sort((a, b) => a.exe.localeCompare(b.exe));
   });
 
+  // ── app defaults (spec v0.2 §2) ──────────────────────────────────────────
+
+  const appRules = $derived.by(() => snapshot?.appRules ?? []);
+
+  /** Grid-specific rules before all-grids ones per exe — precedence order. */
+  const sortedAppRules = $derived(
+    [...appRules].sort(
+      (a, b) =>
+        a.exe.localeCompare(b.exe) ||
+        Number(a.gridId === null) - Number(b.gridId === null) ||
+        (a.gridId ?? '').localeCompare(b.gridId ?? ''),
+    ),
+  );
+
+  /** Human name of a rule's scope: monitor name, span members, or all grids. */
+  function ruleScope(rule: AppRule): string {
+    if (rule.gridId === null) return 'All grids';
+    if (rule.gridId.startsWith('grid:span:')) {
+      const names = rule.gridId
+        .slice('grid:span:'.length)
+        .split('+')
+        .map(monNameFromId)
+        .join(' + ');
+      return `Spanning: ${names}`;
+    }
+    if (rule.gridId.startsWith('grid:')) {
+      return monNameFromId(rule.gridId.slice('grid:'.length));
+    }
+    return rule.gridId;
+  }
+
+  /** "3×2 · column 4, row 1" — 1-based like people count grid cells. */
+  function ruleSlotSummary(rule: AppRule): string {
+    const s = rule.slot;
+    return `${s.w}×${s.h} · column ${s.col + 1}, row ${s.row + 1}`;
+  }
+
+  function removeAppRule(rule: AppRule): void {
+    void emitSettingsRemoveAppRule({ exe: rule.exe, gridId: rule.gridId });
+  }
+
   // ── first run (plan Task 19) ─────────────────────────────────────────────
 
   function enableFirstRun(): void {
@@ -655,9 +698,13 @@
             gap={grid.gap ?? 0}
             padding={grid.padding ?? 0}
             {tiles}
+            {appRules}
           />
         {/key}
-        <p class="hint">Drag tiles to rearrange the real windows.</p>
+        <p class="hint">
+          Drag tiles to rearrange the real windows. Right-click a tile to make
+          its spot the default for that app.
+        </p>
         <TemplateGallery
           gridId={grid.id}
           templates={snapshot?.templates ?? []}
@@ -808,10 +855,12 @@
             gap={grid.gap ?? 0}
             padding={grid.padding ?? 0}
             {tiles}
+            {appRules}
           />
         {/key}
         <p class="hint">
-          Drag tiles to rearrange the real windows. Cells over the gap of an
+          Drag tiles to rearrange the real windows — right-click one to make
+          its spot the default for that app. Cells over the gap of an
           L-shaped union are dead space — drops there snap to the nearest
           usable slot.
         </p>
@@ -1017,6 +1066,45 @@
     <p class="hint">
       Excluding a program releases its windows immediately — they stay exactly
       where they are. Remove an entry and its windows are managed again.
+    </p>
+  </section>
+
+  <!-- App defaults (spec v0.2 §2): the rules the tile context menu saves. -->
+  <section class="card">
+    <div class="card-head">
+      <div class="mon-info">
+        <h2>App defaults</h2>
+        <p class="meta">Where new windows of these programs are placed.</p>
+      </div>
+    </div>
+    {#if sortedAppRules.length > 0}
+      <ul class="rule-list">
+        {#each sortedAppRules as rule (`${rule.exe} ${rule.gridId ?? ''}`)}
+          <li class="rule-row">
+            <code class="rule-exe">{rule.exe}</code>
+            <span class="rule-scope" class:all={rule.gridId === null}>
+              {ruleScope(rule)}
+            </span>
+            <span class="rule-slot">{ruleSlotSummary(rule)}</span>
+            <button
+              class="chip-x"
+              aria-label={`Remove default for ${rule.exe} (${ruleScope(rule)})`}
+              title="Remove this default"
+              onclick={() => removeAppRule(rule)}>×</button
+            >
+          </li>
+        {/each}
+      </ul>
+    {:else}
+      <p class="hint">
+        No defaults yet — right-click a window tile in a grid editor above and
+        choose “Save as default”.
+      </p>
+    {/if}
+    <p class="hint">
+      A default places every new window of that program into the saved cells.
+      A rule for a specific grid beats an all-grids rule; windows already on
+      screen never move when a default is saved or removed.
     </p>
   </section>
 
@@ -1531,6 +1619,57 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     min-width: 0;
+  }
+
+  /* App defaults card (spec v0.2 §2) */
+  .rule-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .rule-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--well);
+    padding: 6px 8px 6px 12px;
+  }
+  .rule-exe {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-strong);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+  .rule-scope {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--accent);
+    background: rgba(139, 124, 246, 0.14);
+    border: 1px solid rgba(139, 124, 246, 0.35);
+    border-radius: 999px;
+    padding: 2px 8px;
+    white-space: nowrap;
+  }
+  .rule-scope.all {
+    color: var(--text-dim);
+    background: rgba(255, 255, 255, 0.04);
+    border-color: var(--border);
+  }
+  .rule-slot {
+    font-size: 12px;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    margin-left: auto;
   }
 
   .floating {

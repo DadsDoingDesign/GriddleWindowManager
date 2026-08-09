@@ -157,3 +157,18 @@ export. Verified against `node_modules/@griddle/core/dist/*.d.ts` and
   dropped past the right edge ends with `pinned.x + w > cols` (same
   unclamped-pin behavior as the Task 7 note, now reproduced through the
   Svelte adapter). The editor clamps before forwarding to the brain.
+
+## App-rules UI findings (2026-08-09, spec v0.2 §2)
+
+- **`onTilePointerDown` ignores `e.button`**: `<GriddleGrid>` starts a tile
+  drag (and calls `setPointerCapture`) for *any* pointer button, so a
+  right-click meant for a context menu also picks the tile up. The settings
+  editor works around it with a bubble-phase `pointerdown` handler on the
+  slot content that `stopPropagation()`s every non-primary button before it
+  reaches the library's handler. Suggestion: bail out of
+  `onTilePointerDown` when `e.button !== 0` (matching how native drag
+  interactions behave everywhere else).
+- Related: `config.dragIgnoreFrom` (default `'a, button, input, …'`) only
+  filters by *target selector*, not by button, so it cannot express "let
+  right-clicks through" — a `dragButton`/button filter option would make
+  custom context menus first-class.
