@@ -12,11 +12,13 @@
     emitSettingsEnableGrid,
     emitSettingsReady,
     emitSettingsSetDims,
+    emitSettingsSetMode,
     listMonitors,
     onMonitorsChanged,
     onStateSnapshot,
   } from '../../lib/ipc';
   import GridEditor from './GridEditor.svelte';
+  import TemplateGallery from './TemplateGallery.svelte';
 
   const MAX_COLS = 32;
   const MAX_ROWS = 16;
@@ -66,6 +68,11 @@
     } else {
       draftDims[mon.id] = { cols, rows };
     }
+  }
+
+  function setMode(grid: GridSettings, mode: 'collision' | 'overlay'): void {
+    if (grid.mode === mode) return;
+    void emitSettingsSetMode({ gridId: grid.id, mode });
   }
 
   function toggleGrid(mon: MonitorInfo, enabled: boolean): void {
@@ -163,7 +170,20 @@
           >
         </div>
         {#if enabled && grid}
-          <span class="mode-chip">{grid.mode}</span>
+          <div class="segmented" role="group" aria-label="Grid mode">
+            <button
+              class:active={grid.mode === 'collision'}
+              aria-pressed={grid.mode === 'collision'}
+              title="Windows push each other aside — no overlap"
+              onclick={() => setMode(grid, 'collision')}>Collision</button
+            >
+            <button
+              class:active={grid.mode === 'overlay'}
+              aria-pressed={grid.mode === 'overlay'}
+              title="Windows snap to cells but may overlap"
+              onclick={() => setMode(grid, 'overlay')}>Overlay</button
+            >
+          </div>
           <span class="tile-count">
             {tiles.length}
             {tiles.length === 1 ? 'window' : 'windows'}
@@ -183,6 +203,12 @@
           />
         {/key}
         <p class="hint">Drag tiles to rearrange the real windows.</p>
+        <TemplateGallery
+          gridId={grid.id}
+          templates={snapshot?.templates ?? []}
+          activeTemplateId={grid.activeTemplateId}
+          tileCount={tiles.length}
+        />
       {/if}
     </section>
   {/each}
@@ -383,15 +409,37 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .mode-chip {
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: capitalize;
-    padding: 3px 9px;
-    border-radius: 999px;
-    background: var(--well);
+  .segmented {
+    display: inline-flex;
+    align-items: stretch;
     border: 1px solid var(--border);
+    border-radius: 9px;
+    background: var(--well);
+    padding: 2px;
+    gap: 2px;
+  }
+  .segmented button {
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--text-dim);
+    font: 600 12px/1 var(--sans);
+    padding: 5px 12px;
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+  }
+  .segmented button:hover:not(.active) {
     color: var(--text);
+    background: rgba(255, 255, 255, 0.04);
+  }
+  .segmented button.active {
+    background: rgba(139, 124, 246, 0.22);
+    color: var(--accent);
+    cursor: default;
+  }
+  .segmented button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
   }
   .tile-count {
     font-size: 12.5px;

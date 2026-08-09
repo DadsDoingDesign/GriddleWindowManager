@@ -532,3 +532,81 @@ describe('applyTemplate — edges', () => {
     expect(slots).toContainEqual({ col: 3, row: 0, w: 3, h: 2 });
   });
 });
+
+describe('deleteTemplate (contract §C3 extension, plan Task 16)', () => {
+  it('deletes a user template from snapshots and exportConfig, returns true', () => {
+    const { brain, snapshots } = harness(makeConfig([CUSTOM_TPL]));
+    expect(last(snapshots).templates.some((t) => t.id === 'tpl:custom12')).toBe(true);
+
+    expect(brain.deleteTemplate('tpl:custom12')).toBe(true);
+
+    expect(last(snapshots).templates.some((t) => t.id === 'tpl:custom12')).toBe(false);
+    expect(brain.exportConfig().templates.some((t) => t.id === 'tpl:custom12')).toBe(false);
+  });
+
+  it('refuses to delete a builtin template, returns false', () => {
+    const { brain, snapshots } = harness();
+    const before = snapshots.length;
+    for (const id of BUILTIN_IDS) {
+      expect(brain.deleteTemplate(id)).toBe(false);
+    }
+    expect(snapshots).toHaveLength(before); // no snapshot spam for no-ops
+    const ids = brain.exportConfig().templates.map((t) => t.id);
+    for (const id of BUILTIN_IDS) expect(ids).toContain(id);
+  });
+
+  it('unknown template id is a no-op returning false', () => {
+    const { brain, snapshots } = harness();
+    const before = snapshots.length;
+    expect(brain.deleteTemplate('tpl:missing')).toBe(false);
+    expect(snapshots).toHaveLength(before);
+  });
+
+  it('clears activeTemplateId on grids that referenced the deleted template', () => {
+    const { brain, applies, snapshots } = harness(makeConfig([CUSTOM_TPL]));
+    brain.enableGrid(makeGridSettings(), [makeWindow('A'), makeWindow('B')]);
+    brain.applyTemplate(GRID_ID, 'tpl:custom12');
+    expect(last(snapshots).grids.find((g) => g.id === GRID_ID)!.activeTemplateId).toBe(
+      'tpl:custom12',
+    );
+    const appliesBefore = applies.length;
+    const tilesBefore = gridTiles(last(snapshots)).map((t) => ({ ...t }));
+
+    expect(brain.deleteTemplate('tpl:custom12')).toBe(true);
+
+    const snap = last(snapshots);
+    expect(snap.grids.find((g) => g.id === GRID_ID)!.activeTemplateId).toBeNull();
+    // deleting a template never moves windows
+    expect(applies).toHaveLength(appliesBefore);
+    expect(gridTiles(snap)).toEqual(tilesBefore);
+    expect(brain.exportConfig().grids.find((g) => g.id === GRID_ID)!.activeTemplateId).toBeNull();
+  });
+
+  it('a freshly captured template can be deleted again', () => {
+    const { brain } = harness();
+    brain.enableGrid(makeGridSettings(), [makeWindow('A')]);
+    const tpl = brain.captureTemplate(GRID_ID, 'Ephemeral');
+    expect(brain.deleteTemplate(tpl.id)).toBe(true);
+    expect(brain.exportConfig().templates.some((t) => t.id === tpl.id)).toBe(false);
+  });
+});
+
+describe('applying a captured template (round trip)', () => {
+  it('applying a captured template restores the captured layout', () => {
+    const { brain, snapshots } = harness();
+    brain.enableGrid(makeGridSettings(), [makeWindow('A'), makeWindow('B')]);
+    const tpl = brain.captureTemplate(GRID_ID, 'Snapshot'); // A(0,0,3,2) B(3,0,3,2)
+
+    // shuffle: drag B down to (6,4)
+    brain.moveSizeStart('B');
+    brain.moveSizeEnd('B', { x: 960, y: 736, width: 480, height: 344 });
+    expect(slotOf(last(snapshots), 'B')).toEqual({ col: 6, row: 4, w: 3, h: 2 });
+
+    brain.applyTemplate(GRID_ID, tpl.id);
+
+    const snap = last(snapshots);
+    const slots = gridTiles(snap).map((t) => t.slot);
+    expect(slots).toContainEqual({ col: 0, row: 0, w: 3, h: 2 });
+    expect(slots).toContainEqual({ col: 3, row: 0, w: 3, h: 2 });
+  });
+});

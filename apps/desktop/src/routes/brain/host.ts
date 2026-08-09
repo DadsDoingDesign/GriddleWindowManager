@@ -27,11 +27,15 @@ import {
   onMoveSizeEnd,
   onMoveSizeStart,
   onOverlayReady,
+  onSettingsApplyTemplate,
+  onSettingsCaptureTemplate,
+  onSettingsDeleteTemplate,
   onSettingsDisableGrid,
   onSettingsEnableGrid,
   onSettingsMove,
   onSettingsReady,
   onSettingsSetDims,
+  onSettingsSetMode,
   onWindowAppeared,
   onWindowDestroyed,
   onWindowMinimized,
@@ -230,6 +234,18 @@ export async function startBrainHost(): Promise<BrainHost> {
     ),
     onSettingsDisableGrid((p) => brain.disableGrid(p.gridId)),
     onSettingsSetDims((p) => brain.reflowGrid(p.gridId, p.cols, p.rows)),
+    // Settings window → brain (plan Task 16): mode toggle + template gallery.
+    onSettingsSetMode((p) => brain.setMode(p.gridId, p.mode)),
+    onSettingsCaptureTemplate((p) => {
+      try {
+        brain.captureTemplate(p.gridId, p.name);
+      } catch (e) {
+        // Grid was disabled between the click and the event — nothing to do.
+        console.error('settings-capture-template failed:', e);
+      }
+    }),
+    onSettingsApplyTemplate((p) => brain.applyTemplate(p.gridId, p.templateId)),
+    onSettingsDeleteTemplate((p) => brain.deleteTemplate(p.templateId)),
   ]);
 
   const host: BrainHost = {

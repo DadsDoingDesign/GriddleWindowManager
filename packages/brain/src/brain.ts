@@ -605,6 +605,28 @@ export class WindowManagerBrain {
   }
 
   /**
+   * Remove a user template (contract §C3 extension, plan Task 16). Builtins
+   * and unknown ids are refused (returns false, no snapshot). Grids whose
+   * `activeTemplateId` referenced the deleted template drop the reference;
+   * their layout is left exactly as it is — deleting a template never moves
+   * windows.
+   */
+  deleteTemplate(templateId: string): boolean {
+    const idx = this.templates.findIndex((t) => t.id === templateId);
+    if (idx === -1 || this.templates[idx]!.builtin) return false;
+    this.templates.splice(idx, 1);
+    for (const [id, settings] of this.gridSettings) {
+      if (settings.activeTemplateId !== templateId) continue;
+      const updated: GridSettings = { ...settings, activeTemplateId: null };
+      this.gridSettings.set(id, updated);
+      const mg = this.grids.get(id);
+      if (mg) mg.settings = updated;
+    }
+    this.emitSnapshot();
+    return true;
+  }
+
+  /**
    * Lay a grid out per a template (spec §5.5): windows map to slots in
    * recency order (most recent → first slot), extras auto-place, floating
    * windows get retried, mode is unchanged, and everything lands in one

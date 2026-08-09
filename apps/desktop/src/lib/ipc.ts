@@ -65,6 +65,29 @@ export interface SettingsSetDimsPayload {
   rows: number;
 }
 
+/** Payload of `settings-set-mode` (settings → brain, plan Task 16). */
+export interface SettingsSetModePayload {
+  gridId: string;
+  mode: 'collision' | 'overlay';
+}
+
+/** Payload of `settings-capture-template` (settings → brain, plan Task 16). */
+export interface SettingsCaptureTemplatePayload {
+  gridId: string;
+  name: string;
+}
+
+/** Payload of `settings-apply-template` (settings → brain, plan Task 16). */
+export interface SettingsApplyTemplatePayload {
+  gridId: string;
+  templateId: string;
+}
+
+/** Payload of `settings-delete-template` (settings → brain, plan Task 16). */
+export interface SettingsDeleteTemplatePayload {
+  templateId: string;
+}
+
 // ---------------------------------------------------------------------------
 // Commands (webview → Rust)
 // ---------------------------------------------------------------------------
@@ -241,4 +264,50 @@ export function onSettingsSetDims(
   cb: (p: SettingsSetDimsPayload) => void,
 ): Promise<UnlistenFn> {
   return on('settings-set-dims', cb);
+}
+
+export function emitSettingsSetMode(p: SettingsSetModePayload): Promise<void> {
+  return emit('settings-set-mode', p);
+}
+
+export function onSettingsSetMode(
+  cb: (p: SettingsSetModePayload) => void,
+): Promise<UnlistenFn> {
+  return on('settings-set-mode', cb);
+}
+
+export function emitSettingsCaptureTemplate(
+  p: SettingsCaptureTemplatePayload,
+): Promise<void> {
+  return emit('settings-capture-template', p);
+}
+
+export function onSettingsCaptureTemplate(
+  cb: (p: SettingsCaptureTemplatePayload) => void,
+): Promise<UnlistenFn> {
+  return on('settings-capture-template', cb);
+}
+
+export function emitSettingsApplyTemplate(
+  p: SettingsApplyTemplatePayload,
+): Promise<void> {
+  return emit('settings-apply-template', p);
+}
+
+export function onSettingsApplyTemplate(
+  cb: (p: SettingsApplyTemplatePayload) => void,
+): Promise<UnlistenFn> {
+  return on('settings-apply-template', cb);
+}
+
+export function emitSettingsDeleteTemplate(
+  p: SettingsDeleteTemplatePayload,
+): Promise<void> {
+  return emit('settings-delete-template', p);
+}
+
+export function onSettingsDeleteTemplate(
+  cb: (p: SettingsDeleteTemplatePayload) => void,
+): Promise<UnlistenFn> {
+  return on('settings-delete-template', cb);
 }
