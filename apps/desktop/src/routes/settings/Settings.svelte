@@ -40,19 +40,32 @@
 
   let monitors: MonitorInfo[] = $state([]);
   let snapshot: StateSnapshot | null = $state(null);
-  /** Stepper values for monitors whose grid is not currently enabled. */
-  let draftDims: Record<string, { cols: number; rows: number }> = $state({});
   /** Monitors ticked in the span-monitors multi-select (plan Task 17). */
   let spanSelection: Record<string, boolean> = $state({});
   /** Stepper values for the spanning grid about to be created. */
   let spanDraft = $state({ ...DEFAULT_DIMS });
 
+  /**
+   * Canonical accelerator → the spelling the docs teach: the shortcut plugin
+   * needs 'Super' for the Windows key, but on a Windows-only product the UI
+   * must answer in the user's language — display-map Super→Win everywhere
+   * (normalizeHotkey maps it back on Apply).
+   */
+  function toDisplayHotkey(canonical: string): string {
+    return canonical
+      .split('+')
+      .map((t) => (t.trim().toLowerCase() === 'super' ? 'Win' : t.trim()))
+      .join('+');
+  }
+  const DISPLAY_DEFAULT_HOTKEY = toDisplayHotkey(DEFAULT_HOTKEY); // Ctrl+Win+G
+
   // General card (plan Task 18): autostart + hotkey (paused lives in the
   // snapshot). Initial values come from the persisted config; afterwards this
-  // window is the only writer, so local state stays truthful.
+  // window is the only writer, so local state stays truthful. Hotkey state is
+  // kept in display form ('Win'); only the emitted pref is canonical.
   let autostart = $state(false);
-  let hotkeyDraft = $state(DEFAULT_HOTKEY);
-  let savedHotkey = $state(DEFAULT_HOTKEY);
+  let hotkeyDraft = $state(DISPLAY_DEFAULT_HOTKEY);
+  let savedHotkey = $state(DISPLAY_DEFAULT_HOTKEY);
   let hotkeyError: string | null = $state(null);
   let appVersion = $state('');
 
@@ -91,8 +104,8 @@
     const cfg = await readConfig();
     if (cfg) {
       autostart = cfg.autostart;
-      hotkeyDraft = cfg.hotkey;
-      savedHotkey = cfg.hotkey;
+      hotkeyDraft = toDisplayHotkey(cfg.hotkey);
+      savedHotkey = toDisplayHotkey(cfg.hotkey);
       seedExclusions = cfg.exclusions;
     } else if (!snapshot?.grids.some((g) => g.enabled)) {
       firstRun = true;
@@ -147,10 +160,10 @@
     void emitSettingsSetDims({ gridId: grid.id, cols, rows });
   }
 
+  /** Live dims for an enabled grid, remembered dims for a disabled one. */
   function dimsFor(mon: MonitorInfo): { cols: number; rows: number } {
     const g = gridFor(mon.id);
-    if (g?.enabled) return { cols: g.cols, rows: g.rows };
-    return draftDims[mon.id] ?? (g ? { cols: g.cols, rows: g.rows } : DEFAULT_DIMS);
+    return g ? { cols: g.cols, rows: g.rows } : DEFAULT_DIMS;
   }
 
   function clamp(v: number, lo: number, hi: number): number {
@@ -161,11 +174,9 @@
     cols = clamp(cols, 1, MAX_COLS);
     rows = clamp(rows, 1, MAX_ROWS);
     const g = gridFor(mon.id);
-    if (g?.enabled) {
-      void emitSettingsSetDims({ gridId: g.id, cols, rows });
-    } else {
-      draftDims[mon.id] = { cols, rows };
-    }
+    // The steppers are disabled while the grid is off, so this only ever
+    // fires for an enabled grid.
+    if (g?.enabled) void emitSettingsSetDims({ gridId: g.id, cols, rows });
   }
 
   function setMode(grid: GridSettings, mode: 'collision' | 'overlay'): void {
@@ -285,8 +296,9 @@
       return;
     }
     hotkeyError = null;
-    savedHotkey = result.hotkey;
-    hotkeyDraft = result.hotkey;
+    // Store + display the docs' spelling; emit the canonical accelerator.
+    savedHotkey = toDisplayHotkey(result.hotkey);
+    hotkeyDraft = savedHotkey;
     void emitSettingsSetPrefs({ hotkey: result.hotkey });
   }
 
@@ -374,9 +386,10 @@
         Enable a grid on a monitor and every window there gets its own cell.
         Drag a window and a faint grid fades in with a live preview of where
         it will land and how its neighbors make room — nothing moves until
-        you let go. Reshape the grid, save layouts as templates, exclude apps
-        you'd rather leave alone, and pause everything from the tray whenever
-        you want your desktop back.
+        you let go. Reshape the grid, choose whether windows push each other
+        aside (Tile) or stack freely (Stack), save layouts as templates,
+        exclude apps you'd rather leave alone, and pause everything from the
+        tray whenever you want your desktop back.
       </p>
 
       {#if sortedMonitors.length === 0}
@@ -411,8 +424,11 @@
           Starts as a 12 × 6 grid — your windows on this monitor snap into
           place right away, and you can change everything later.
         </span>
+        <!-- Honest label: this page never returns (the first config write
+             ends first-run for good) — skipping simply lands on the full
+             settings page, where every enable toggle lives. -->
         <button class="quiet" onclick={() => (firstRun = false)}>
-          Skip for now
+          Skip to Settings
         </button>
       </div>
     </section>
@@ -425,9 +441,22 @@
           <span class="version">{appVersion}</span>{/if}
       </p>
     </div>
-    {#if snapshot?.paused}
-      <span class="badge paused">Paused</span>
-    {/if}
+    <!-- Pause is the panic button (spec §6) — it lives where a stressed
+         user looks first, not at the bottom of General. -->
+    <div class="header-pause">
+      {#if snapshot?.paused}
+        <span class="badge paused">Paused</span>
+      {/if}
+      <label class="switch">
+        <input
+          type="checkbox"
+          checked={snapshot?.paused ?? false}
+          onchange={(e) => togglePaused(e.currentTarget.checked)}
+        />
+        <span class="track"><span class="thumb"></span></span>
+        <span class="switch-label wide">Pause window management</span>
+      </label>
+    </div>
   </header>
 
   {#if sortedMonitors.length === 0}
@@ -475,13 +504,13 @@
           <span class="lbl">Columns</span>
           <button
             aria-label="Fewer columns"
-            disabled={dims.cols <= 1}
+            disabled={!enabled || dims.cols <= 1}
             onclick={() => setDims(mon, dims.cols - 1, dims.rows)}>−</button
           >
           <span class="val">{dims.cols}</span>
           <button
             aria-label="More columns"
-            disabled={dims.cols >= MAX_COLS}
+            disabled={!enabled || dims.cols >= MAX_COLS}
             onclick={() => setDims(mon, dims.cols + 1, dims.rows)}>+</button
           >
         </div>
@@ -489,13 +518,13 @@
           <span class="lbl">Rows</span>
           <button
             aria-label="Fewer rows"
-            disabled={dims.rows <= 1}
+            disabled={!enabled || dims.rows <= 1}
             onclick={() => setDims(mon, dims.cols, dims.rows - 1)}>−</button
           >
           <span class="val">{dims.rows}</span>
           <button
             aria-label="More rows"
-            disabled={dims.rows >= MAX_ROWS}
+            disabled={!enabled || dims.rows >= MAX_ROWS}
             onclick={() => setDims(mon, dims.cols, dims.rows + 1)}>+</button
           >
         </div>
@@ -520,6 +549,13 @@
           </span>
         {/if}
       </div>
+      {#if enabled && grid && !spanned}
+        <p class="hint">
+          {grid.mode === 'collision'
+            ? 'Tile: windows push each other aside — they never overlap.'
+            : 'Stack: windows snap to cells and may overlap — the most recent stays on top.'}
+        </p>
+      {/if}
 
       {#if enabled && grid}
         {#key `${grid.id}:${grid.cols}x${grid.rows}:${grid.mode}`}
@@ -619,6 +655,11 @@
           {tiles.length === 1 ? 'window' : 'windows'}
         </span>
       </div>
+      <p class="hint">
+        {grid.mode === 'collision'
+          ? 'Tile: windows push each other aside — they never overlap.'
+          : 'Stack: windows snap to cells and may overlap — the most recent stays on top.'}
+      </p>
 
       {#if union}
         {#key `${grid.id}:${grid.cols}x${grid.rows}:${grid.mode}`}
@@ -791,19 +832,8 @@
     <div class="card-head">
       <div class="mon-info">
         <h2>General</h2>
-        <p class="meta">Pause, startup and the settings hotkey.</p>
+        <p class="meta">Startup and the settings hotkey.</p>
       </div>
-    </div>
-    <div class="controls">
-      <label class="switch">
-        <input
-          type="checkbox"
-          checked={snapshot?.paused ?? false}
-          onchange={(e) => togglePaused(e.currentTarget.checked)}
-        />
-        <span class="track"><span class="thumb"></span></span>
-        <span class="switch-label wide">Pause window management</span>
-      </label>
     </div>
     <div class="controls">
       <label class="switch">
@@ -823,7 +853,7 @@
           class="hotkey-input"
           type="text"
           bind:value={hotkeyDraft}
-          placeholder={DEFAULT_HOTKEY}
+          placeholder={DISPLAY_DEFAULT_HOTKEY}
           spellcheck="false"
           oninput={() => (hotkeyError = null)}
           onkeydown={(e) => {
@@ -839,9 +869,8 @@
       <p class="hint error">{hotkeyError}</p>
     {/if}
     <p class="hint">
-      Global shortcut that opens this window — e.g. Ctrl+Win+G ("Win" and
-      "Super" both mean the Windows key). If another app already owns the new
-      combination, the previous one stays active.
+      Global shortcut that opens this window — e.g. Ctrl+Win+G. If another
+      app already owns the new combination, the previous one stays active.
     </p>
   </section>
 
@@ -874,6 +903,11 @@
     align-items: center;
     justify-content: space-between;
     margin-bottom: 4px;
+  }
+  .header-pause {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
   }
   h1 {
     font-size: 22px;

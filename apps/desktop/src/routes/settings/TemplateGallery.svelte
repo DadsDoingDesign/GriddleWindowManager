@@ -97,7 +97,7 @@
 
 <div class="gallery">
   <div class="gallery-head">
-    <span class="lbl">Templates</span>
+    <span class="lbl">Templates (shared across grids)</span>
     {#if capturing}
       <div class="capture-form">
         <input
