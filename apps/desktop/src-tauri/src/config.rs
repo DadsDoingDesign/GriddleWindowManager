@@ -289,6 +289,40 @@ mod tests {
         assert!(dir.path().join(BAK_FILE).exists(), "evidence kept");
     }
 
+    /// Plan Task 20 (brain-webview death → respawn): the respawned brain
+    /// rehydrates from this file, and the `layouts` entries are opaque
+    /// `Grid.toJSON()` blobs Rust must not reinterpret — they have to survive
+    /// a process death (write, drop everything, fresh read) value-identical,
+    /// including nested tile shapes with absolute/pinned fields, or the
+    /// respawned brain cannot put windows back on their slots.
+    #[test]
+    fn layout_snapshots_survive_death_and_respawn_intact() {
+        let dir = ScratchDir::new();
+        let mut cfg = sample_config();
+        let blob = serde_json::json!({
+            "version": 1,
+            "config": { "cols": 12, "rows": 6, "gravity": "none" },
+            "tiles": [
+                { "id": "131074", "col": 0, "row": 0, "w": 3, "h": 2 },
+                { "id": "262148", "col": 3, "row": 0, "w": 1, "h": 1,
+                  "position": "absolute", "pinned": { "x": 3, "y": 0 } }
+            ]
+        });
+        cfg.layouts
+            .insert("grid:\\\\.\\DISPLAY1@0,0".to_string(), blob.clone());
+        write_config_to(dir.path(), &cfg).expect("write before death");
+
+        // Simulated brain death: nothing survives in memory. The respawn's
+        // read_config must hand back exactly what was persisted.
+        let read = read_config_from(dir.path()).expect("readable after respawn");
+        assert_eq!(
+            read.layouts.get("grid:\\\\.\\DISPLAY1@0,0"),
+            Some(&blob),
+            "layout snapshot must round-trip untouched"
+        );
+        assert_eq!(read, cfg, "whole config survives death intact");
+    }
+
     #[test]
     fn config_dir_is_appdata_griddle_wm() {
         // APPDATA is always set on Windows CI/dev boxes; on other platforms

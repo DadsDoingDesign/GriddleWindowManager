@@ -260,4 +260,146 @@ mod tests {
             unsafe { DestroyWindow(hwnd).expect("DestroyWindow") };
         }
     }
+
+    /// Pixel offset of grid line `i` out of `count` over `extent` px —
+    /// the brain's floor-accumulate cell-edge rule (packages/brain
+    /// src/coords.ts `edge`), mirrored here so the expected rects are
+    /// literally what `enableGrid` → `placeWindow` → `flush` would emit.
+    fn cell_edge(extent: i32, count: i32, i: i32) -> i32 {
+        if i >= count {
+            extent
+        } else {
+            ((i as i64 * extent as i64) / count as i64) as i32
+        }
+    }
+
+    /// The brain's `cellRect` for a 1×1 slot at (col, row) of a cols×rows
+    /// grid over the given work area.
+    fn cell_rect(
+        work: &Rect,
+        cols: i32,
+        rows: i32,
+        col: i32,
+        row: i32,
+    ) -> Rect {
+        let x0 = cell_edge(work.width, cols, col);
+        let x1 = cell_edge(work.width, cols, col + 1);
+        let y0 = cell_edge(work.height, rows, row);
+        let y1 = cell_edge(work.height, rows, row + 1);
+        Rect {
+            x: work.x + x0,
+            y: work.y + y0,
+            width: x1 - x0,
+            height: y1 - y0,
+        }
+    }
+
+    /// Plan Task 20 stress/integration test: 10 real windows through the
+    /// grid-enable pipeline. The brain's `enableGrid` sweep places ten 1×1
+    /// windows first-fit into reading order — cells (0,0)..(4,1) of a 5×2
+    /// grid — and flushes one batched ApplyLayout; this test feeds exactly
+    /// that batch through `apply_validated` (the `apply_layout` command's
+    /// core) and asserts every real window's visible frame lands on its
+    /// brain cell rect within ±2 px (MATCH_TOLERANCE_PX), with no overlap.
+    /// The work area is deliberately not divisible by the grid dims so the
+    /// remainder-absorbing last column/row is exercised on real HWNDs.
+    #[test]
+    fn ten_spawned_windows_snap_to_grid_enable_layout() {
+        let _guard = crate::tracker::live_set_test_lock()
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+
+        const COLS: i32 = 5;
+        const ROWS: i32 = 2;
+        // 1237 % 5 != 0 and 763 % 2 != 0: last column/row absorb remainder.
+        let work = Rect {
+            x: 40,
+            y: 40,
+            width: 1237,
+            height: 763,
+        };
+
+        let windows: Vec<HWND> = (1..=10)
+            .map(|i| create_test_window(&format!("Griddle stress window {i}"), 400, 300))
+            .collect();
+        let keys: Vec<isize> = windows
+            .iter()
+            .enumerate()
+            .map(|(i, &hwnd)| track_test_window(hwnd, &format!("Griddle stress window {i}")))
+            .collect();
+
+        let targets: Vec<Rect> = (0..10)
+            .map(|i| cell_rect(&work, COLS, ROWS, i % COLS, i / COLS))
+            .collect();
+
+        let layout = ApplyLayout {
+            moves: keys
+                .iter()
+                .zip(&targets)
+                .map(|(key, t)| Move {
+                    hwnd: key.to_string(),
+                    x: t.x,
+                    y: t.y,
+                    width: t.width,
+                    height: t.height,
+                })
+                .collect(),
+        };
+
+        let mut destroyed = Vec::new();
+        let applied = apply_validated(&layout, &mut |k| destroyed.push(k));
+        assert_eq!(applied, 10, "all ten windows moved in one batch");
+        assert!(destroyed.is_empty());
+
+        let frames: Vec<Rect> = windows
+            .iter()
+            .zip(&targets)
+            .map(|(&hwnd, target)| {
+                let frame = wait_for_frame(hwnd, target);
+                assert!(
+                    rects_match(target, &frame, Duration::ZERO),
+                    "frame {frame:?} not within ±{MATCH_TOLERANCE_PX}px of target {target:?}"
+                );
+                frame
+            })
+            .collect();
+
+        // No two frames overlap beyond the shared tolerance: for every pair,
+        // the visible frames are separated on at least one axis.
+        for i in 0..frames.len() {
+            for j in (i + 1)..frames.len() {
+                let a = &frames[i];
+                let b = &frames[j];
+                let separated_x = a.x + a.width <= b.x + MATCH_TOLERANCE_PX
+                    || b.x + b.width <= a.x + MATCH_TOLERANCE_PX;
+                let separated_y = a.y + a.height <= b.y + MATCH_TOLERANCE_PX
+                    || b.y + b.height <= a.y + MATCH_TOLERANCE_PX;
+                assert!(
+                    separated_x || separated_y,
+                    "windows {i} and {j} overlap: {a:?} vs {b:?}"
+                );
+            }
+        }
+
+        // The grid tiles the full work area: cells of each row/column abut
+        // exactly at the brain's floor-accumulate edges.
+        for row in 0..ROWS {
+            for col in 0..COLS - 1 {
+                let left = &targets[(row * COLS + col) as usize];
+                let right = &targets[(row * COLS + col + 1) as usize];
+                assert_eq!(left.x + left.width, right.x, "column seam must abut");
+            }
+        }
+        assert_eq!(targets[0].y + targets[0].height, targets[COLS as usize].y);
+        assert_eq!(
+            targets[(COLS * ROWS - 1) as usize].x + targets[(COLS * ROWS - 1) as usize].width,
+            work.x + work.width,
+            "last column absorbs the remainder"
+        );
+
+        for (&hwnd, key) in windows.iter().zip(&keys) {
+            let _ = crate::tracker::untrack(*key);
+            unsafe { DestroyWindow(hwnd).expect("DestroyWindow") };
+        }
+    }
 }
