@@ -1,0 +1,169 @@
+// Contract §C2 — typed wrappers over @tauri-apps/api for every event and
+// command name in the contract. This is the only file in the frontend that
+// spells event/command names; never invent new ones here without extending
+// the contract file (docs/superpowers/plans/2026-08-08-griddle-wm.md) first.
+
+import { invoke } from '@tauri-apps/api/core';
+import { emit, listen, type UnlistenFn } from '@tauri-apps/api/event';
+import type {
+  AppConfig,
+  ApplyLayout,
+  DragPos,
+  Hwnd,
+  MonitorInfo,
+  PreviewState,
+  StateSnapshot,
+  WindowInfo,
+} from '@griddle-wm/brain';
+
+// ---------------------------------------------------------------------------
+// Event payloads that exist only on the wire (C2), mirrored from ipc.rs
+// ---------------------------------------------------------------------------
+
+/** Payload of `window-destroyed`, `window-minimized`, `movesize-start`. */
+export interface HwndPayload {
+  hwnd: Hwnd;
+}
+
+/** Payload of `movesize-end`: final extended-frame rect of the drag. */
+export interface MoveSizeEndPayload {
+  hwnd: Hwnd;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Payload of `tray-toggle-grid`. */
+export interface TrayToggleGridPayload {
+  monitorId: string;
+}
+
+/** Payload of `settings-move` (settings editor → brain, plan Task 13). */
+export interface SettingsMovePayload {
+  gridId: string;
+  hwnd: Hwnd;
+  slot: { col: number; row: number; w: number; h: number };
+}
+
+// ---------------------------------------------------------------------------
+// Commands (webview → Rust)
+// ---------------------------------------------------------------------------
+
+export function listWindows(): Promise<WindowInfo[]> {
+  return invoke<WindowInfo[]>('list_windows');
+}
+
+export function listMonitors(): Promise<MonitorInfo[]> {
+  return invoke<MonitorInfo[]>('list_monitors');
+}
+
+export function applyLayout(layout: ApplyLayout): Promise<void> {
+  return invoke('apply_layout', { layout });
+}
+
+export function showOverlay(monitorId: string): Promise<void> {
+  return invoke('show_overlay', { monitorId });
+}
+
+export function hideOverlay(monitorId: string): Promise<void> {
+  return invoke('hide_overlay', { monitorId });
+}
+
+export function readConfig(): Promise<AppConfig | null> {
+  return invoke<AppConfig | null>('read_config');
+}
+
+export function writeConfig(config: AppConfig): Promise<void> {
+  return invoke('write_config', { config });
+}
+
+export function setPaused(paused: boolean): Promise<void> {
+  return invoke('set_paused', { paused });
+}
+
+export function focusWindow(hwnd: Hwnd): Promise<void> {
+  return invoke('focus_window', { hwnd });
+}
+
+// ---------------------------------------------------------------------------
+// Events Rust → webviews
+// ---------------------------------------------------------------------------
+
+function on<T>(event: string, cb: (payload: T) => void): Promise<UnlistenFn> {
+  return listen<T>(event, (e) => cb(e.payload));
+}
+
+export function onWindowAppeared(cb: (w: WindowInfo) => void): Promise<UnlistenFn> {
+  return on('window-appeared', cb);
+}
+
+export function onWindowDestroyed(cb: (p: HwndPayload) => void): Promise<UnlistenFn> {
+  return on('window-destroyed', cb);
+}
+
+export function onWindowMinimized(cb: (p: HwndPayload) => void): Promise<UnlistenFn> {
+  return on('window-minimized', cb);
+}
+
+export function onWindowRestored(cb: (w: WindowInfo) => void): Promise<UnlistenFn> {
+  return on('window-restored', cb);
+}
+
+export function onMoveSizeStart(cb: (p: HwndPayload) => void): Promise<UnlistenFn> {
+  return on('movesize-start', cb);
+}
+
+export function onDragPos(cb: (p: DragPos) => void): Promise<UnlistenFn> {
+  return on('drag-pos', cb);
+}
+
+export function onMoveSizeEnd(cb: (p: MoveSizeEndPayload) => void): Promise<UnlistenFn> {
+  return on('movesize-end', cb);
+}
+
+export function onMonitorsChanged(cb: (mons: MonitorInfo[]) => void): Promise<UnlistenFn> {
+  return on('monitors-changed', cb);
+}
+
+export function onHotkeySettings(cb: () => void): Promise<UnlistenFn> {
+  return on('hotkey-settings', () => cb());
+}
+
+export function onTrayToggleGrid(
+  cb: (p: TrayToggleGridPayload) => void,
+): Promise<UnlistenFn> {
+  return on('tray-toggle-grid', cb);
+}
+
+export function onPausedChanged(cb: (paused: boolean) => void): Promise<UnlistenFn> {
+  return on('paused-changed', cb);
+}
+
+// ---------------------------------------------------------------------------
+// Events brain → overlays / settings (and back)
+// ---------------------------------------------------------------------------
+
+export function emitPreviewState(p: PreviewState): Promise<void> {
+  return emit('preview-state', p);
+}
+
+export function onPreviewState(cb: (p: PreviewState) => void): Promise<UnlistenFn> {
+  return on('preview-state', cb);
+}
+
+export function emitStateSnapshot(s: StateSnapshot): Promise<void> {
+  return emit('state-snapshot', s);
+}
+
+export function onStateSnapshot(cb: (s: StateSnapshot) => void): Promise<UnlistenFn> {
+  return on('state-snapshot', cb);
+}
+
+export function emitSettingsMove(p: SettingsMovePayload): Promise<void> {
+  return emit('settings-move', p);
+}
+
+export function onSettingsMove(cb: (p: SettingsMovePayload) => void): Promise<UnlistenFn> {
+  return on('settings-move', cb);
+}

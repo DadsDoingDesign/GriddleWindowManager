@@ -23,7 +23,9 @@
     "vite": "^8.2.0"
   },
   "dependencies": {
+    "@griddle-wm/brain": "^0.1.0",
     "@griddle/core": "^0.1.11",
-    "@griddle/svelte": "^0.1.10"
+    "@griddle/svelte": "^0.1.10",
+    "@tauri-apps/api": "^2.11.1"
   }
 }

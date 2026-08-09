@@ -4,6 +4,8 @@ pub mod ipc;
 pub mod monitors;
 pub mod overlay;
 pub mod shell;
+#[cfg(all(test, windows))]
+mod test_windows;
 pub mod tracker;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

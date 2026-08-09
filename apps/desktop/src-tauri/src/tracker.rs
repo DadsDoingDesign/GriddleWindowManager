@@ -824,66 +824,21 @@ mod tests {
 mod win_tests {
     use super::win::{extended_frame_bounds, probe_window, process_exe, window_info};
     use super::*;
-    use std::mem::size_of;
-    use std::sync::OnceLock;
-    use windows::core::w;
-    use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
-    use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows::Win32::Foundation::HWND;
     use windows::Win32::UI::WindowsAndMessaging::{
-        CreateWindowExW, DefWindowProcW, DestroyWindow, RegisterClassExW, CW_USEDEFAULT,
-        WNDCLASSEXW, WS_EX_TOOLWINDOW, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+        DestroyWindow, WINDOW_EX_STYLE, WINDOW_STYLE, WS_EX_TOOLWINDOW, WS_OVERLAPPEDWINDOW,
+        WS_VISIBLE,
     };
 
-    unsafe extern "system" fn test_wndproc(
-        hwnd: HWND,
-        msg: u32,
-        wparam: WPARAM,
-        lparam: LPARAM,
-    ) -> LRESULT {
-        DefWindowProcW(hwnd, msg, wparam, lparam)
-    }
-
-    /// Register the shared test window class exactly once (tests run in
-    /// parallel threads within one process).
-    fn ensure_class() {
-        static REGISTERED: OnceLock<()> = OnceLock::new();
-        REGISTERED.get_or_init(|| unsafe {
-            let hinstance = GetModuleHandleW(None).expect("GetModuleHandleW");
-            let wc = WNDCLASSEXW {
-                cbSize: size_of::<WNDCLASSEXW>() as u32,
-                lpfnWndProc: Some(test_wndproc),
-                hInstance: hinstance.into(),
-                lpszClassName: w!("GriddleWmTrackerTestWindow"),
-                ..Default::default()
-            };
-            assert_ne!(RegisterClassExW(&wc), 0, "RegisterClassExW failed");
-        });
-    }
-
     /// Create a real top-level window with the given styles.
-    fn create_test_window(
-        style: windows::Win32::UI::WindowsAndMessaging::WINDOW_STYLE,
-        exstyle: windows::Win32::UI::WindowsAndMessaging::WINDOW_EX_STYLE,
-    ) -> HWND {
-        ensure_class();
-        unsafe {
-            let hinstance = GetModuleHandleW(None).expect("GetModuleHandleW");
-            CreateWindowExW(
-                exstyle,
-                w!("GriddleWmTrackerTestWindow"),
-                w!("Griddle tracker test window"),
-                style,
-                CW_USEDEFAULT,
-                CW_USEDEFAULT,
-                400,
-                300,
-                None,
-                None,
-                Some(hinstance.into()),
-                None,
-            )
-            .expect("CreateWindowExW")
-        }
+    fn create_test_window(style: WINDOW_STYLE, exstyle: WINDOW_EX_STYLE) -> HWND {
+        crate::test_windows::create_styled_test_window(
+            "Griddle tracker test window",
+            style,
+            exstyle,
+            400,
+            300,
+        )
     }
 
     #[test]

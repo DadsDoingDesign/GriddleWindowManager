@@ -572,113 +572,17 @@ mod tests {
 mod win_tests {
     use super::*;
     use crate::ipc::Move;
-    use std::ffi::c_void;
-    use std::mem::size_of;
-    use std::sync::OnceLock;
-    use windows::core::w;
-    use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
-    use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS};
-    use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-    use windows::Win32::UI::WindowsAndMessaging::{
-        CreateWindowExW, DefWindowProcW, DestroyWindow, GetWindowRect, RegisterClassExW,
-        WNDCLASSEXW, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
-    };
-
-    unsafe extern "system" fn test_wndproc(
-        hwnd: HWND,
-        msg: u32,
-        wparam: WPARAM,
-        lparam: LPARAM,
-    ) -> LRESULT {
-        DefWindowProcW(hwnd, msg, wparam, lparam)
-    }
-
-    fn ensure_class() {
-        static REGISTERED: OnceLock<()> = OnceLock::new();
-        REGISTERED.get_or_init(|| unsafe {
-            let hinstance = GetModuleHandleW(None).expect("GetModuleHandleW");
-            let wc = WNDCLASSEXW {
-                cbSize: size_of::<WNDCLASSEXW>() as u32,
-                lpfnWndProc: Some(test_wndproc),
-                hInstance: hinstance.into(),
-                lpszClassName: w!("GriddleWmActuatorTestWindow"),
-                ..Default::default()
-            };
-            assert_ne!(RegisterClassExW(&wc), 0, "RegisterClassExW failed");
-        });
-    }
+    use crate::test_windows::{frame_bounds, raw_rect, wait_for_frame};
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::DestroyWindow;
 
     fn create_test_window() -> HWND {
-        ensure_class();
-        unsafe {
-            let hinstance = GetModuleHandleW(None).expect("GetModuleHandleW");
-            CreateWindowExW(
-                Default::default(),
-                w!("GriddleWmActuatorTestWindow"),
-                w!("Griddle actuator test window"),
-                WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-                60,
-                60,
-                400,
-                300,
-                None,
-                None,
-                Some(hinstance.into()),
-                None,
-            )
-            .expect("CreateWindowExW")
-        }
+        crate::test_windows::create_test_window("Griddle actuator test window", 400, 300)
     }
 
     /// Seed the tracker's live set so the security rule admits the window.
     fn track(hwnd: HWND) -> isize {
-        let key = hwnd.0 as isize;
-        crate::tracker::track_for_test(
-            key,
-            crate::ipc::WindowInfo {
-                hwnd: key.to_string(),
-                title: "Griddle actuator test window".into(),
-                exe: "griddle-test.exe".into(),
-                x: 60,
-                y: 60,
-                width: 400,
-                height: 300,
-                monitor_id: "m".into(),
-                minimized: false,
-                resizable: true,
-            },
-        );
-        key
-    }
-
-    fn frame_bounds(hwnd: HWND) -> Rect {
-        let mut r = RECT::default();
-        unsafe {
-            DwmGetWindowAttribute(
-                hwnd,
-                DWMWA_EXTENDED_FRAME_BOUNDS,
-                &mut r as *mut RECT as *mut c_void,
-                size_of::<RECT>() as u32,
-            )
-            .expect("DWMWA_EXTENDED_FRAME_BOUNDS");
-        }
-        Rect {
-            x: r.left,
-            y: r.top,
-            width: r.right - r.left,
-            height: r.bottom - r.top,
-        }
-    }
-
-    fn raw_rect(hwnd: HWND) -> Rect {
-        let mut r = RECT::default();
-        unsafe { GetWindowRect(hwnd, &mut r).expect("GetWindowRect") };
-        Rect {
-            x: r.left,
-            y: r.top,
-            width: r.right - r.left,
-            height: r.bottom - r.top,
-        }
+        crate::test_windows::track_test_window(hwnd, "Griddle actuator test window")
     }
 
     fn one_move(key: isize, target: Rect) -> ApplyLayout {
@@ -691,19 +595,6 @@ mod win_tests {
                 height: target.height,
             }],
         }
-    }
-
-    /// DWM may publish the new frame bounds a moment after SetWindowPos;
-    /// poll briefly before asserting.
-    fn wait_for_frame(hwnd: HWND, target: &Rect) -> Rect {
-        for _ in 0..50 {
-            let frame = frame_bounds(hwnd);
-            if rects_match(target, &frame, Duration::ZERO) {
-                return frame;
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        frame_bounds(hwnd)
     }
 
     #[test]
