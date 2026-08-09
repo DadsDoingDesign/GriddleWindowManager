@@ -207,6 +207,8 @@ pub fn list_windows() -> Vec<WindowInfo> {
 
 #[cfg(windows)]
 pub use win::{is_eligible, snapshot, start_tracker};
+#[cfg(windows)]
+pub(crate) use win::extended_frame_bounds;
 
 #[cfg(not(windows))]
 pub fn snapshot() -> Vec<WindowInfo> {
@@ -329,7 +331,7 @@ mod win {
     /// The visible frame rect: `DWMWA_EXTENDED_FRAME_BOUNDS` (excludes the
     /// invisible resize borders), falling back to `GetWindowRect` when DWM
     /// declines. Physical virtual-desktop pixels either way.
-    pub(super) fn extended_frame_bounds(hwnd: HWND) -> Option<RECT> {
+    pub(crate) fn extended_frame_bounds(hwnd: HWND) -> Option<RECT> {
         unsafe {
             let mut rect = RECT::default();
             if DwmGetWindowAttribute(
@@ -552,6 +554,9 @@ mod win {
 
     fn on_gone(hwnd: HWND) {
         let key = hwnd.0 as isize;
+        // Stop any in-flight drag sampler for this window (Task 14: no
+        // leaked pump threads when a window dies mid-drag).
+        crate::drag_pump::on_window_gone(key);
         if remove_tracked(key).is_some() {
             emit(
                 events::WINDOW_DESTROYED,
@@ -607,11 +612,16 @@ mod win {
                     hwnd: key.to_string(),
                 },
             );
+            // Task 14: start the 16 ms drag sampler emitting `drag-pos`.
+            crate::drag_pump::on_move_size_start(key);
         }
     }
 
     fn on_movesize_end(hwnd: HWND) {
         let key = hwnd.0 as isize;
+        // Stop the drag sampler even if the window got untracked mid-drag;
+        // the final rect travels with the `movesize-end` event below.
+        crate::drag_pump::on_move_size_end(key);
         if !is_tracked(key) {
             return;
         }

@@ -1,5 +1,6 @@
 pub mod actuator;
 pub mod config;
+pub mod drag_pump;
 pub mod ipc;
 pub mod monitors;
 pub mod overlay;
@@ -20,6 +21,7 @@ pub fn run() {
                 )?;
             }
             monitors::start_display_watcher(app.handle().clone());
+            drag_pump::init(app.handle().clone());
             tracker::start_tracker(app.handle().clone());
             // Until Task 18 adds the tray + hotkey there is no UI trigger for
             // the settings window, so open it on launch for now.
