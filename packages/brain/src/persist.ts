@@ -8,6 +8,7 @@
 // entry and drops the rest. Layout snapshots are validated separately at
 // grid-enable time — a corrupt entry just means that grid starts empty.
 
+import { MAX_SPACING_PX } from './coords';
 import type { AppConfig, GridSettings, Slot, Template } from './types';
 
 export const DEFAULT_HOTKEY = 'Ctrl+Super+G';
@@ -47,6 +48,17 @@ function sanitizeSlot(raw: unknown, cols: number, rows: number): Slot | null {
   return { col, row, w, h };
 }
 
+/**
+ * Spacing field migration (spec v0.2 §4 groundwork): a valid number is
+ * clamped into the settings range (integer px, 0..64); anything else —
+ * including the field being absent, as in every v1 config — reads as
+ * `undefined`, which the whole stack treats as 0.
+ */
+function sanitizeSpacing(raw: unknown): number | undefined {
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return undefined;
+  return Math.min(Math.max(Math.floor(raw), 0), MAX_SPACING_PX);
+}
+
 function sanitizeGridSettings(raw: unknown): GridSettings | null {
   if (!isRecord(raw)) return null;
   if (!isNonEmptyString(raw.id)) return null;
@@ -57,6 +69,8 @@ function sanitizeGridSettings(raw: unknown): GridSettings | null {
     return null;
   }
   if (raw.mode !== 'collision' && raw.mode !== 'overlay') return null;
+  const gap = sanitizeSpacing(raw.gap);
+  const padding = sanitizeSpacing(raw.padding);
   return {
     id: raw.id,
     monitorIds,
@@ -67,6 +81,10 @@ function sanitizeGridSettings(raw: unknown): GridSettings | null {
     activeTemplateId: isNonEmptyString(raw.activeTemplateId)
       ? raw.activeTemplateId
       : null,
+    // Emitted only when present so a v1 config round-trips byte-identical;
+    // absent means 0 (spec v0.2 §1 defaults).
+    ...(gap !== undefined ? { gap } : {}),
+    ...(padding !== undefined ? { padding } : {}),
   };
 }
 

@@ -72,6 +72,14 @@ pub struct GridSettings {
     pub mode: GridMode,
     pub enabled: bool,
     pub active_template_id: Option<String>,
+    /// Space between adjacent cells, physical px 0..=64 (spec v0.2 §1).
+    /// Defaults to 0 so v1 configs without the field still deserialize.
+    #[serde(default)]
+    pub gap: u32,
+    /// Inset of the usable area from every work-area edge, physical px
+    /// 0..=64 (spec v0.2 §1). Defaults like `gap`.
+    #[serde(default)]
+    pub padding: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

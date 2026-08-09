@@ -1,15 +1,21 @@
-// Fuzz gate (plan Task 7, spec §8): a seeded PRNG drives 1,000 random ops
-// (appear/destroy/minimize/restore/drag/setMode/reflow/applyTemplate) across
-// two gridded monitors. After EVERY op the suite asserts:
-//   1. every rect ever emitted lies inside some monitor's work area,
+// Fuzz gate (plan Task 7, spec §8; extended for spec v0.2 §5): a seeded PRNG
+// drives 1,000 random ops (appear/destroy/minimize/restore/drag/setMode/
+// reflow/applyTemplate/setSpacing) across two gridded monitors that carry
+// random gap/padding. After EVERY op the suite asserts:
+//   1. every rect ever emitted lies inside some monitor's *effective* work
+//      area (work area shrunk by that grid's current padding),
 //   2. collision grids have no overlapping in-flow tiles (walking
 //      grid.toJSON() via exportConfig), and every tile is in grid bounds,
+//   2b. rect-level (spec v0.2 §5): the px rects of a collision grid's
+//       in-flow tiles never overlap and stay inside the effective area —
+//       the cell-level check alone can't see gap/padding math errors,
 //   3. no hwnd is tiled twice, and floating ∩ tiled = ∅,
 //   4. nothing throws.
 // Any failure reports the seed (set FUZZ_SEED=<n> to reproduce a run).
 
 import { describe, expect, it } from 'vitest';
 import { WindowManagerBrain } from '../src/brain';
+import { cellRect, effectiveSpacing } from '../src/coords';
 
 // packages/brain compiles with "types": [] to enforce its zero-DOM/zero-Node
 // constraint on src/. Tests DO run under Node (vitest), so declare the two
@@ -21,7 +27,6 @@ import type {
   ApplyLayout,
   GridSettings,
   MonitorInfo,
-  Move,
   PreviewState,
   StateSnapshot,
   WindowInfo,
@@ -93,13 +98,49 @@ function slotOfRaw(t: LayoutTileRaw): { col: number; row: number; w: number; h: 
   return { col: t.col, row: t.row, w: t.w, h: t.h };
 }
 
-function moveInSomeWorkArea(m: Move): boolean {
-  return MONITORS.some(
-    (mon) =>
-      m.x >= mon.workX &&
-      m.y >= mon.workY &&
-      m.x + m.width <= mon.workX + mon.workWidth &&
-      m.y + m.height <= mon.workY + mon.workHeight,
+interface PxRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * The area a rect on `mon` must stay inside: the effective (padded) work
+ * area of the enabled grid covering the monitor, or the raw work area when
+ * no grid covers it.
+ */
+function boundsFor(mon: MonitorInfo, grids: GridSettings[]): PxRect {
+  const g = grids.find(
+    (g) => g.enabled && g.monitorIds.length === 1 && g.monitorIds[0] === mon.id,
+  );
+  if (!g) {
+    return { x: mon.workX, y: mon.workY, width: mon.workWidth, height: mon.workHeight };
+  }
+  const eff = effectiveSpacing(mon, {
+    cols: g.cols,
+    rows: g.rows,
+    gap: g.gap,
+    padding: g.padding,
+  });
+  return { x: eff.x, y: eff.y, width: eff.width, height: eff.height };
+}
+
+function rectInside(r: PxRect, b: PxRect): boolean {
+  return (
+    r.x >= b.x &&
+    r.y >= b.y &&
+    r.x + r.width <= b.x + b.width &&
+    r.y + r.height <= b.y + b.height
+  );
+}
+
+function rectsOverlap(a: PxRect, b: PxRect): boolean {
+  return (
+    a.x < b.x + b.width &&
+    b.x < a.x + a.width &&
+    a.y < b.y + b.height &&
+    b.y < a.y + a.height
   );
 }
 
@@ -110,20 +151,23 @@ function checkInvariants(
   fromApply: number,
   snapshots: StateSnapshot[],
 ): void {
-  // 1. every emitted rect in bounds of some monitor's work area
+  const cfg = brain.exportConfig();
+  const bounds = MONITORS.map((mon) => boundsFor(mon, cfg.grids));
+
+  // 1. every emitted rect in bounds of some monitor's effective work area
+  // (settings changes flush in the same op, so `cfg` matches the emit)
   for (let i = fromApply; i < applies.length; i++) {
     for (const m of applies[i]!.moves) {
       if (!(m.width > 0 && m.height > 0)) {
         throw new Error(`empty rect emitted: ${JSON.stringify(m)}`);
       }
-      if (!moveInSomeWorkArea(m)) {
-        throw new Error(`rect out of every work area: ${JSON.stringify(m)}`);
+      if (!bounds.some((b) => rectInside(m, b))) {
+        throw new Error(`rect out of every effective work area: ${JSON.stringify(m)}`);
       }
     }
   }
 
   // 2+3. walk grid.toJSON() per enabled grid via exportConfig
-  const cfg = brain.exportConfig();
   const tiledIds = new Set<string>();
   for (const g of cfg.grids) {
     if (!g.enabled) continue;
@@ -175,6 +219,41 @@ function checkInvariants(
         }
       }
     }
+
+    // 2b. rect-level (spec v0.2 §5): now that gaps exist, project every
+    // in-flow tile to its px rect and require it inside the effective area
+    // — and, in collision mode, pairwise disjoint. Cell-level disjointness
+    // alone cannot catch gap/padding math errors.
+    const gridMon = MONITORS.find(
+      (m) => g.monitorIds.length === 1 && g.monitorIds[0] === m.id,
+    );
+    if (gridMon) {
+      const dims = { cols, rows, gap: g.gap, padding: g.padding };
+      const eff = boundsFor(gridMon, [g]);
+      const pxRects = inFlow.map((t) => ({ id: t.id, rect: cellRect(gridMon, dims, t) }));
+      for (const { id, rect } of pxRects) {
+        if (!rectInside(rect, eff)) {
+          throw new Error(
+            `tile ${id} px rect leaves the effective area of ${g.id}: ` +
+              `${JSON.stringify(rect)} vs ${JSON.stringify(eff)}`,
+          );
+        }
+      }
+      if (g.mode === 'collision') {
+        for (let i = 0; i < pxRects.length; i++) {
+          for (let j = i + 1; j < pxRects.length; j++) {
+            if (rectsOverlap(pxRects[i]!.rect, pxRects[j]!.rect)) {
+              throw new Error(
+                `overlapping px rects in collision grid ${g.id} ` +
+                  `(gap=${g.gap ?? 0} pad=${g.padding ?? 0}): ` +
+                  `${pxRects[i]!.id}=${JSON.stringify(pxRects[i]!.rect)} vs ` +
+                  `${pxRects[j]!.id}=${JSON.stringify(pxRects[j]!.rect)}`,
+              );
+            }
+          }
+        }
+      }
+    }
   }
 
   // 3b. floating windows are never simultaneously tiled
@@ -202,6 +281,8 @@ function runFuzz(seed: number, opCount: number): void {
     onSnapshot: (s) => snapshots.push(s),
   });
   brain.setMonitors(MONITORS);
+  // Random spacing per grid (spec v0.2 §5): the whole run exercises the
+  // gap/padding math, not just the setSpacing ops.
   const g1: GridSettings = {
     id: GRID1,
     monitorIds: [MON1.id],
@@ -210,6 +291,8 @@ function runFuzz(seed: number, opCount: number): void {
     mode: 'collision',
     enabled: true,
     activeTemplateId: null,
+    gap: randInt(0, 64),
+    padding: randInt(0, 64),
   };
   const g2: GridSettings = {
     id: GRID2,
@@ -219,6 +302,8 @@ function runFuzz(seed: number, opCount: number): void {
     mode: 'overlay',
     enabled: true,
     activeTemplateId: null,
+    gap: randInt(0, 64),
+    padding: randInt(0, 64),
   };
   brain.enableGrid(g1, []);
   brain.enableGrid(g2, []);
@@ -260,6 +345,7 @@ function runFuzz(seed: number, opCount: number): void {
     ['setMode', 6],
     ['reflow', 7],
     ['applyTemplate', 10],
+    ['setSpacing', 6],
   ];
   const totalWeight = ops.reduce((s, [, w]) => s + w, 0);
   const drawOp = (): string => {
@@ -393,6 +479,14 @@ function runFuzz(seed: number, opCount: number): void {
           const tpl = pick(TEMPLATE_IDS);
           desc = `applyTemplate ${gridId} ${tpl}`;
           brain.applyTemplate(gridId, tpl);
+          break;
+        }
+        case 'setSpacing': {
+          const gridId = pick(GRID_IDS);
+          const gap = randInt(0, 64);
+          const padding = randInt(0, 64);
+          desc = `setSpacing ${gridId} gap=${gap} pad=${padding}`;
+          brain.setSpacing(gridId, gap, padding);
           break;
         }
       }

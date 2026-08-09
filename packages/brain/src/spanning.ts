@@ -84,7 +84,15 @@ export interface OverlayGridView {
 }
 
 export function resolveOverlayGrid(
-  grids: ReadonlyArray<{ id: string; monitorIds: string[]; cols: number; rows: number; enabled: boolean }>,
+  grids: ReadonlyArray<{
+    id: string;
+    monitorIds: string[];
+    cols: number;
+    rows: number;
+    enabled: boolean;
+    gap?: number;
+    padding?: number;
+  }>,
   monitors: readonly MonitorInfo[],
   monitorId: string,
 ): OverlayGridView | null {
@@ -100,7 +108,14 @@ export function resolveOverlayGrid(
   const layoutMon = members.length === 1 ? members[0]! : unionWorkArea(members);
   return {
     gridId: grid.id,
-    dims: { cols: grid.cols, rows: grid.rows },
+    // Spacing rides along (spec v0.2 §1) so overlay cell math matches the
+    // brain's; keys are only emitted when the settings carry them.
+    dims: {
+      cols: grid.cols,
+      rows: grid.rows,
+      ...(grid.gap !== undefined ? { gap: grid.gap } : {}),
+      ...(grid.padding !== undefined ? { padding: grid.padding } : {}),
+    },
     layoutMon,
   };
 }

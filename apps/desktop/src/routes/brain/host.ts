@@ -43,6 +43,7 @@ import {
   onSettingsSetExclusions,
   onSettingsSetMode,
   onSettingsSetPrefs,
+  onSettingsSetSpacing,
   onTrayToggleGrid,
   onWindowAppeared,
   onWindowDestroyed,
@@ -273,6 +274,9 @@ export async function startBrainHost(): Promise<BrainHost> {
       mode: existing?.mode ?? 'collision',
       enabled: true,
       activeTemplateId: null,
+      // Spacing survives a disable/enable cycle like the mode does.
+      gap: existing?.gap ?? 0,
+      padding: existing?.padding ?? 0,
     };
     brain.enableGrid(settings, wins);
     prewarmOverlays(settings.monitorIds);
@@ -304,6 +308,8 @@ export async function startBrainHost(): Promise<BrainHost> {
       mode: existing?.mode ?? 'collision',
       enabled: true,
       activeTemplateId: null,
+      gap: existing?.gap ?? 0,
+      padding: existing?.padding ?? 0,
     };
     brain.enableGrid(settings, wins);
     prewarmOverlays(ids);
@@ -439,6 +445,12 @@ export async function startBrainHost(): Promise<BrainHost> {
     onSettingsSetMode((p) => {
       markUserAction();
       brain.setMode(p.gridId, p.mode);
+    }),
+    // Settings window → brain (spec v0.2 §1): gap/padding steppers — the
+    // brain clamps and re-applies the grid live in one batch.
+    onSettingsSetSpacing((p) => {
+      markUserAction();
+      brain.setSpacing(p.gridId, p.gap, p.padding);
     }),
     onSettingsCaptureTemplate((p) => {
       markUserAction();

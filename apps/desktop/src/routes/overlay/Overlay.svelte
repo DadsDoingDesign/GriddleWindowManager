@@ -28,6 +28,7 @@
   import { onDestroy, onMount } from 'svelte';
   import {
     cellRect,
+    effectiveSpacing,
     resolveOverlayGrid,
     type GhostMove,
     type GridSettings,
@@ -93,37 +94,58 @@
   }
 
   /**
-   * The grid's work area in window-local coordinates. For a spanning grid
-   * this is the union work area — parts beyond this monitor fall outside the
+   * The grid's *effective* work area (spec v0.2 §1: work area inset by the
+   * grid's padding) in window-local coordinates. For a spanning grid this is
+   * the padded union work area — parts beyond this monitor fall outside the
    * SVG viewBox and are clipped, which is exactly the monitor-local slice.
    */
-  const workRect = $derived(
-    mon && layoutMon
-      ? {
-          x: layoutMon.workX - mon.x,
-          y: layoutMon.workY - mon.y,
-          width: layoutMon.workWidth,
-          height: layoutMon.workHeight,
-        }
-      : null,
-  );
+  const workRect = $derived.by(() => {
+    if (!mon || !layoutMon || !dims) return null;
+    const eff = effectiveSpacing(layoutMon, dims);
+    return {
+      x: eff.x - mon.x,
+      y: eff.y - mon.y,
+      width: eff.width,
+      height: eff.height,
+    };
+  });
 
-  /** Interior column line positions (window-local x), matching cellRect edges. */
+  /**
+   * Interior column line positions (window-local x), matching cellRect
+   * edges. With a gap, every seam has two edges — the end of one cell's
+   * content and the start of the next — and both are drawn, so the faint
+   * lines frame the gutters exactly where windows will sit. With gap 0 the
+   * pair collapses to the single shared edge.
+   */
   const columnEdges = $derived.by(() => {
     if (!mon || !layoutMon || !dims) return [];
     const xs: number[] = [];
-    for (let col = 1; col < dims.cols; col++) {
-      xs.push(cellRect(layoutMon, dims, { col, row: 0, w: 1, h: 1 }).x - mon.x);
+    let prevRight: number | null = null;
+    for (let col = 0; col < dims.cols; col++) {
+      const r = cellRect(layoutMon, dims, { col, row: 0, w: 1, h: 1 });
+      const left = r.x - mon.x;
+      if (prevRight !== null) {
+        xs.push(left);
+        if (prevRight !== left) xs.push(prevRight);
+      }
+      prevRight = left + r.width;
     }
     return xs;
   });
 
-  /** Interior row line positions (window-local y). */
+  /** Interior row line positions (window-local y), same pairing as columns. */
   const rowEdges = $derived.by(() => {
     if (!mon || !layoutMon || !dims) return [];
     const ys: number[] = [];
-    for (let row = 1; row < dims.rows; row++) {
-      ys.push(cellRect(layoutMon, dims, { col: 0, row, w: 1, h: 1 }).y - mon.y);
+    let prevBottom: number | null = null;
+    for (let row = 0; row < dims.rows; row++) {
+      const r = cellRect(layoutMon, dims, { col: 0, row, w: 1, h: 1 });
+      const top = r.y - mon.y;
+      if (prevBottom !== null) {
+        ys.push(top);
+        if (prevBottom !== top) ys.push(prevBottom);
+      }
+      prevBottom = top + r.height;
     }
     return ys;
   });

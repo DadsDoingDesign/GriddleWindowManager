@@ -83,6 +83,17 @@ export interface SettingsSetModePayload {
   mode: 'collision' | 'overlay';
 }
 
+/**
+ * Payload of `settings-set-spacing` (settings → brain, spec v0.2 §1): the
+ * gap/padding steppers on a monitor or span card. Routed to `setSpacing`,
+ * which clamps into 0..64 and re-applies the whole grid in one batch.
+ */
+export interface SettingsSetSpacingPayload {
+  gridId: string;
+  gap: number;
+  padding: number;
+}
+
 /** Payload of `settings-capture-template` (settings → brain, plan Task 16). */
 export interface SettingsCaptureTemplatePayload {
   gridId: string;
@@ -353,6 +364,16 @@ export function onSettingsSetMode(
   cb: (p: SettingsSetModePayload) => void,
 ): Promise<UnlistenFn> {
   return on('settings-set-mode', cb);
+}
+
+export function emitSettingsSetSpacing(p: SettingsSetSpacingPayload): Promise<void> {
+  return emit('settings-set-spacing', p);
+}
+
+export function onSettingsSetSpacing(
+  cb: (p: SettingsSetSpacingPayload) => void,
+): Promise<UnlistenFn> {
+  return on('settings-set-spacing', cb);
 }
 
 export function emitSettingsCaptureTemplate(

@@ -8,7 +8,12 @@
   import { onDestroy } from 'svelte';
   import { createGriddle, GriddleGrid } from '@griddle/svelte';
   import type { Tile } from '@griddle/core';
-  import type { MonitorInfo, Slot, TileSnapshot } from '@griddle-wm/brain';
+  import {
+    effectiveSpacing,
+    type MonitorInfo,
+    type Slot,
+    type TileSnapshot,
+  } from '@griddle-wm/brain';
   import { emitSettingsMove } from '../../lib/ipc';
 
   interface Props {
@@ -18,31 +23,47 @@
     mode: 'collision' | 'overlay';
     monitor: MonitorInfo;
     tiles: TileSnapshot[];
+    /** Grid spacing (spec v0.2 §1), physical px — scaled into editor space. */
+    gap: number;
+    padding: number;
   }
-  const { gridId, cols, rows, mode, monitor, tiles }: Props = $props();
+  const { gridId, cols, rows, mode, monitor, tiles, gap, padding }: Props = $props();
 
-  // Editor mirrors the monitor's aspect ratio at a fixed width.
+  // Editor mirrors the monitor's aspect ratio at a fixed width. The grid's
+  // gap/padding pass through the same effectiveSpacing (incl. the coercion
+  // that keeps units >= 16px) and are then scaled by the editor's miniature
+  // factor, so what the editor shows is exactly what the desktop gets
+  // (spec v0.2 §1 editor parity). Reading props once at init is on purpose:
+  // the parent keys this component on gridId/cols/rows/mode/gap/padding, so
+  // any config change remounts it.
   const EDITOR_W = 632;
-  const GAP = 4;
-  // These read props once at init on purpose: the parent keys this component
-  // on gridId/cols/rows/mode, so a config change remounts it.
   /* svelte-ignore state_referenced_locally */
-  const editorH = Math.round((EDITOR_W * monitor.workHeight) / monitor.workWidth);
-  /* svelte-ignore state_referenced_locally */
-  const unitWidth = (EDITOR_W - cols * GAP) / cols;
-  /* svelte-ignore state_referenced_locally */
-  const unitHeight = (editorH - rows * GAP) / rows;
+  const layout = (() => {
+    const eff = effectiveSpacing(monitor, { cols, rows, gap, padding });
+    const scale = EDITOR_W / monitor.workWidth;
+    const innerW = eff.width * scale;
+    const innerH = eff.height * scale;
+    // Griddle takes one gap for both axes; the x gap wins (the axes only
+    // ever differ when the coercion clamps one of them).
+    const gapPx = eff.gapX * scale;
+    return {
+      padX: (eff.x - monitor.workX) * scale,
+      padY: (eff.y - monitor.workY) * scale,
+      height: Math.round(innerH),
+      unitWidth: (innerW - cols * gapPx) / cols,
+      unitHeight: (innerH - rows * gapPx) / rows,
+      gap: gapPx,
+    };
+  })();
 
-  // The parent keys this component on gridId/cols/rows/mode, so reading
-  // those props once at init is correct — a config change remounts us.
   /* svelte-ignore state_referenced_locally */
   const api = createGriddle({
     config: {
       cols,
       rows,
-      unitWidth,
-      unitHeight,
-      gap: GAP,
+      unitWidth: layout.unitWidth,
+      unitHeight: layout.unitHeight,
+      gap: layout.gap,
       gravity: 'none',
       enablePositioning: true,
       pinUnits: 'cells',
@@ -151,20 +172,24 @@
 </script>
 
 <div class="editor" style:width="{EDITOR_W}px">
-  <GriddleGrid
-    {api}
-    height={editorH}
-    showGrid={true}
-    on:dragStart={beginInteraction}
-    on:dragEnd={endInteraction}
-    on:resizeStart={beginInteraction}
-    on:resizeEnd={endInteraction}
-  >
-    <div slot="tile" let:tile class="wtile" title={infoByHwnd.get(tile.id)?.title}>
-      <span class="wtitle">{infoByHwnd.get(tile.id)?.title || `Window ${tile.id}`}</span>
-      <span class="wexe">{infoByHwnd.get(tile.id)?.exe ?? ''}</span>
-    </div>
-  </GriddleGrid>
+  <!-- Scaled padding inset: the well showing through here is the same strip
+       of desktop the real padding leaves free. -->
+  <div class="pad" style:padding="{layout.padY}px {layout.padX}px">
+    <GriddleGrid
+      {api}
+      height={layout.height}
+      showGrid={true}
+      on:dragStart={beginInteraction}
+      on:dragEnd={endInteraction}
+      on:resizeStart={beginInteraction}
+      on:resizeEnd={endInteraction}
+    >
+      <div slot="tile" let:tile class="wtile" title={infoByHwnd.get(tile.id)?.title}>
+        <span class="wtitle">{infoByHwnd.get(tile.id)?.title || `Window ${tile.id}`}</span>
+        <span class="wexe">{infoByHwnd.get(tile.id)?.exe ?? ''}</span>
+      </div>
+    </GriddleGrid>
+  </div>
 </div>
 
 <style>

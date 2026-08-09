@@ -9,6 +9,7 @@
   import type { UnlistenFn } from '@tauri-apps/api/event';
   import {
     DEFAULT_HOTKEY,
+    MAX_SPACING_PX,
     unionWorkArea,
     type GridSettings,
     type MonitorInfo,
@@ -24,6 +25,7 @@
     emitSettingsSetExclusions,
     emitSettingsSetMode,
     emitSettingsSetPrefs,
+    emitSettingsSetSpacing,
     listMonitors,
     listWindows,
     onMonitorsChanged,
@@ -37,6 +39,12 @@
   const MAX_COLS = 32;
   const MAX_ROWS = 16;
   const DEFAULT_DIMS = { cols: 12, rows: 6 };
+  /**
+   * Gap/padding stepper increment (spec v0.2 §1: range 0–64). 4px per click
+   * walks the whole range in 16 steps and lands on the spacing values people
+   * actually use; the brain accepts any integer in range.
+   */
+  const SPACING_STEP = 4;
 
   let monitors: MonitorInfo[] = $state([]);
   let snapshot: StateSnapshot | null = $state(null);
@@ -189,6 +197,21 @@
   function setMode(grid: GridSettings, mode: 'collision' | 'overlay'): void {
     if (grid.mode === mode) return;
     void emitSettingsSetMode({ gridId: grid.id, mode });
+  }
+
+  /** Live gap/padding of a monitor's grid; 0 until one exists. */
+  function spacingFor(mon: MonitorInfo): { gap: number; padding: number } {
+    const g = gridFor(mon.id);
+    return { gap: g?.gap ?? 0, padding: g?.padding ?? 0 };
+  }
+
+  /** Spacing steppers (spec v0.2 §1) — the brain clamps and re-applies live. */
+  function setGridSpacing(grid: GridSettings, gap: number, padding: number): void {
+    void emitSettingsSetSpacing({
+      gridId: grid.id,
+      gap: clamp(gap, 0, MAX_SPACING_PX),
+      padding: clamp(padding, 0, MAX_SPACING_PX),
+    });
   }
 
   function toggleGrid(mon: MonitorInfo, enabled: boolean): void {
@@ -490,6 +513,7 @@
     {@const spanned = spanFor(mon.id)}
     {@const enabled = grid?.enabled ?? false}
     {@const dims = dimsFor(mon)}
+    {@const spacing = spacingFor(mon)}
     {@const tiles = (grid && snapshot?.tiles[grid.id]) || []}
     <section class="card">
       <div class="card-head">
@@ -571,6 +595,47 @@
           </span>
         {/if}
       </div>
+      <!-- Spacing steppers (spec v0.2 §1): every click re-applies live. -->
+      <div class="controls" class:dimmed={!enabled} class:hidden={spanned !== undefined}>
+        <div class="stepper">
+          <span class="lbl" title="Space between neighboring windows">Gap</span>
+          <button
+            aria-label="Smaller gap"
+            disabled={!enabled || !grid || spacing.gap <= 0}
+            onclick={() =>
+              grid && setGridSpacing(grid, spacing.gap - SPACING_STEP, spacing.padding)}
+            >−</button
+          >
+          <span class="val px">{spacing.gap}px</span>
+          <button
+            aria-label="Larger gap"
+            disabled={!enabled || !grid || spacing.gap >= MAX_SPACING_PX}
+            onclick={() =>
+              grid && setGridSpacing(grid, spacing.gap + SPACING_STEP, spacing.padding)}
+            >+</button
+          >
+        </div>
+        <div class="stepper">
+          <span class="lbl" title="Margin between the grid and the monitor edges">
+            Padding
+          </span>
+          <button
+            aria-label="Less padding"
+            disabled={!enabled || !grid || spacing.padding <= 0}
+            onclick={() =>
+              grid && setGridSpacing(grid, spacing.gap, spacing.padding - SPACING_STEP)}
+            >−</button
+          >
+          <span class="val px">{spacing.padding}px</span>
+          <button
+            aria-label="More padding"
+            disabled={!enabled || !grid || spacing.padding >= MAX_SPACING_PX}
+            onclick={() =>
+              grid && setGridSpacing(grid, spacing.gap, spacing.padding + SPACING_STEP)}
+            >+</button
+          >
+        </div>
+      </div>
       {#if enabled && grid && !spanned}
         <p class="hint">
           {grid.mode === 'collision'
@@ -580,13 +645,15 @@
       {/if}
 
       {#if enabled && grid}
-        {#key `${grid.id}:${grid.cols}x${grid.rows}:${grid.mode}`}
+        {#key `${grid.id}:${grid.cols}x${grid.rows}:${grid.mode}:${grid.gap ?? 0}:${grid.padding ?? 0}`}
           <GridEditor
             gridId={grid.id}
             cols={grid.cols}
             rows={grid.rows}
             mode={grid.mode}
             monitor={mon}
+            gap={grid.gap ?? 0}
+            padding={grid.padding ?? 0}
             {tiles}
           />
         {/key}
@@ -682,6 +749,48 @@
           {tiles.length === 1 ? 'window' : 'windows'}
         </span>
       </div>
+      <!-- Spacing steppers (spec v0.2 §1), same semantics as monitor cards;
+           padding insets the union work area. -->
+      <div class="controls">
+        <div class="stepper">
+          <span class="lbl" title="Space between neighboring windows">Gap</span>
+          <button
+            aria-label="Smaller gap"
+            disabled={(grid.gap ?? 0) <= 0}
+            onclick={() =>
+              setGridSpacing(grid, (grid.gap ?? 0) - SPACING_STEP, grid.padding ?? 0)}
+            >−</button
+          >
+          <span class="val px">{grid.gap ?? 0}px</span>
+          <button
+            aria-label="Larger gap"
+            disabled={(grid.gap ?? 0) >= MAX_SPACING_PX}
+            onclick={() =>
+              setGridSpacing(grid, (grid.gap ?? 0) + SPACING_STEP, grid.padding ?? 0)}
+            >+</button
+          >
+        </div>
+        <div class="stepper">
+          <span class="lbl" title="Margin between the grid and the union work-area edges">
+            Padding
+          </span>
+          <button
+            aria-label="Less padding"
+            disabled={(grid.padding ?? 0) <= 0}
+            onclick={() =>
+              setGridSpacing(grid, grid.gap ?? 0, (grid.padding ?? 0) - SPACING_STEP)}
+            >−</button
+          >
+          <span class="val px">{grid.padding ?? 0}px</span>
+          <button
+            aria-label="More padding"
+            disabled={(grid.padding ?? 0) >= MAX_SPACING_PX}
+            onclick={() =>
+              setGridSpacing(grid, grid.gap ?? 0, (grid.padding ?? 0) + SPACING_STEP)}
+            >+</button
+          >
+        </div>
+      </div>
       <p class="hint">
         {grid.mode === 'collision'
           ? 'Tile: windows push each other aside — they never overlap.'
@@ -689,13 +798,15 @@
       </p>
 
       {#if union}
-        {#key `${grid.id}:${grid.cols}x${grid.rows}:${grid.mode}`}
+        {#key `${grid.id}:${grid.cols}x${grid.rows}:${grid.mode}:${grid.gap ?? 0}:${grid.padding ?? 0}`}
           <GridEditor
             gridId={grid.id}
             cols={grid.cols}
             rows={grid.rows}
             mode={grid.mode}
             monitor={union}
+            gap={grid.gap ?? 0}
+            padding={grid.padding ?? 0}
             {tiles}
           />
         {/key}
@@ -1196,6 +1307,10 @@
     font-weight: 600;
     color: var(--text-strong);
     font-variant-numeric: tabular-nums;
+  }
+  /* Spacing values carry a px suffix — a touch more room, same rhythm. */
+  .stepper .val.px {
+    min-width: 38px;
   }
 
   .segmented {

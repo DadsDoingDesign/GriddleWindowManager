@@ -45,6 +45,14 @@ export interface GridSettings {
   mode: 'collision' | 'overlay';
   enabled: boolean;
   activeTemplateId: string | null;
+  /**
+   * Spacing (spec v0.2 §1), physical px in 0..64. Optional for v1 configs
+   * and payloads — absent means 0 everywhere (persist.ts defaults on load,
+   * the Rust mirror uses `#[serde(default)]`). `gap` separates adjacent
+   * cells; `padding` insets the usable area on all four sides.
+   */
+  gap?: number;
+  padding?: number;
 }
 
 export interface Template {

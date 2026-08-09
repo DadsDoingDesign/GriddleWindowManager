@@ -256,6 +256,8 @@ mod tests {
                 mode: GridMode::Collision,
                 enabled: true,
                 active_template_id: None,
+                gap: 8,
+                padding: 16,
             }],
             templates: vec![Template {
                 id: "tpl:user:mine".into(),
@@ -334,6 +336,32 @@ mod tests {
         let read = read_config_from(dir.path()).expect("readable after the race");
         assert!(read == a || read == b, "one intact write wins");
         assert!(no_tmp_files(dir.path()), "no temp litter after the race");
+    }
+
+    /// Spec v0.2 §4 groundwork: a config written before `gap`/`padding`
+    /// existed (every v0.1.0 install) must keep deserializing — the fields
+    /// default to 0 via `#[serde(default)]`, never a quarantine.
+    #[test]
+    fn config_without_spacing_fields_reads_with_zero_defaults() {
+        let dir = ScratchDir::new();
+        fs::create_dir_all(dir.path()).unwrap();
+        let mut json = serde_json::to_value(sample_config()).unwrap();
+        let grid = json["grids"][0].as_object_mut().unwrap();
+        grid.remove("gap");
+        grid.remove("padding");
+        fs::write(
+            dir.path().join(CONFIG_FILE),
+            serde_json::to_vec(&json).unwrap(),
+        )
+        .unwrap();
+
+        let read = read_config_from(dir.path()).expect("v0.1.0 config must stay readable");
+        assert_eq!(read.grids[0].gap, 0);
+        assert_eq!(read.grids[0].padding, 0);
+        assert!(
+            !dir.path().join(BAK_FILE).exists(),
+            "a spacing-less config is valid, not corrupt"
+        );
     }
 
     #[test]

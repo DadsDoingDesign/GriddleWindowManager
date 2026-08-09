@@ -96,6 +96,22 @@ describe('resolveOverlayGrid', () => {
     expect(resolveOverlayGrid([stale], [MON_A, MON_B], MON_A.id)).toBeNull();
   });
 
+  it('carries the grid spacing into dims so overlay cell math matches the brain (spec v0.2 §1)', () => {
+    const view = resolveOverlayGrid(
+      [grid({ gap: 8, padding: 16 })],
+      [MON_A, MON_B],
+      MON_A.id,
+    );
+    expect(view!.dims).toEqual({ cols: 12, rows: 6, gap: 8, padding: 16 });
+    // A cell rect computed from the view is the padded, gapped one.
+    expect(cellRect(view!.layoutMon, view!.dims, { col: 0, row: 0, w: 1, h: 1 })).toEqual({
+      x: 16,
+      y: 64,
+      width: 150,
+      height: 160,
+    });
+  });
+
   it('returns null when no grid covers the monitor or a span member is absent', () => {
     expect(resolveOverlayGrid([], [MON_A], MON_A.id)).toBeNull();
     expect(resolveOverlayGrid([grid({})], [MON_A], MON_B.id)).toBeNull();

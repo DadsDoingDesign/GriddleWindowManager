@@ -181,6 +181,56 @@ describe('serializeConfig / parseConfig', () => {
   });
 });
 
+describe('spacing migration (spec v0.2 §4 groundwork)', () => {
+  it('a v1 config without gap/padding loads unchanged (absent means 0)', () => {
+    const cfg = sanitizeConfig({
+      version: 1,
+      grids: [makeGridSettings()],
+      templates: [],
+      exclusions: [],
+      layouts: {},
+      hotkey: DEFAULT_HOTKEY,
+      autostart: false,
+      paused: false,
+    });
+    expect(cfg).not.toBeNull();
+    const grid = cfg!.grids[0]!;
+    expect(grid.gap).toBeUndefined();
+    expect(grid.padding).toBeUndefined();
+    // The migrated shape survives a disk round-trip byte-stable.
+    expect(parseConfig(serializeConfig(cfg!))).toEqual(cfg);
+  });
+
+  it('preserves explicit gap/padding through a round-trip', () => {
+    const cfg: AppConfig = {
+      ...defaultConfig(),
+      grids: [makeGridSettings({ gap: 8, padding: 16 })],
+    };
+    const parsed = parseConfig(serializeConfig(cfg));
+    expect(parsed).toEqual(cfg);
+    expect(parsed!.grids[0]!.gap).toBe(8);
+    expect(parsed!.grids[0]!.padding).toBe(16);
+  });
+
+  it('clamps out-of-range spacing into 0..64 and drops non-numeric values', () => {
+    const cfg = sanitizeConfig({
+      version: 1,
+      grids: [
+        makeGridSettings({ id: 'grid:a', gap: 999, padding: -3 }),
+        makeGridSettings({ id: 'grid:b', gap: 12.7 }),
+        { ...makeGridSettings({ id: 'grid:c' }), gap: 'huge', padding: null },
+      ],
+    });
+    expect(cfg).not.toBeNull();
+    const [a, b, c] = cfg!.grids;
+    expect(a).toMatchObject({ gap: 64, padding: 0 });
+    expect(b!.gap).toBe(12);
+    expect(b!.padding).toBeUndefined();
+    expect(c!.gap).toBeUndefined();
+    expect(c!.padding).toBeUndefined();
+  });
+});
+
 describe('extractLayoutTiles', () => {
   it('extracts in-flow and absolute tiles from a Grid.toJSON snapshot', () => {
     const tiles = extractLayoutTiles({

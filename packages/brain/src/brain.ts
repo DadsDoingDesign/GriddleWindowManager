@@ -12,6 +12,8 @@ import { Grid } from '@griddle/core';
 import type { CellRect, Tile } from '@griddle/core';
 import {
   cellRect,
+  clampSpacing,
+  effectiveSpacing,
   type GridDims,
   type Rect,
   slotFromCursor,
@@ -809,6 +811,39 @@ export class WindowManagerBrain {
   }
 
   /**
+   * Contract §C3 extension (spec v0.2 §1): change a grid's gap/padding.
+   * Values are clamped to integers in 0..MAX_SPACING_PX. Cell assignments
+   * never change — only their pixel projection does — so the live grid
+   * re-applies every tile in one batch (flush diffs desired rects). Also
+   * works on a disabled grid: the remembered settings update and persist.
+   */
+  setSpacing(gridId: string, gap: number, padding: number): void {
+    const settings = this.gridSettings.get(gridId);
+    if (!settings) return;
+    gap = clampSpacing(gap);
+    padding = clampSpacing(padding);
+    if ((settings.gap ?? 0) === gap && (settings.padding ?? 0) === padding) return;
+    const updated: GridSettings = { ...settings, gap, padding };
+    this.gridSettings.set(gridId, updated);
+
+    const mg = this.grids.get(gridId);
+    if (mg) {
+      mg.settings = updated;
+      // The overlay preview and the committed cell must use the same pixel
+      // math throughout a drag — abort any drag on this grid, like reflow.
+      if (this.drag?.sourceGridId === gridId) this.cancelDrag();
+      // Padding moves cell pixel rects, and pixel rects decide which cells
+      // of a spanning union are dead space — keep the set current.
+      const mon = this.monitorFor(updated);
+      if (mon && updated.monitorIds.length > 1) {
+        mg.unusable = this.unusableFor(updated, mon);
+      }
+      this.flush();
+    }
+    this.emitSnapshot();
+  }
+
+  /**
    * Snapshot a live grid's layout as a user template (spec §5.5): cols/rows
    * plus every tile's slot in reading order — no window identities.
    */
@@ -1148,13 +1183,19 @@ export class WindowManagerBrain {
     return parts.length > 0 ? unionWorkArea(parts) : undefined;
   }
 
-  /** Fresh Griddle instance for a grid's current dims over `mon`'s work area. */
+  /**
+   * Fresh Griddle instance for a grid's current dims over `mon`'s work area.
+   * Unit sizes come from the effective (padded, gapped) area for parity with
+   * cellRect; the brain never feeds pixels to Griddle, so a later setSpacing
+   * doesn't need to rebuild the instance — cell logic is size-independent.
+   */
   private newGrid(settings: GridSettings, mon: MonitorInfo): Grid {
+    const eff = effectiveSpacing(mon, this.dims(settings));
     return new Grid({
       cols: settings.cols,
       rows: settings.rows,
-      unitWidth: mon.workWidth / settings.cols,
-      unitHeight: mon.workHeight / settings.rows,
+      unitWidth: (eff.width - eff.gapX * (settings.cols - 1)) / settings.cols,
+      unitHeight: (eff.height - eff.gapY * (settings.rows - 1)) / settings.rows,
       gravity: 'none',
       enablePositioning: true,
       pinUnits: 'cells',
@@ -1224,7 +1265,12 @@ export class WindowManagerBrain {
   }
 
   private dims(settings: GridSettings): GridDims {
-    return { cols: settings.cols, rows: settings.rows };
+    return {
+      cols: settings.cols,
+      rows: settings.rows,
+      gap: settings.gap ?? 0,
+      padding: settings.padding ?? 0,
+    };
   }
 
   private monitorAt(x: number, y: number): MonitorInfo | undefined {
@@ -1609,11 +1655,14 @@ export class WindowManagerBrain {
 
     const info = this.windows.get(tile.id);
     if (!info || info.resizable) return cell;
-    const width = Math.min(info.width, mon.workWidth);
-    const height = Math.min(info.height, mon.workHeight);
+    // Position-snapped windows keep their own size but stay inside the
+    // effective (padded) area, matching every cell rect (spec v0.2 §1).
+    const eff = effectiveSpacing(mon, dims);
+    const width = Math.min(info.width, eff.width);
+    const height = Math.min(info.height, eff.height);
     return {
-      x: clamp(cell.x, mon.workX, mon.workX + mon.workWidth - width),
-      y: clamp(cell.y, mon.workY, mon.workY + mon.workHeight - height),
+      x: clamp(cell.x, eff.x, eff.x + eff.width - width),
+      y: clamp(cell.y, eff.y, eff.y + eff.height - height),
       width,
       height,
     };
