@@ -58,6 +58,18 @@ export interface SettingsDisableGridPayload {
   gridId: string;
 }
 
+/**
+ * Payload of `settings-enable-span` (settings → brain, plan Task 17): create
+ * a spanning grid over the selected monitors. The brain derives the grid id
+ * (`grid:span:<sorted ids joined by +>`) and tears down any per-monitor grid
+ * on those monitors.
+ */
+export interface SettingsEnableSpanPayload {
+  monitorIds: string[];
+  cols: number;
+  rows: number;
+}
+
 /** Payload of `settings-set-dims` (settings → brain, plan Task 13). */
 export interface SettingsSetDimsPayload {
   gridId: string;
@@ -254,6 +266,16 @@ export function onSettingsDisableGrid(
   cb: (p: SettingsDisableGridPayload) => void,
 ): Promise<UnlistenFn> {
   return on('settings-disable-grid', cb);
+}
+
+export function emitSettingsEnableSpan(p: SettingsEnableSpanPayload): Promise<void> {
+  return emit('settings-enable-span', p);
+}
+
+export function onSettingsEnableSpan(
+  cb: (p: SettingsEnableSpanPayload) => void,
+): Promise<UnlistenFn> {
+  return on('settings-enable-span', cb);
 }
 
 export function emitSettingsSetDims(p: SettingsSetDimsPayload): Promise<void> {

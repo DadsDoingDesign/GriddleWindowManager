@@ -18,6 +18,12 @@ import {
   snapRectToSlot,
 } from './coords';
 import { extractLayoutTiles } from './persist';
+import {
+  computeUnusableCells,
+  nearestUsableSlot,
+  slotUsable as slotUsableWithin,
+  unionWorkArea,
+} from './spanning';
 import { makeUserTemplate, mergeWithBuiltins } from './templates';
 import type {
   AppConfig,
@@ -46,6 +52,12 @@ export interface BrainCallbacks {
 interface ManagedGrid {
   settings: GridSettings;
   grid: Grid;
+  /**
+   * Dead-space cells of a spanning grid (flat row * cols + col indexes):
+   * cells of the union work area covered by no member monitor (spec §5.7).
+   * Always empty for single-monitor grids.
+   */
+  unusable: Set<number>;
 }
 
 interface RememberedSlot {
@@ -158,6 +170,12 @@ export class WindowManagerBrain {
 
   setMonitors(mons: MonitorInfo[]): void {
     this.monitors = new Map(mons.map((m) => [m.id, m]));
+    // Monitor geometry defines a spanning grid's dead space — recompute it.
+    for (const mg of this.grids.values()) {
+      if (mg.settings.monitorIds.length <= 1) continue;
+      const mon = this.monitorFor(mg.settings);
+      if (mon) mg.unusable = this.unusableFor(mg.settings, mon);
+    }
     this.emitSnapshot();
   }
 
@@ -247,7 +265,7 @@ export class WindowManagerBrain {
           w: rem.slot.w,
           h: rem.slot.h,
         };
-        if (mg.grid.rectInBounds(rect)) {
+        if (mg.grid.rectInBounds(rect) && this.usable(mg, rem.slot)) {
           mg.grid.addTile({
             id: w.hwnd,
             ...rect,
@@ -265,7 +283,11 @@ export class WindowManagerBrain {
           w: rem.slot.w,
           h: rem.slot.h,
         };
-        if (mg.grid.rectInBounds(rect) && mg.grid.tilesIn(rect).length === 0) {
+        if (
+          mg.grid.rectInBounds(rect) &&
+          this.usable(mg, rem.slot) &&
+          mg.grid.tilesIn(rect).length === 0
+        ) {
           mg.grid.addTile({ id: w.hwnd, ...rect });
           this.tileGrid.set(w.hwnd, mg.settings.id);
           this.touch(w.hwnd);
@@ -339,6 +361,13 @@ export class WindowManagerBrain {
           : snapRectToSlot(mon, dims, rect); // footprint in the target grid's cells
       footprint = slotFromCursor(mon, dims, p.cursorX, p.cursorY, size);
     }
+    // Preview snaps to usable slots exactly like the commit will (spec §5.7).
+    const adjusted = this.nearestUsable(mg, footprint);
+    if (!adjusted) {
+      this.hidePreview(d);
+      return;
+    }
+    footprint = adjusted;
 
     // Overlay-mode targets never reflow neighbors; absolute tiles displace
     // nothing either way — both preview with no ghosts.
@@ -380,10 +409,11 @@ export class WindowManagerBrain {
     const source = this.grids.get(d.sourceGridId);
     if (!source || !source.grid.getTile(hwnd)) return; // grid vanished mid-drag
 
-    const targetMon =
-      this.monitorAt(rect.x + rect.width / 2, rect.y + rect.height / 2) ??
-      this.monitorFor(source.settings);
-    if (!targetMon) return;
+    const hitMon = this.monitorAt(rect.x + rect.width / 2, rect.y + rect.height / 2);
+    // A drop whose center lies on no monitor — half off-screen, or in the
+    // dead space of an L-shaped spanning grid — stays with the source grid
+    // and snaps to its nearest usable slot below.
+    const target = hitMon ? this.gridForMonitor(hitMon.id) : source;
 
     const info = this.windows.get(hwnd);
     if (info) {
@@ -393,11 +423,10 @@ export class WindowManagerBrain {
         y: rect.y,
         width: rect.width,
         height: rect.height,
-        monitorId: targetMon.id,
+        monitorId: hitMon?.id ?? info.monitorId,
       });
     }
 
-    const target = this.gridForMonitor(targetMon.id);
     if (!target) {
       // Dropped on an ungridded monitor: the window becomes unmanaged and
       // stays exactly where the user left it — no move emitted.
@@ -413,7 +442,19 @@ export class WindowManagerBrain {
 
     const mon = this.monitorFor(target.settings);
     if (!mon) return;
-    const snapped = snapRectToSlot(mon, this.dims(target.settings), rect);
+    // Drops in the dead space of a spanning grid snap to the nearest usable
+    // slot (spec §5.7). A grid with zero usable cells cannot take the drop:
+    // the tile stays put and the window snaps back to its old cell.
+    const snapped = this.nearestUsable(
+      target,
+      snapRectToSlot(mon, this.dims(target.settings), rect),
+    );
+    if (!snapped) {
+      this.appliedRects.delete(hwnd);
+      this.flush();
+      this.emitSnapshot();
+      return;
+    }
 
     if (target === source) {
       this.commitSameGrid(source, d.hwnd, snapped);
@@ -432,8 +473,20 @@ export class WindowManagerBrain {
 
   enableGrid(g: GridSettings, windows: WindowInfo[]): void {
     if (this.grids.has(g.id)) this.teardownGrid(g.id);
-    const settings: GridSettings = { ...g, enabled: true };
+    const settings: GridSettings = { ...g, enabled: true, monitorIds: [...g.monitorIds] };
     this.gridSettings.set(g.id, settings);
+
+    // One live grid per monitor: enabling a grid (spanning or per-monitor)
+    // tears down any other live grid sharing one of its monitors — a
+    // spanning grid replaces the per-monitor grids it covers and vice versa
+    // (plan Task 17).
+    for (const id of [...this.grids.keys()]) {
+      const other = this.grids.get(id);
+      if (!other) continue;
+      if (other.settings.monitorIds.some((m) => settings.monitorIds.includes(m))) {
+        this.teardownGrid(id);
+      }
+    }
 
     const mon = this.monitorFor(settings);
     if (!mon) {
@@ -442,18 +495,10 @@ export class WindowManagerBrain {
       return;
     }
 
-    const dims = this.dims(settings);
     const mg: ManagedGrid = {
       settings,
-      grid: new Grid({
-        cols: dims.cols,
-        rows: dims.rows,
-        unitWidth: mon.workWidth / dims.cols,
-        unitHeight: mon.workHeight / dims.rows,
-        gravity: 'none',
-        enablePositioning: true,
-        pinUnits: 'cells',
-      }),
+      grid: this.newGrid(settings, mon),
+      unusable: this.unusableFor(settings, mon),
     };
     this.grids.set(g.id, mg);
 
@@ -554,15 +599,8 @@ export class WindowManagerBrain {
     for (const e of entries) this.tileGrid.delete(e.id);
     for (const hwnd of floaters) this.floating.delete(hwnd);
 
-    mg.grid = new Grid({
-      cols,
-      rows,
-      unitWidth: mon.workWidth / cols,
-      unitHeight: mon.workHeight / rows,
-      gravity: 'none',
-      enablePositioning: true,
-      pinUnits: 'cells',
-    });
+    mg.grid = this.newGrid(updated, mon);
+    mg.unusable = this.unusableFor(updated, mon);
 
     const overlay = updated.mode === 'overlay';
     for (const e of entries) {
@@ -668,15 +706,8 @@ export class WindowManagerBrain {
       this.floating.delete(hwnd);
     }
 
-    mg.grid = new Grid({
-      cols: tpl.cols,
-      rows: tpl.rows,
-      unitWidth: mon.workWidth / tpl.cols,
-      unitHeight: mon.workHeight / tpl.rows,
-      gravity: 'none',
-      enablePositioning: true,
-      pinUnits: 'cells',
-    });
+    mg.grid = this.newGrid(settings, mon);
+    mg.unusable = this.unusableFor(settings, mon);
 
     const overlay = settings.mode === 'overlay';
     order.forEach((hwnd, i) => {
@@ -711,16 +742,20 @@ export class WindowManagerBrain {
     if (this.drag?.hwnd === hwnd) this.cancelDrag(hwnd);
 
     const dims = this.dims(mg.settings);
-    const snapped = clampSlot(
-      {
-        col: Math.round(slot.col),
-        row: Math.round(slot.row),
-        w: Math.round(slot.w),
-        h: Math.round(slot.h),
-      },
-      dims.cols,
-      dims.rows,
+    const snapped = this.nearestUsable(
+      mg,
+      clampSlot(
+        {
+          col: Math.round(slot.col),
+          row: Math.round(slot.row),
+          w: Math.round(slot.w),
+          h: Math.round(slot.h),
+        },
+        dims.cols,
+        dims.rows,
+      ),
     );
+    if (!snapped) return; // spanning grid with zero usable cells
     this.commitSameGrid(mg, hwnd, snapped);
     this.touch(hwnd); // now the most recent (top-most in overlay stacking)
     this.flush();
@@ -770,7 +805,11 @@ export class WindowManagerBrain {
     for (const t of converts) {
       const slot = tileSlotOf(t); // pinned coords for absolute tiles
       const rect: CellRect = { col: slot.col, row: slot.row, w: slot.w, h: slot.h };
-      if (mg.grid.rectInBounds(rect) && mg.grid.tilesIn(rect).length === 0) {
+      if (
+        mg.grid.rectInBounds(rect) &&
+        this.usable(mg, slot) &&
+        mg.grid.tilesIn(rect).length === 0
+      ) {
         mg.grid.addTile({ id: t.id, ...rect });
         continue;
       }
@@ -778,6 +817,7 @@ export class WindowManagerBrain {
       for (let row = 0; row + slot.h <= dims.rows && !placed; row++) {
         for (let col = 0; col + slot.w <= dims.cols && !placed; col++) {
           const cand: CellRect = { col, row, w: slot.w, h: slot.h };
+          if (!this.usable(mg, cand)) continue;
           if (mg.grid.tilesIn(cand).length === 0) {
             mg.grid.addTile({ id: t.id, ...cand });
             placed = true;
@@ -785,7 +825,9 @@ export class WindowManagerBrain {
         }
       }
       if (placed) continue;
-      if (mg.grid.addTileWithDisplacement({ id: t.id, ...rect })) continue;
+      if (this.runEngineOp(mg, (g) => g.addTileWithDisplacement({ id: t.id, ...rect }))) {
+        continue;
+      }
       this.tileGrid.delete(t.id);
       this.floating.set(t.id, gridId);
       this.appliedRects.delete(t.id);
@@ -805,6 +847,9 @@ export class WindowManagerBrain {
     overlay: boolean,
     info: WindowInfo | undefined,
   ): boolean {
+    // Dead-space slots are never assigned (spec §5.7); the caller falls back
+    // to normal placement, which snaps to the nearest usable slot.
+    if (!this.usable(mg, slot)) return false;
     if (overlay || !(info?.resizable ?? true)) {
       mg.grid.addTile({
         id: hwnd,
@@ -824,16 +869,105 @@ export class WindowManagerBrain {
       this.tileGrid.set(hwnd, mg.settings.id);
       return true;
     }
-    if (mg.grid.addTileWithDisplacement({ id: hwnd, ...rect })) {
+    if (this.runEngineOp(mg, (g) => g.addTileWithDisplacement({ id: hwnd, ...rect }))) {
       this.tileGrid.set(hwnd, mg.settings.id);
       return true;
     }
     return false;
   }
 
+  /**
+   * The monitor a grid lays out against. For a spanning grid this is a
+   * synthetic union monitor (bounding box of the members' work areas,
+   * spec §5.7); it requires every member to be present — a spanning grid
+   * with an unplugged member is inert until the monitor returns.
+   */
   private monitorFor(settings: GridSettings): MonitorInfo | undefined {
-    const first = settings.monitorIds[0];
-    return first === undefined ? undefined : this.monitors.get(first);
+    if (settings.monitorIds.length === 1) {
+      return this.monitors.get(settings.monitorIds[0]!);
+    }
+    const parts: MonitorInfo[] = [];
+    for (const id of settings.monitorIds) {
+      const m = this.monitors.get(id);
+      if (!m) return undefined;
+      parts.push(m);
+    }
+    return parts.length > 0 ? unionWorkArea(parts) : undefined;
+  }
+
+  /** Fresh Griddle instance for a grid's current dims over `mon`'s work area. */
+  private newGrid(settings: GridSettings, mon: MonitorInfo): Grid {
+    return new Grid({
+      cols: settings.cols,
+      rows: settings.rows,
+      unitWidth: mon.workWidth / settings.cols,
+      unitHeight: mon.workHeight / settings.rows,
+      gravity: 'none',
+      enablePositioning: true,
+      pinUnits: 'cells',
+    });
+  }
+
+  /** Dead-space cell set for a grid (empty for single-monitor grids). */
+  private unusableFor(settings: GridSettings, mon: MonitorInfo): Set<number> {
+    if (settings.monitorIds.length <= 1) return new Set();
+    const parts: MonitorInfo[] = [];
+    for (const id of settings.monitorIds) {
+      const m = this.monitors.get(id);
+      if (m) parts.push(m);
+    }
+    return computeUnusableCells(mon, this.dims(settings), parts);
+  }
+
+  /** Whether `slot` is in bounds and touches no dead-space cell. */
+  private usable(mg: ManagedGrid, slot: Slot): boolean {
+    return slotUsableWithin(this.dims(mg.settings), mg.unusable, slot);
+  }
+
+  /**
+   * Snap a slot to the nearest fully usable position (spec §5.7). On
+   * single-monitor grids this is just an in-bounds clamp. Returns null only
+   * when the grid has no usable cell at all.
+   */
+  private nearestUsable(mg: ManagedGrid, slot: Slot): Slot | null {
+    const dims = this.dims(mg.settings);
+    if (mg.unusable.size === 0) return clampSlot(slot, dims.cols, dims.rows);
+    return nearestUsableSlot(dims, mg.unusable, slot);
+  }
+
+  /**
+   * Run a Griddle rules-engine op (moveTile / resizeTile /
+   * addTileWithDisplacement) that may displace neighbors. On spanning grids
+   * the engine knows nothing about dead-space cells, so the op runs on a
+   * clone first and only commits when no in-flow tile ends up covering a
+   * dead cell; a rejected op leaves the grid unchanged and returns false,
+   * exactly like the engine's own failure mode.
+   */
+  private runEngineOp(mg: ManagedGrid, op: (g: Grid) => boolean): boolean {
+    if (mg.unusable.size === 0) return op(mg.grid);
+    const clone = Grid.fromJSON(mg.grid.toJSON());
+    if (!op(clone)) return false;
+    if (!this.inFlowAvoidsDead(clone, mg)) return false;
+    return op(mg.grid);
+  }
+
+  /** Whether every in-flow tile of `grid` stays clear of dead-space cells. */
+  private inFlowAvoidsDead(grid: Grid, mg: ManagedGrid): boolean {
+    for (const t of grid.tiles) {
+      if (t.position === 'absolute' || t.position === 'fixed') continue;
+      if (!this.usable(mg, { col: t.col, row: t.row, w: t.w, h: t.h })) return false;
+    }
+    return true;
+  }
+
+  /**
+   * Public dead-space check (contract §C3 extension, Task 17): whether a
+   * slot of `gridId` is fully usable — placement, snapping, and previews all
+   * route through the same test. Unknown/disabled grids report false.
+   */
+  slotUsable(gridId: string, slot: Slot): boolean {
+    const mg = this.grids.get(gridId);
+    return mg !== undefined && this.usable(mg, slot);
   }
 
   private dims(settings: GridSettings): GridDims {
@@ -915,6 +1049,9 @@ export class WindowManagerBrain {
         h: footprint.h,
       });
     }
+    // A displacement that would shove a neighbor into a spanning grid's dead
+    // space gets rejected at commit time (runEngineOp), so preview no ghosts.
+    if (target.unusable.size > 0 && !this.inFlowAvoidsDead(clone, target)) return [];
     const ghosts: GhostMove[] = [];
     for (const t of clone.tiles) {
       const prev = before.get(t.id);
@@ -948,13 +1085,15 @@ export class WindowManagerBrain {
       } else {
         // The tile's footprint may be larger than the snapped one (e.g. a
         // template assigned a non-resizable window a big slot); clamp the pin
-        // so the tile itself stays inside the grid.
+        // so the tile itself stays inside the grid, preferring a usable slot
+        // on spanning grids.
         const dims = this.dims(mg.settings);
-        const pin = clampSlot(
+        const pin0 = clampSlot(
           { col: snapped.col, row: snapped.row, w: tile.w, h: tile.h },
           dims.cols,
           dims.rows,
         );
+        const pin = this.nearestUsable(mg, pin0) ?? pin0;
         mg.grid.setTilePinned(hwnd, { x: pin.col, y: pin.row });
       }
       return;
@@ -964,22 +1103,27 @@ export class WindowManagerBrain {
     const sizeChanged = snapped.w !== cur.w || snapped.h !== cur.h;
     if (!sizeChanged) {
       // moveTile returning false leaves the grid unchanged → flush snaps the
-      // window back to its original cell.
-      mg.grid.moveTile(hwnd, { col: snapped.col, row: snapped.row });
+      // window back to its original cell. On spanning grids the op is also
+      // rejected when displacement would push a neighbor into dead space.
+      this.runEngineOp(mg, (g) => g.moveTile(hwnd, { col: snapped.col, row: snapped.row }));
       return;
     }
     if (snapped.col === cur.col && snapped.row === cur.row) {
-      if (mg.grid.resizeTile(hwnd, { w: snapped.w, h: snapped.h })) return;
+      if (this.runEngineOp(mg, (g) => g.resizeTile(hwnd, { w: snapped.w, h: snapped.h }))) {
+        return;
+      }
     }
     // Origin+size changed (or in-place resize failed): re-add with displacement.
     mg.grid.removeTile(hwnd);
-    const ok = mg.grid.addTileWithDisplacement({
-      id: hwnd,
-      col: snapped.col,
-      row: snapped.row,
-      w: snapped.w,
-      h: snapped.h,
-    });
+    const ok = this.runEngineOp(mg, (g) =>
+      g.addTileWithDisplacement({
+        id: hwnd,
+        col: snapped.col,
+        row: snapped.row,
+        w: snapped.w,
+        h: snapped.h,
+      }),
+    );
     if (!ok) {
       mg.grid.addTile({ id: hwnd, col: cur.col, row: cur.row, w: cur.w, h: cur.h });
     }
@@ -1013,13 +1157,15 @@ export class WindowManagerBrain {
       this.tileGrid.set(hwnd, target.settings.id);
       return;
     }
-    const ok = target.grid.addTileWithDisplacement({
-      id: hwnd,
-      col: snapped.col,
-      row: snapped.row,
-      w: snapped.w,
-      h: snapped.h,
-    });
+    const ok = this.runEngineOp(target, (g) =>
+      g.addTileWithDisplacement({
+        id: hwnd,
+        col: snapped.col,
+        row: snapped.row,
+        w: snapped.w,
+        h: snapped.h,
+      }),
+    );
     if (ok) {
       this.tileGrid.set(hwnd, target.settings.id);
       return;
@@ -1060,6 +1206,9 @@ export class WindowManagerBrain {
         h: t.slot.h,
       };
       if (!mg.grid.rectInBounds(rect)) continue;
+      // Stored slots that fall into dead space (spanning grid whose monitor
+      // topology changed since the snapshot) fall through to fresh placement.
+      if (!this.usable(mg, t.slot)) continue;
       if (overlay || !w.resizable) {
         mg.grid.addTile({
           id: t.id,
@@ -1099,7 +1248,14 @@ export class WindowManagerBrain {
     const mon = this.monitorFor(mg.settings);
     if (!mon) return false;
     const dims = this.dims(mg.settings);
-    const snapped = snapRectToSlot(mon, dims, w);
+    // Dead-space cells (spanning grids, spec §5.7) are excluded from
+    // placement: the raw snap moves to the nearest fully usable slot.
+    const snapped = this.nearestUsable(mg, snapRectToSlot(mon, dims, w));
+    if (!snapped) {
+      // Degenerate spanning grid with zero usable cells: nothing can place.
+      this.floating.set(w.hwnd, mg.settings.id);
+      return false;
+    }
 
     if (!w.resizable || mg.settings.mode === 'overlay') {
       mg.grid.addTile({
@@ -1119,6 +1275,7 @@ export class WindowManagerBrain {
     for (let row = 0; row + snapped.h <= dims.rows; row++) {
       for (let col = 0; col + snapped.w <= dims.cols; col++) {
         const rect: CellRect = { col, row, w: snapped.w, h: snapped.h };
+        if (!this.usable(mg, rect)) continue; // skip dead-space candidates
         if (mg.grid.tilesIn(rect).length === 0) {
           mg.grid.addTile({ id: w.hwnd, ...rect });
           this.tileGrid.set(w.hwnd, mg.settings.id);
@@ -1128,13 +1285,15 @@ export class WindowManagerBrain {
       }
     }
 
-    const ok = mg.grid.addTileWithDisplacement({
-      id: w.hwnd,
-      col: snapped.col,
-      row: snapped.row,
-      w: snapped.w,
-      h: snapped.h,
-    });
+    const ok = this.runEngineOp(mg, (g) =>
+      g.addTileWithDisplacement({
+        id: w.hwnd,
+        col: snapped.col,
+        row: snapped.row,
+        w: snapped.w,
+        h: snapped.h,
+      }),
+    );
     if (ok) {
       this.tileGrid.set(w.hwnd, mg.settings.id);
       this.touch(w.hwnd);

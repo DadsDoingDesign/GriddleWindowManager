@@ -118,6 +118,23 @@ export. Verified against `node_modules/@griddle/core/dist/*.d.ts` and
   `clampToBounds` option (or documented behavior statement) on
   `setTilePinned` would prevent this class of bug for consumers.
 
+## Task 17 findings (2026-08-09)
+
+- **No way to mark cells as blocked/unusable.** Spanning grids need the dead
+  space of an L-shaped monitor union excluded from layout, but Griddle has no
+  "blocked cell" or immovable-obstacle concept: sentinel tiles won't work
+  because the displacement engine happily pushes any in-flow tile (there is
+  no `locked` flag), and `moveTile`/`resizeTile`/`addTileWithDisplacement`
+  can shove victims into cells the consumer considers dead. Workaround: the
+  brain keeps its own dead-cell mask, screens all direct placements against
+  it, and runs every rules-engine op on a `Grid.fromJSON(grid.toJSON())`
+  clone first, committing only when no in-flow tile lands on a dead cell
+  (`runEngineOp` in brain.ts). A `blockedCells: CellPos[]` config option (or
+  a `Tile.locked` the engine treats as terrain) would make this first-class.
+- The clone-first pattern from Task 4 generalized nicely: the same
+  clone+verify covers preview ghosts and commit validation, so preview and
+  commit can never disagree about a rejected displacement.
+
 ## Task 13 findings (2026-08-08)
 
 - **`<GriddleGrid>` works well as a mirror of external state**, with one

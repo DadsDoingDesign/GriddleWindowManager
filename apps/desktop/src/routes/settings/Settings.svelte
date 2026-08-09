@@ -6,10 +6,16 @@
   // to real windows and persists the config.
   import { onDestroy, onMount } from 'svelte';
   import type { UnlistenFn } from '@tauri-apps/api/event';
-  import type { GridSettings, MonitorInfo, StateSnapshot } from '@griddle-wm/brain';
+  import {
+    unionWorkArea,
+    type GridSettings,
+    type MonitorInfo,
+    type StateSnapshot,
+  } from '@griddle-wm/brain';
   import {
     emitSettingsDisableGrid,
     emitSettingsEnableGrid,
+    emitSettingsEnableSpan,
     emitSettingsReady,
     emitSettingsSetDims,
     emitSettingsSetMode,
@@ -28,6 +34,10 @@
   let snapshot: StateSnapshot | null = $state(null);
   /** Stepper values for monitors whose grid is not currently enabled. */
   let draftDims: Record<string, { cols: number; rows: number }> = $state({});
+  /** Monitors ticked in the span-monitors multi-select (plan Task 17). */
+  let spanSelection: Record<string, boolean> = $state({});
+  /** Stepper values for the spanning grid about to be created. */
+  let spanDraft = $state({ ...DEFAULT_DIMS });
 
   let unlisteners: UnlistenFn[] = [];
   onMount(async () => {
@@ -47,6 +57,43 @@
     return snapshot?.grids.find(
       (g) => g.monitorIds.length === 1 && g.monitorIds[0] === monitorId,
     );
+  }
+
+  /** Live spanning grids (plan Task 17). */
+  const spanGrids = $derived.by(() =>
+    (snapshot?.grids ?? []).filter((g) => g.monitorIds.length > 1 && g.enabled),
+  );
+
+  /** The enabled spanning grid covering a monitor, if any. */
+  function spanFor(monitorId: string): GridSettings | undefined {
+    return spanGrids.find((g) => g.monitorIds.includes(monitorId));
+  }
+
+  /** Present member monitors of a spanning grid, in its monitorIds order. */
+  function spanMonitors(g: GridSettings): MonitorInfo[] {
+    return g.monitorIds
+      .map((id) => monitors.find((m) => m.id === id))
+      .filter((m): m is MonitorInfo => m !== undefined);
+  }
+
+  const spanSelected = $derived(
+    monitors.filter((m) => spanSelection[m.id] === true).map((m) => m.id),
+  );
+
+  function createSpan(): void {
+    if (spanSelected.length < 2) return;
+    void emitSettingsEnableSpan({
+      monitorIds: spanSelected,
+      cols: spanDraft.cols,
+      rows: spanDraft.rows,
+    });
+    spanSelection = {};
+  }
+
+  function setSpanDims(grid: GridSettings, cols: number, rows: number): void {
+    cols = clamp(cols, 1, MAX_COLS);
+    rows = clamp(rows, 1, MAX_ROWS);
+    void emitSettingsSetDims({ gridId: grid.id, cols, rows });
   }
 
   function dimsFor(mon: MonitorInfo): { cols: number; rows: number } {
@@ -86,9 +133,13 @@
   }
 
   /** "\\.\DISPLAY1@0,0" → "DISPLAY1". */
+  function monNameFromId(id: string): string {
+    const device = id.split('@')[0] ?? id;
+    return device.replace(/^[\\.]+/, '') || id;
+  }
+
   function monName(m: MonitorInfo): string {
-    const device = m.id.split('@')[0] ?? m.id;
-    return device.replace(/^[\\.]+/, '') || m.id;
+    return monNameFromId(m.id);
   }
 
   function dpiScale(m: MonitorInfo): number {
@@ -117,6 +168,7 @@
 
   {#each sortedMonitors as mon (mon.id)}
     {@const grid = gridFor(mon.id)}
+    {@const spanned = spanFor(mon.id)}
     {@const enabled = grid?.enabled ?? false}
     {@const dims = dimsFor(mon)}
     {@const tiles = (grid && snapshot?.tiles[grid.id]) || []}
@@ -127,20 +179,30 @@
           <p class="meta">
             {mon.width}×{mon.height} · {dpiScale(mon)}%
             {#if mon.primary}<span class="badge">Primary</span>{/if}
+            {#if spanned}<span class="badge">Spanned</span>{/if}
           </p>
         </div>
         <label class="switch">
           <input
             type="checkbox"
             checked={enabled}
+            disabled={spanned !== undefined}
             onchange={(e) => toggleGrid(mon, e.currentTarget.checked)}
           />
           <span class="track"><span class="thumb"></span></span>
-          <span class="switch-label">{enabled ? 'Grid on' : 'Grid off'}</span>
+          <span class="switch-label">
+            {spanned ? 'Spanned' : enabled ? 'Grid on' : 'Grid off'}
+          </span>
         </label>
       </div>
+      {#if spanned}
+        <p class="hint">
+          This monitor is part of a spanning grid — disable that grid to manage
+          it on its own.
+        </p>
+      {/if}
 
-      <div class="controls" class:dimmed={!enabled}>
+      <div class="controls" class:dimmed={!enabled} class:hidden={spanned !== undefined}>
         <div class="stepper">
           <span class="lbl">Columns</span>
           <button
@@ -212,6 +274,179 @@
       {/if}
     </section>
   {/each}
+
+  {#each spanGrids as grid (grid.id)}
+    {@const members = spanMonitors(grid)}
+    {@const union =
+      members.length === grid.monitorIds.length ? unionWorkArea(members) : null}
+    {@const tiles = snapshot?.tiles[grid.id] ?? []}
+    <section class="card">
+      <div class="card-head">
+        <div class="mon-info">
+          <h2>Spanning: {grid.monitorIds.map(monNameFromId).join(' + ')}</h2>
+          <p class="meta">
+            {#if union}
+              {union.workWidth}×{union.workHeight} union work area
+            {:else}
+              A member monitor is disconnected — grid resumes when it returns.
+            {/if}
+          </p>
+        </div>
+        <label class="switch">
+          <input
+            type="checkbox"
+            checked={true}
+            onchange={() => void emitSettingsDisableGrid({ gridId: grid.id })}
+          />
+          <span class="track"><span class="thumb"></span></span>
+          <span class="switch-label">Grid on</span>
+        </label>
+      </div>
+
+      <div class="controls">
+        <div class="stepper">
+          <span class="lbl">Columns</span>
+          <button
+            aria-label="Fewer columns"
+            disabled={grid.cols <= 1}
+            onclick={() => setSpanDims(grid, grid.cols - 1, grid.rows)}>−</button
+          >
+          <span class="val">{grid.cols}</span>
+          <button
+            aria-label="More columns"
+            disabled={grid.cols >= MAX_COLS}
+            onclick={() => setSpanDims(grid, grid.cols + 1, grid.rows)}>+</button
+          >
+        </div>
+        <div class="stepper">
+          <span class="lbl">Rows</span>
+          <button
+            aria-label="Fewer rows"
+            disabled={grid.rows <= 1}
+            onclick={() => setSpanDims(grid, grid.cols, grid.rows - 1)}>−</button
+          >
+          <span class="val">{grid.rows}</span>
+          <button
+            aria-label="More rows"
+            disabled={grid.rows >= MAX_ROWS}
+            onclick={() => setSpanDims(grid, grid.cols, grid.rows + 1)}>+</button
+          >
+        </div>
+        <div class="segmented" role="group" aria-label="Grid mode">
+          <button
+            class:active={grid.mode === 'collision'}
+            aria-pressed={grid.mode === 'collision'}
+            title="Windows push each other aside — no overlap"
+            onclick={() => setMode(grid, 'collision')}>Collision</button
+          >
+          <button
+            class:active={grid.mode === 'overlay'}
+            aria-pressed={grid.mode === 'overlay'}
+            title="Windows snap to cells but may overlap"
+            onclick={() => setMode(grid, 'overlay')}>Overlay</button
+          >
+        </div>
+        <span class="tile-count">
+          {tiles.length}
+          {tiles.length === 1 ? 'window' : 'windows'}
+        </span>
+      </div>
+
+      {#if union}
+        {#key `${grid.id}:${grid.cols}x${grid.rows}:${grid.mode}`}
+          <GridEditor
+            gridId={grid.id}
+            cols={grid.cols}
+            rows={grid.rows}
+            mode={grid.mode}
+            monitor={union}
+            {tiles}
+          />
+        {/key}
+        <p class="hint">
+          Drag tiles to rearrange the real windows. Cells over the gap of an
+          L-shaped union are dead space — drops there snap to the nearest
+          usable slot.
+        </p>
+        <TemplateGallery
+          gridId={grid.id}
+          templates={snapshot?.templates ?? []}
+          activeTemplateId={grid.activeTemplateId}
+          tileCount={tiles.length}
+        />
+      {/if}
+    </section>
+  {/each}
+
+  {#if sortedMonitors.length >= 2}
+    <section class="card">
+      <div class="card-head">
+        <div class="mon-info">
+          <h2>Span monitors</h2>
+          <p class="meta">
+            One grid across several monitors. Per-monitor grids on the selected
+            monitors are replaced by the spanning grid.
+          </p>
+        </div>
+      </div>
+      <div class="controls">
+        {#each sortedMonitors as mon (mon.id)}
+          <label class="pick">
+            <input
+              type="checkbox"
+              checked={spanSelection[mon.id] === true}
+              onchange={(e) =>
+                (spanSelection = {
+                  ...spanSelection,
+                  [mon.id]: e.currentTarget.checked,
+                })}
+            />
+            <span>{monName(mon)}</span>
+          </label>
+        {/each}
+      </div>
+      <div class="controls">
+        <div class="stepper">
+          <span class="lbl">Columns</span>
+          <button
+            aria-label="Fewer columns"
+            disabled={spanDraft.cols <= 1}
+            onclick={() => (spanDraft.cols = clamp(spanDraft.cols - 1, 1, MAX_COLS))}
+            >−</button
+          >
+          <span class="val">{spanDraft.cols}</span>
+          <button
+            aria-label="More columns"
+            disabled={spanDraft.cols >= MAX_COLS}
+            onclick={() => (spanDraft.cols = clamp(spanDraft.cols + 1, 1, MAX_COLS))}
+            >+</button
+          >
+        </div>
+        <div class="stepper">
+          <span class="lbl">Rows</span>
+          <button
+            aria-label="Fewer rows"
+            disabled={spanDraft.rows <= 1}
+            onclick={() => (spanDraft.rows = clamp(spanDraft.rows - 1, 1, MAX_ROWS))}
+            >−</button
+          >
+          <span class="val">{spanDraft.rows}</span>
+          <button
+            aria-label="More rows"
+            disabled={spanDraft.rows >= MAX_ROWS}
+            onclick={() => (spanDraft.rows = clamp(spanDraft.rows + 1, 1, MAX_ROWS))}
+            >+</button
+          >
+        </div>
+        <button class="primary" disabled={spanSelected.length < 2} onclick={createSpan}>
+          Create spanning grid
+        </button>
+      </div>
+      {#if spanSelected.length === 1}
+        <p class="hint">Select at least two monitors to span.</p>
+      {/if}
+    </section>
+  {/if}
 
   {#if snapshot && snapshot.floating.length > 0}
     <section class="card">
@@ -366,6 +601,43 @@
   }
   .controls.dimmed {
     opacity: 0.55;
+  }
+  .controls.hidden {
+    display: none;
+  }
+
+  .pick {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 13px;
+    color: var(--text);
+    cursor: pointer;
+    user-select: none;
+  }
+  .pick input {
+    accent-color: var(--accent);
+    width: 15px;
+    height: 15px;
+    cursor: pointer;
+  }
+
+  .primary {
+    border: 1px solid var(--accent);
+    border-radius: 9px;
+    background: rgba(139, 124, 246, 0.18);
+    color: var(--accent);
+    font: 600 12.5px/1 var(--sans);
+    padding: 8px 14px;
+    cursor: pointer;
+    transition: background 0.12s ease;
+  }
+  .primary:hover:not(:disabled) {
+    background: rgba(139, 124, 246, 0.28);
+  }
+  .primary:disabled {
+    opacity: 0.45;
+    cursor: default;
   }
 
   .stepper {

@@ -4,5 +4,6 @@
 export * from './types';
 export * from './coords';
 export * from './brain';
+export * from './spanning';
 export * from './templates';
 export * from './persist';

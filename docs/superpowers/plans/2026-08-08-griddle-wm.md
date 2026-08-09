@@ -94,6 +94,7 @@ Events brain → settings: `state-snapshot {grids, templates, tiles: Record<grid
 Events settings → brain (contract extension, Task 13): `settings-ready {}` (settings window loaded; brain re-emits its last `state-snapshot`) · `settings-move {gridId, hwnd, slot: Slot}` (editor tile drop → `moveTileFromEditor`) · `settings-enable-grid {monitorId, cols, rows}` (→ `enableGrid` with a fresh window sweep) · `settings-disable-grid {gridId}` (→ `disableGrid`) · `settings-set-dims {gridId, cols, rows}` (→ `reflowGrid`).
 Events overlay → brain (contract extension, Task 15): `overlay-ready {}` (overlay webview loaded; brain re-emits its last `state-snapshot` — overlays learn their grid's cols/rows/monitorIds from the broadcast `state-snapshot` and their geometry from `list_monitors`).
 Events settings → brain (contract extension, Task 16): `settings-set-mode {gridId, mode: 'collision'|'overlay'}` (→ `setMode`) · `settings-capture-template {gridId, name}` (→ `captureTemplate`) · `settings-apply-template {gridId, templateId}` (→ `applyTemplate`) · `settings-delete-template {templateId}` (→ `deleteTemplate`, C3 extension below). All are webview↔webview like the Task 13 events; Rust never handles them, so `ipc.rs` is unchanged.
+Events settings → brain (contract extension, Task 17): `settings-enable-span {monitorIds: string[], cols, rows}` (→ `enableGrid` with id `grid:span:<sorted-monitor-ids-joined-by-+>` against a fresh window sweep; the brain tears down any live grid sharing one of those monitors, so a spanning grid replaces the per-monitor grids it covers — and enabling a per-monitor grid likewise tears down a covering span). Disable/dims/mode/templates reuse the existing `settings-*` events with the span grid id. Webview↔webview; Rust never handles it, so `ipc.rs` is unchanged.
 
 Commands (webview → Rust), all `#[tauri::command]`:
 `list_windows() -> WindowInfo[]` · `list_monitors() -> MonitorInfo[]` · `apply_layout(layout: ApplyLayout)` · `show_overlay(monitor_id) / hide_overlay(monitor_id)` (contract extension, Task 15: both create the overlay window on demand and re-position it to the monitor's current bounds — `hide_overlay` creates it *hidden*, which the brain host uses to pre-warm overlay webviews at startup/grid-enable so the first drag never waits on WebView2 spin-up) · `read_config() -> AppConfig | null` · `write_config(config: AppConfig)` · `set_paused(paused: bool)` · `focus_window(hwnd)` · `show_settings()` (contract extension, Task 13: create-or-focus the settings window; Task 18's tray/hotkey reuse it).
@@ -128,6 +129,7 @@ export class WindowManagerBrain {
   applyTemplate(gridId: string, templateId: string): void;
   moveTileFromEditor(gridId: string, hwnd: Hwnd, slot: Slot): void;
   deleteTemplate(templateId: string): boolean;  // contract extension, Task 16: false for builtin/unknown ids; never emits moves
+  slotUsable(gridId: string, slot: Slot): boolean; // contract extension, Task 17: dead-space check for spanning grids (false for unknown/disabled grids); placement, snap, and preview all route through the same test
   exportConfig(): AppConfig;
 }
 ```

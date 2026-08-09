@@ -10,6 +10,7 @@
 import {
   WindowManagerBrain,
   defaultConfig,
+  spanGridId,
   type AppConfig,
   type GridSettings,
   type StateSnapshot,
@@ -32,6 +33,7 @@ import {
   onSettingsDeleteTemplate,
   onSettingsDisableGrid,
   onSettingsEnableGrid,
+  onSettingsEnableSpan,
   onSettingsMove,
   onSettingsReady,
   onSettingsSetDims,
@@ -195,6 +197,35 @@ export async function startBrainHost(): Promise<BrainHost> {
     prewarmOverlays(settings.monitorIds);
   };
 
+  /**
+   * Enable a spanning grid over several monitors against a fresh window
+   * sweep (plan Task 17). The brain tears down any live grid sharing one of
+   * those monitors — spanning replaces per-monitor grids.
+   */
+  const enableSpan = async (monitorIds: string[], cols = 12, rows = 6) => {
+    const mons = await listMonitors();
+    brain.setMonitors(mons);
+    const ids = [...new Set(monitorIds)]
+      .filter((id) => mons.some((m) => m.id === id))
+      .sort();
+    if (ids.length < 2) {
+      throw new Error(`enableSpan: need at least 2 present monitors, got ${ids.length}`);
+    }
+    const gridId = spanGridId(ids);
+    const existing = brain.exportConfig().grids.find((g) => g.id === gridId);
+    const settings: GridSettings = {
+      id: gridId,
+      monitorIds: ids,
+      cols,
+      rows,
+      mode: existing?.mode ?? 'collision',
+      enabled: true,
+      activeTemplateId: null,
+    };
+    brain.enableGrid(settings, await listWindows());
+    prewarmOverlays(ids);
+  };
+
   // Native events → brain, plus settings-window inputs (contract §C2).
   // Listeners registered after the initial snapshot seeding so an event can
   // never race the constructor.
@@ -230,6 +261,12 @@ export async function startBrainHost(): Promise<BrainHost> {
     onSettingsEnableGrid((p) =>
       enableOnMonitor(p.monitorId, p.cols, p.rows).catch((e) =>
         console.error('settings-enable-grid failed:', e),
+      ),
+    ),
+    // Settings window → brain (plan Task 17): spanning grids.
+    onSettingsEnableSpan((p) =>
+      enableSpan(p.monitorIds, p.cols, p.rows).catch((e) =>
+        console.error('settings-enable-span failed:', e),
       ),
     ),
     onSettingsDisableGrid((p) => brain.disableGrid(p.gridId)),
