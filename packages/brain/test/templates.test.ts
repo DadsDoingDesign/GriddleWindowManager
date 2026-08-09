@@ -86,6 +86,20 @@ const CUSTOM_TPL: Template = {
   builtin: false,
 };
 
+// An 8×6 user template — dims differ from the grid's 12×6 to exercise the
+// re-dimension path (builtins no longer do: they are all authored at 12×6).
+const TPL_8X6: Template = {
+  id: 'tpl:wide8',
+  name: 'Main + side (8x6)',
+  cols: 8,
+  rows: 6,
+  slots: [
+    { col: 0, row: 0, w: 5, h: 6 },
+    { col: 5, row: 0, w: 3, h: 6 },
+  ],
+  builtin: false,
+};
+
 function makeConfig(templates: Template[]): AppConfig {
   return {
     version: 1,
@@ -162,51 +176,56 @@ describe('builtinTemplates', () => {
     expect(tpls.every((t) => t.name.length > 0)).toBe(true);
   });
 
+  // Critique round 3: every builtin is authored at the 12×6 default dims so
+  // applying one on a fresh install never re-dimensions the user's grid
+  // (applyTemplate re-dims to the template's cols/rows).
+  it('every builtin is authored on the 12×6 default lattice', () => {
+    for (const t of builtinTemplates()) {
+      expect(t.cols, t.id).toBe(12);
+      expect(t.rows, t.id).toBe(6);
+    }
+  });
+
   it('tpl:2col — two full-height columns', () => {
     const t = builtinTemplates().find((t) => t.id === 'tpl:2col')!;
-    expect(t).toMatchObject({ cols: 2, rows: 1 });
     expect(t.slots).toEqual([
-      { col: 0, row: 0, w: 1, h: 1 },
-      { col: 1, row: 0, w: 1, h: 1 },
+      { col: 0, row: 0, w: 6, h: 6 },
+      { col: 6, row: 0, w: 6, h: 6 },
     ]);
   });
 
   it('tpl:3col — three full-height columns', () => {
     const t = builtinTemplates().find((t) => t.id === 'tpl:3col')!;
-    expect(t).toMatchObject({ cols: 3, rows: 1 });
     expect(t.slots).toEqual([
-      { col: 0, row: 0, w: 1, h: 1 },
-      { col: 1, row: 0, w: 1, h: 1 },
-      { col: 2, row: 0, w: 1, h: 1 },
+      { col: 0, row: 0, w: 4, h: 6 },
+      { col: 4, row: 0, w: 4, h: 6 },
+      { col: 8, row: 0, w: 4, h: 6 },
     ]);
   });
 
   it('tpl:2x2 — four quadrants in reading order', () => {
     const t = builtinTemplates().find((t) => t.id === 'tpl:2x2')!;
-    expect(t).toMatchObject({ cols: 2, rows: 2 });
     expect(t.slots).toEqual([
-      { col: 0, row: 0, w: 1, h: 1 },
-      { col: 1, row: 0, w: 1, h: 1 },
-      { col: 0, row: 1, w: 1, h: 1 },
-      { col: 1, row: 1, w: 1, h: 1 },
+      { col: 0, row: 0, w: 6, h: 3 },
+      { col: 6, row: 0, w: 6, h: 3 },
+      { col: 0, row: 3, w: 6, h: 3 },
+      { col: 6, row: 3, w: 6, h: 3 },
     ]);
   });
 
-  it('tpl:main-side — 8×6 with main {0,0,5,6} + side {5,0,3,6} (plan-exact)', () => {
+  it('tpl:main-side — main {0,0,7,6} + side {7,0,5,6}', () => {
     const t = builtinTemplates().find((t) => t.id === 'tpl:main-side')!;
-    expect(t).toMatchObject({ cols: 8, rows: 6 });
     expect(t.slots).toEqual([
-      { col: 0, row: 0, w: 5, h: 6 },
-      { col: 5, row: 0, w: 3, h: 6 },
+      { col: 0, row: 0, w: 7, h: 6 },
+      { col: 7, row: 0, w: 5, h: 6 },
     ]);
   });
 
   it('tpl:rows2 — two full-width rows', () => {
     const t = builtinTemplates().find((t) => t.id === 'tpl:rows2')!;
-    expect(t).toMatchObject({ cols: 1, rows: 2 });
     expect(t.slots).toEqual([
-      { col: 0, row: 0, w: 1, h: 1 },
-      { col: 0, row: 1, w: 1, h: 1 },
+      { col: 0, row: 0, w: 12, h: 3 },
+      { col: 0, row: 3, w: 12, h: 3 },
     ]);
   });
 
@@ -232,7 +251,7 @@ describe('builtinTemplates', () => {
     first[0]!.slots[0]!.w = 99;
     first[0]!.name = 'mangled';
     const again = builtinTemplates();
-    expect(again[0]!.slots[0]!.w).toBe(1);
+    expect(again[0]!.slots[0]!.w).toBe(6);
     expect(again[0]!.name).not.toBe('mangled');
   });
 });
@@ -385,18 +404,18 @@ describe('applyTemplate — same dims', () => {
 
 describe('applyTemplate — different dims (reflow first)', () => {
   it('re-dims the grid to the template cols/rows and lays out with the new cells', () => {
-    const { brain, applies, snapshots, mon } = harness();
+    const { brain, applies, snapshots, mon } = harness(makeConfig([TPL_8X6]));
     brain.enableGrid(makeGridSettings(), [makeWindow('A'), makeWindow('B')]);
     const appliesBefore = applies.length;
 
-    brain.applyTemplate(GRID_ID, 'tpl:main-side'); // 8×6 vs the grid's 12×6
+    brain.applyTemplate(GRID_ID, 'tpl:wide8'); // 8×6 vs the grid's 12×6
 
     expect(applies).toHaveLength(appliesBefore + 1);
     const snap = last(snapshots);
     const g = snap.grids.find((g) => g.id === GRID_ID)!;
     expect(g.cols).toBe(8);
     expect(g.rows).toBe(6);
-    expect(g.activeTemplateId).toBe('tpl:main-side');
+    expect(g.activeTemplateId).toBe('tpl:wide8');
     // B is most recent → main slot; A → side slot
     expect(slotOf(snap, 'B')).toEqual({ col: 0, row: 0, w: 5, h: 6 });
     expect(slotOf(snap, 'A')).toEqual({ col: 5, row: 0, w: 3, h: 6 });
@@ -414,12 +433,26 @@ describe('applyTemplate — different dims (reflow first)', () => {
   });
 
   it('subsequent placement uses the template dims (exportConfig agrees)', () => {
-    const { brain } = harness();
+    const { brain } = harness(makeConfig([TPL_8X6]));
     brain.enableGrid(makeGridSettings(), [makeWindow('A')]);
-    brain.applyTemplate(GRID_ID, 'tpl:2col');
+    brain.applyTemplate(GRID_ID, 'tpl:wide8');
     const g = brain.exportConfig().grids.find((g) => g.id === GRID_ID)!;
-    expect(g.cols).toBe(2);
-    expect(g.rows).toBe(1);
+    expect(g.cols).toBe(8);
+    expect(g.rows).toBe(6);
+  });
+
+  // Critique round 3 regression: the first-run happy path. A fresh install
+  // starts on 12×6; clicking Apply on any builtin must never change the
+  // grid's dims (the old degenerate builtins re-gridded to 2×1 etc.).
+  it('applying any builtin to the default 12×6 grid keeps the dims', () => {
+    for (const tpl of builtinTemplates()) {
+      const { brain, snapshots } = harness();
+      brain.enableGrid(makeGridSettings(), [makeWindow('A'), makeWindow('B')]);
+      brain.applyTemplate(GRID_ID, tpl.id);
+      const g = last(snapshots).grids.find((g) => g.id === GRID_ID)!;
+      expect(g.cols, tpl.id).toBe(12);
+      expect(g.rows, tpl.id).toBe(6);
+    }
   });
 });
 
@@ -452,11 +485,11 @@ describe('applyTemplate — modes and special windows', () => {
     brain.applyTemplate(GRID_ID, 'tpl:main-side');
 
     const snap = last(snapshots);
-    expect(slotOf(snap, 'N')).toEqual({ col: 0, row: 0, w: 5, h: 6 });
-    expect(slotOf(snap, 'R')).toEqual({ col: 5, row: 0, w: 3, h: 6 });
+    expect(slotOf(snap, 'N')).toEqual({ col: 0, row: 0, w: 7, h: 6 });
+    expect(slotOf(snap, 'R')).toEqual({ col: 7, row: 0, w: 5, h: 6 });
     const nMove = last(applies).moves.find((m) => m.hwnd === 'N');
     if (nMove) {
-      expect(nMove.width).toBe(500); // own size, not the 1200px cell
+      expect(nMove.width).toBe(500); // own size, not the 1120px cell
       expect(nMove.height).toBe(400);
       expect(nMove).toMatchObject({ x: 0, y: 48 });
     }

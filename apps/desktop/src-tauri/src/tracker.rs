@@ -265,6 +265,9 @@ pub fn list_windows(window: tauri::Window) -> Vec<WindowInfo> {
         return Vec::new();
     }
     if window.label() == crate::guard::MAIN_LABEL {
+        // A sweep request proves the brain page's event loop is alive —
+        // count it as a heartbeat (see shell::note_brain_activity).
+        crate::shell::note_brain_activity();
         snapshot()
     } else {
         snapshot_readonly()

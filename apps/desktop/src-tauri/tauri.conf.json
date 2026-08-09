@@ -16,6 +16,8 @@
         "title": "Griddle WM Brain",
         "url": "/brain",
         "visible": false,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,IntensiveWakeUpThrottling --disable-background-timer-throttling",
+        "backgroundThrottling": "disabled",
         "width": 800,
         "height": 600,
         "resizable": true,

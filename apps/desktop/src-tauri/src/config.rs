@@ -149,23 +149,31 @@ pub(crate) fn sanitize_hotkey(config: &mut AppConfig, fallback: &str) {
     config.hotkey = replacement;
 }
 
-/// Contract §C2: `read_config() -> AppConfig | null`. Also pushes the loaded
-/// exclusion list into the tracker so eligibility matches the config from the
-/// first snapshot on, and converges shell state (initial pause seed, hotkey,
-/// autostart — plan Task 18) onto the loaded config.
-/// Callers: brain host + settings (security review: least privilege).
+/// Contract §C2: `read_config() -> AppConfig | null`. For the **brain host**
+/// it also pushes the loaded exclusion list into the tracker so eligibility
+/// matches the config from the first snapshot on, and converges shell state
+/// (initial pause seed, hotkey, autostart — plan Task 18) onto the loaded
+/// config. For the **settings** window it is a pure read (critique round 3):
+/// settings mounts call this while the brain's 500 ms save debounce may
+/// still hold newer state, so letting that call re-apply the *on-disk*
+/// hotkey/autostart or trigger a tracker resync would transiently revert a
+/// change the user just made — and would let a less-privileged window
+/// indirectly drive desktop re-sweeps. Side effects belong to the config's
+/// owner (the brain host) alone.
 #[tauri::command]
 pub fn read_config(app: tauri::AppHandle, window: tauri::Window) -> Option<AppConfig> {
     crate::guard::authorize("read_config", window.label()).ok()?;
     let dir = config_dir()?;
     let cfg = read_config_from(&dir)?;
-    // Task 19: an exclusion-list change re-sweeps the desktop so the live
-    // eligible set (and the brain, via the emitted diff events) converges
-    // without a restart.
-    if crate::tracker::set_exclusions(cfg.exclusions.clone()) {
-        crate::tracker::resync();
+    if window.label() == crate::guard::MAIN_LABEL {
+        // Task 19: an exclusion-list change re-sweeps the desktop so the
+        // live eligible set (and the brain, via the emitted diff events)
+        // converges without a restart.
+        if crate::tracker::set_exclusions(cfg.exclusions.clone()) {
+            crate::tracker::resync();
+        }
+        crate::shell::sync_from_config(&app, &cfg);
     }
-    crate::shell::sync_from_config(&app, &cfg);
     Some(cfg)
 }
 

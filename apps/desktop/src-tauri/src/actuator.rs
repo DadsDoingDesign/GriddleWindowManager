@@ -173,6 +173,10 @@ pub fn apply_layout(app: tauri::AppHandle, window: tauri::Window, layout: ApplyL
     if crate::guard::authorize("apply_layout", window.label()).is_err() {
         return;
     }
+    // A layout apply proves the brain page's event loop is alive — count it
+    // as a heartbeat (hidden-page timer throttling must never make an active
+    // brain look dead).
+    crate::shell::note_brain_activity();
     let requested = layout.moves.len();
     let mut gone: Vec<isize> = Vec::new();
     let applied = apply_validated(&layout, &mut |key| gone.push(key));
@@ -321,15 +325,17 @@ mod win {
                 log::info!("apply_layout: hwnd {key} is minimized, skipping");
                 continue;
             }
-            // A maximized window must never be repositioned in place — it
-            // would stay "maximized" by state while arbitrarily sized. The
-            // brain releases maximized windows' tiles, so this only fires on
-            // races (maximize between layout computation and apply).
+            // A maximized window is skipped exactly like a minimized one
+            // (critique round 3). The brain releases maximized windows'
+            // tiles, so a move for one is always a race (maximize between
+            // layout computation and apply) — and racing the *user's*
+            // maximize with an un-maximizing SW_RESTORE + move is precisely
+            // the wrong resolution: the LOCATIONCHANGE-derived zoom-sync
+            // event releases the tile moments later, so dropping the move
+            // converges without ever fighting the user.
             if verified && unsafe { IsZoomed(hwnd) }.as_bool() {
-                log::info!("apply_layout: hwnd {key} is maximized, restoring before move");
-                unsafe {
-                    let _ = ShowWindow(hwnd, SW_RESTORE);
-                }
+                log::info!("apply_layout: hwnd {key} is maximized, skipping");
+                continue;
             }
             let rects = if verified { window_and_frame_rects(hwnd) } else { None };
             let Some((raw_now, frame_now)) = rects else {
@@ -841,6 +847,56 @@ mod win_tests {
         assert!(crate::tracker::is_tracked(key), "window stays tracked");
 
         // After a restore the same layout applies normally again.
+        unsafe {
+            let _ = ShowWindow(hwnd, SW_RESTORE);
+        }
+        let applied = apply_validated(&one_move(key, target), &mut |k| destroyed.push(k));
+        assert_eq!(applied, 1, "restored window moves again");
+
+        let _ = crate::tracker::untrack(key);
+        unsafe { DestroyWindow(hwnd).expect("DestroyWindow") };
+    }
+
+    /// Critique round 3: the zoomed guard mirrors the iconic guard. A
+    /// maximized window racing an apply must be *skipped* — not
+    /// SW_RESTORE'd and moved, which would un-maximize the window the user
+    /// just maximized. The zoom-sync flow releases the tile moments later.
+    #[test]
+    fn maximized_window_is_skipped_not_moved() {
+        use windows::Win32::UI::WindowsAndMessaging::{
+            IsZoomed, ShowWindow, SW_MAXIMIZE, SW_RESTORE,
+        };
+        let _guard = crate::tracker::live_set_test_lock()
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        let hwnd = create_test_window();
+        let key = track(hwnd);
+        unsafe {
+            let _ = ShowWindow(hwnd, SW_MAXIMIZE);
+        }
+        assert!(unsafe { IsZoomed(hwnd) }.as_bool(), "test window maximized");
+
+        let target = Rect {
+            x: 150,
+            y: 120,
+            width: 400,
+            height: 300,
+        };
+        let mut destroyed = Vec::new();
+        let applied = apply_validated(&one_move(key, target), &mut |k| destroyed.push(k));
+        assert_eq!(applied, 0, "zoomed window is skipped, never moved");
+        assert!(destroyed.is_empty(), "alive window is not reported destroyed");
+        assert!(
+            unsafe { IsZoomed(hwnd) }.as_bool(),
+            "window stays maximized (no SW_RESTORE)"
+        );
+        assert!(
+            !matches_expected(key, &target),
+            "no expected rect recorded for a skipped window"
+        );
+        assert!(crate::tracker::is_tracked(key), "window stays tracked");
+
+        // After the user un-maximizes, the same layout applies normally.
         unsafe {
             let _ = ShowWindow(hwnd, SW_RESTORE);
         }

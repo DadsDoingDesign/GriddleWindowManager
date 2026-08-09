@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "overlay",
+  "description": "Overlay webviews (drag preview) get event listen/emit only — no other core surface. App commands they call (list_monitors) are additionally gated per-label in guard.rs; this file is the capability-side layer of the same least-privilege rule (security review deferred item 3, now fixed).",
+  "windows": [
+    "overlay-*"
+  ],
+  "permissions": [
+    "core:event:default"
+  ]
+}

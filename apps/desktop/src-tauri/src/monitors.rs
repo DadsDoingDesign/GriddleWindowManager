@@ -174,6 +174,9 @@ mod win {
             return;
         };
         let monitors = enumerate();
+        // The tray syncs on every brain snapshot; it works from this cache so
+        // the hot path never re-walks the display topology (critique round 3).
+        crate::shell::refresh_monitor_cache(&monitors);
         log::info!(
             "display change detected: {} monitor(s), emitting {}",
             monitors.len(),

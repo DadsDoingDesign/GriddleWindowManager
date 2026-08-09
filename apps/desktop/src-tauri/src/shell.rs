@@ -117,10 +117,21 @@ pub fn respawn_brain_host(app: &AppHandle) {
 // timer that misses enough beats destroys the window — which triggers the
 // existing `Destroyed` → `respawn_brain_host` → rehydration path.
 
-/// How long without a beat before the brain host is declared dead. The page
-/// beats every ~3 s, so this tolerates several missed beats plus a slow boot
-/// (config read + full window sweep) before pulling the trigger.
-pub const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(15);
+/// How long without a beat before the brain host is declared dead.
+///
+/// The page beats every ~3 s — but the brain page is *permanently hidden*,
+/// and Chromium applies intensive wake-up throttling to hidden pages after
+/// ~5 minutes: chained timers (`setInterval`) get aligned to one wake-up per
+/// minute. `tauri.conf.json` passes `--disable-background-timer-throttling`
+/// to WebView2 to switch that off, but the timeout must not *rely* on a
+/// browser flag staying honored across WebView2 releases: it sits well above
+/// the worst-case throttled cadence (~60 s), so even a fully throttled but
+/// healthy brain never gets shot. Real deaths are still caught — just up to
+/// ~90 s later, and the `Destroyed`-event watchdog covers the common crash
+/// modes instantly. Commands the brain host invokes anyway (`apply_layout`,
+/// `list_windows`) also count as beats ([`note_brain_activity`]), so an
+/// *active* brain is never in doubt regardless of timer throttling.
+pub const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(90);
 /// How often the watchdog thread checks the beat clock.
 const HEARTBEAT_CHECK_INTERVAL: Duration = Duration::from_secs(3);
 /// Consecutive beat-less respawns before giving up — a page that never
@@ -140,6 +151,14 @@ fn beat_lock() -> &'static Mutex<Instant> {
 fn record_brain_beat() {
     *beat_lock().lock().unwrap_or_else(|p| p.into_inner()) = Instant::now();
     RESPAWNS_WITHOUT_BEAT.store(0, Ordering::SeqCst);
+}
+
+/// Any command invocation from the brain-host window proves its JS event
+/// loop is alive — count it as a heartbeat so timer throttling of the hidden
+/// page can never make an *active* brain look dead. Called by the hot
+/// brain-host commands (`apply_layout`, `list_windows`) after authorization.
+pub(crate) fn note_brain_activity() {
+    record_brain_beat();
 }
 
 /// Reset only the clock (boot / post-respawn grace) — the give-up counter
@@ -346,6 +365,43 @@ pub fn tray_tooltip(floating: usize) -> String {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Monitor cache (critique round 3, hot-path hygiene)
+// ---------------------------------------------------------------------------
+//
+// `update_tray` runs on every brain snapshot (every window appear / destroy /
+// minimize / drag-commit). Re-walking the display topology
+// (EnumDisplayMonitors + GetMonitorInfoW + GetDpiForMonitor per monitor) on
+// the main thread each time just to diff menu items is waste: the topology
+// only changes when the display watcher says so. The watcher's
+// `monitors-changed` path refreshes this cache; tray syncs read it.
+
+fn monitor_cache() -> &'static Mutex<Option<Vec<MonitorInfo>>> {
+    static CACHE: OnceLock<Mutex<Option<Vec<MonitorInfo>>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(None))
+}
+
+/// Store a fresh display enumeration (called from the display watcher's
+/// monitors-changed path and from tray init).
+pub fn refresh_monitor_cache(monitors: &[MonitorInfo]) {
+    *monitor_cache().lock().unwrap_or_else(|p| p.into_inner()) = Some(monitors.to_vec());
+}
+
+/// The last known display topology; enumerates (and seeds the cache) only
+/// when nothing has been cached yet.
+fn cached_monitors() -> Vec<MonitorInfo> {
+    if let Some(m) = monitor_cache()
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone()
+    {
+        return m;
+    }
+    let fresh = crate::monitors::enumerate();
+    refresh_monitor_cache(&fresh);
+    fresh
+}
+
 /// Live tray handles: the icon plus the menu items whose state gets synced.
 struct TrayState {
     tray: TrayIcon<Wry>,
@@ -423,6 +479,7 @@ fn build_menu(
 /// first `update_tray` call brings them in line with the restored config.
 pub fn init_tray(app: &AppHandle) -> tauri::Result<()> {
     let monitors = crate::monitors::enumerate();
+    refresh_monitor_cache(&monitors);
     let (menu, monitor_items, pause_item) = build_menu(app, &monitors, &[])?;
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
         .tooltip("Griddle WM")
@@ -478,9 +535,11 @@ fn on_menu_event(app: &AppHandle, menu_id: &str) {
 
 /// Converge the tray onto live brain state: check items for monitors covered
 /// by an enabled grid, tooltip reflecting grid-full floating windows,
-/// rebuild the item list when the topology changed.
+/// rebuild the item list when the topology changed. Runs on every brain
+/// snapshot, so it reads the watcher-maintained monitor cache instead of
+/// re-enumerating displays each time.
 fn sync_tray(app: &AppHandle, enabled_monitor_ids: &[String], floating: usize) {
-    let monitors = crate::monitors::enumerate();
+    let monitors = cached_monitors();
     let mut guard = tray_state().lock().unwrap_or_else(|p| p.into_inner());
     let Some(state) = guard.as_mut() else {
         return; // tray never came up (init_tray failed); nothing to sync
@@ -790,6 +849,21 @@ mod tests {
     fn monitor_label_survives_ids_without_device_prefix() {
         let m = mon("odd-id@0,0", 800, 600, false);
         assert_eq!(monitor_menu_label(&m), "Grid: odd-id (800\u{d7}600)");
+    }
+
+    // -- monitor cache (tray hot path) ---------------------------------------
+
+    #[test]
+    fn monitor_cache_serves_the_last_refreshed_topology() {
+        let mons = vec![
+            mon(r"\\.\DISPLAY1@0,0", 1920, 1080, true),
+            mon(r"\\.\DISPLAY2@1920,0", 2560, 1440, false),
+        ];
+        refresh_monitor_cache(&mons);
+        assert_eq!(cached_monitors(), mons, "cache round-trips the refresh");
+        let smaller = vec![mon(r"\\.\DISPLAY1@0,0", 1920, 1080, true)];
+        refresh_monitor_cache(&smaller);
+        assert_eq!(cached_monitors(), smaller, "a new refresh replaces the cache");
     }
 
     // -- tray tooltip (spec §5.4 grid-full hint) ------------------------------

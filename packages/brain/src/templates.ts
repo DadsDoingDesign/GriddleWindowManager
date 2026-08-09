@@ -20,60 +20,65 @@ interface BuiltinSpec {
   slots: Slot[];
 }
 
-// Contract (plan Task 6): exactly these five ids; tpl:main-side is 8×6 with
-// main {0,0,5,6} + side {5,0,3,6}.
+// Contract (plan Task 6 ids, geometry superseded in critique round 3): all
+// five builtins are authored on the 12×6 default lattice so applying one to
+// a fresh install never re-dimensions the grid. The plan originally specced
+// degenerate dims (2×1, 3×1, 2×2, 8×6, 1×2); since `applyTemplate` re-dims
+// the grid to the template's dims, that silently destroyed the user's grid
+// granularity on the first Apply click — see docs/deferred.md, "Critique
+// round 3".
 const BUILTINS: readonly BuiltinSpec[] = [
   {
     id: 'tpl:2col',
     name: 'Two columns',
-    cols: 2,
-    rows: 1,
+    cols: 12,
+    rows: 6,
     slots: [
-      { col: 0, row: 0, w: 1, h: 1 },
-      { col: 1, row: 0, w: 1, h: 1 },
+      { col: 0, row: 0, w: 6, h: 6 },
+      { col: 6, row: 0, w: 6, h: 6 },
     ],
   },
   {
     id: 'tpl:3col',
     name: 'Three columns',
-    cols: 3,
-    rows: 1,
+    cols: 12,
+    rows: 6,
     slots: [
-      { col: 0, row: 0, w: 1, h: 1 },
-      { col: 1, row: 0, w: 1, h: 1 },
-      { col: 2, row: 0, w: 1, h: 1 },
+      { col: 0, row: 0, w: 4, h: 6 },
+      { col: 4, row: 0, w: 4, h: 6 },
+      { col: 8, row: 0, w: 4, h: 6 },
     ],
   },
   {
     id: 'tpl:2x2',
-    name: 'Quad (2 × 2)',
-    cols: 2,
-    rows: 2,
+    name: 'Quad (2×2)',
+    cols: 12,
+    rows: 6,
     slots: [
-      { col: 0, row: 0, w: 1, h: 1 },
-      { col: 1, row: 0, w: 1, h: 1 },
-      { col: 0, row: 1, w: 1, h: 1 },
-      { col: 1, row: 1, w: 1, h: 1 },
+      { col: 0, row: 0, w: 6, h: 3 },
+      { col: 6, row: 0, w: 6, h: 3 },
+      { col: 0, row: 3, w: 6, h: 3 },
+      { col: 6, row: 3, w: 6, h: 3 },
     ],
   },
   {
     id: 'tpl:main-side',
     name: 'Main + side',
-    cols: 8,
+    cols: 12,
     rows: 6,
     slots: [
-      { col: 0, row: 0, w: 5, h: 6 },
-      { col: 5, row: 0, w: 3, h: 6 },
+      { col: 0, row: 0, w: 7, h: 6 },
+      { col: 7, row: 0, w: 5, h: 6 },
     ],
   },
   {
     id: 'tpl:rows2',
     name: 'Two rows',
-    cols: 1,
-    rows: 2,
+    cols: 12,
+    rows: 6,
     slots: [
-      { col: 0, row: 0, w: 1, h: 1 },
-      { col: 0, row: 1, w: 1, h: 1 },
+      { col: 0, row: 0, w: 12, h: 3 },
+      { col: 0, row: 3, w: 12, h: 3 },
     ],
   },
 ];

@@ -98,18 +98,30 @@ outside unit tests.
       end the **renderer** process for the hidden brain page (or
       `taskkill /f /im msedgewebview2.exe` for the blunt version — it kills
       all Griddle webviews; overlays/settings recreate on demand).
-- [ ] Within ~15 s the heartbeat watchdog fires. If a debug build is
-      handy, expect the log lines: `brain host sent no heartbeat for …;
-      forcing respawn` (heartbeat path) or `brain host window died
-      unexpectedly; respawning` (Destroyed path), then `brain host
+- [ ] The watchdog fires: instantly if the window object died (`brain host
+      window died unexpectedly; respawning`, Destroyed path), or within
+      ~90 s via the heartbeat (`brain host sent no heartbeat for …; forcing
+      respawn`) if only the renderer was killed — then `brain host
       respawned; rehydrating from config`.
 - [ ] After the respawn: drag a managed window — the overlay appears and
       snapping works; previously managed windows are still on their slots
       (rehydrated from config).
 
+### 7. Idle soak — no false-positive respawns (~10 min, passive)
+
+The brain heartbeat runs as a timer in a permanently hidden WebView2 page;
+Chromium throttles hidden-page timers after ~5 minutes. The app disables the
+throttling and the timeout tolerates it, but this has to be *observed* once:
+
+- [ ] With a grid enabled, leave the machine completely idle (no window
+      events) for at least 10 minutes with a debug build logging.
+- [ ] Assert **zero** `forcing respawn` / `respawning` log lines during the
+      soak, and that a drag afterwards still snaps instantly (no silent
+      respawn happened).
+
 ## P1 — strongly recommended (run if the session allows)
 
-### 7. Spanning grid on two physical monitors (~5 min)
+### 8. Spanning grid on two physical monitors (~5 min)
 
 Requires two physical monitors. **If this cannot be run, do not cut
 spanning** — the README already labels spanning as the newest, least-tested
@@ -124,7 +136,7 @@ feature; leave that sentence in place.
       the dead space.
 - [ ] Re-enabling a per-monitor grid tears down the span.
 
-### 8. Modes, templates, exclusions, maximize (~5 min)
+### 9. Modes, templates, exclusions, maximize (~5 min)
 
 - [ ] Toggle Tile↔Stack on a live grid; the hint line under the control
       restates the active mode.

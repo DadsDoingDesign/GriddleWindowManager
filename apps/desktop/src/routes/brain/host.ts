@@ -60,10 +60,19 @@ const SAVE_DEBOUNCE_MS = 500;
 /**
  * Heartbeat cadence (critique round 2): a healthy brain page invokes
  * `brain_alive` this often; Rust's watchdog respawns the window after
- * missing beats for `HEARTBEAT_TIMEOUT` (15 s). Only started once the host
+ * missing beats for `HEARTBEAT_TIMEOUT` (90 s). Only started once the host
  * booted successfully — a page whose boot threw sends no beats, so the
  * watchdog rebuilds it (with a give-up cap against a boot that always
  * fails).
+ *
+ * Throttling note (critique round 3): this page is permanently hidden, and
+ * Chromium's intensive wake-up throttling aligns hidden-page `setInterval`s
+ * to one wake-up per minute after ~5 min. The main window passes
+ * `--disable-background-timer-throttling` (tauri.conf.json) to switch that
+ * off, Rust's timeout (90 s) sits above the worst-case throttled cadence
+ * anyway, and every `apply_layout`/`list_windows` invocation also counts as
+ * a beat — three independent reasons a healthy-but-throttled brain is never
+ * respawned.
  */
 const HEARTBEAT_MS = 3000;
 
@@ -99,12 +108,27 @@ export interface BrainHost {
 }
 
 export async function startBrainHost(): Promise<BrainHost> {
-  const cfg: AppConfig = (await readConfig()) ?? defaultConfig();
+  const storedCfg = await readConfig();
+  const cfg: AppConfig = storedCfg ?? defaultConfig();
 
   let lastSnapshot: StateSnapshot | null = null;
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
   let monitorsDebounce: ReturnType<typeof setTimeout> | null = null;
   let destroyed = false;
+
+  /**
+   * First-run write suppression (critique round 3): on a genuinely fresh
+   * install (no config on disk) boot alone emits a snapshot (`setMonitors`),
+   * which would write a default config ~1–2 s after launch — racing the
+   * settings window's `readConfig() === null` first-run check and creating
+   * `%APPDATA%/griddle-wm` for users who launch once and quit. Until the
+   * user actually does something (any settings-* event, tray toggle, pause
+   * flip, or an explicit `saveNow`), snapshots do not schedule saves.
+   */
+  let userActed = storedCfg !== null;
+  const markUserAction = () => {
+    userActed = true;
+  };
 
   const save = async () => {
     saveTimer = null;
@@ -116,7 +140,7 @@ export async function startBrainHost(): Promise<BrainHost> {
   };
 
   const scheduleSave = () => {
-    if (destroyed) return;
+    if (destroyed || !userActed) return;
     if (saveTimer !== null) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => void save(), SAVE_DEBOUNCE_MS);
   };
@@ -230,6 +254,7 @@ export async function startBrainHost(): Promise<BrainHost> {
 
   /** Enable a collision grid on a monitor against a fresh window sweep. */
   const enableOnMonitor = async (monitorId?: string, cols = 12, rows = 6) => {
+    markUserAction();
     const mons = await listMonitors();
     const mon = monitorId
       ? mons.find((m) => m.id === monitorId)
@@ -259,6 +284,7 @@ export async function startBrainHost(): Promise<BrainHost> {
    * those monitors — spanning replaces per-monitor grids.
    */
   const enableSpan = async (monitorIds: string[], cols = 12, rows = 6) => {
+    markUserAction();
     const mons = await listMonitors();
     const wins = await listWindows();
     brain.setMonitors(mons, wins);
@@ -386,7 +412,10 @@ export async function startBrainHost(): Promise<BrainHost> {
         );
       }
     }),
-    onSettingsMove((p) => brain.moveTileFromEditor(p.gridId, p.hwnd, p.slot)),
+    onSettingsMove((p) => {
+      markUserAction();
+      brain.moveTileFromEditor(p.gridId, p.hwnd, p.slot);
+    }),
     onSettingsEnableGrid((p) =>
       enableOnMonitor(p.monitorId, p.cols, p.rows).catch((e) =>
         console.error('settings-enable-grid failed:', e),
@@ -398,11 +427,21 @@ export async function startBrainHost(): Promise<BrainHost> {
         console.error('settings-enable-span failed:', e),
       ),
     ),
-    onSettingsDisableGrid((p) => brain.disableGrid(p.gridId)),
-    onSettingsSetDims((p) => brain.reflowGrid(p.gridId, p.cols, p.rows)),
+    onSettingsDisableGrid((p) => {
+      markUserAction();
+      brain.disableGrid(p.gridId);
+    }),
+    onSettingsSetDims((p) => {
+      markUserAction();
+      brain.reflowGrid(p.gridId, p.cols, p.rows);
+    }),
     // Settings window → brain (plan Task 16): mode toggle + template gallery.
-    onSettingsSetMode((p) => brain.setMode(p.gridId, p.mode)),
+    onSettingsSetMode((p) => {
+      markUserAction();
+      brain.setMode(p.gridId, p.mode);
+    }),
     onSettingsCaptureTemplate((p) => {
+      markUserAction();
       try {
         brain.captureTemplate(p.gridId, p.name);
       } catch (e) {
@@ -410,23 +449,36 @@ export async function startBrainHost(): Promise<BrainHost> {
         console.error('settings-capture-template failed:', e);
       }
     }),
-    onSettingsApplyTemplate((p) => brain.applyTemplate(p.gridId, p.templateId)),
-    onSettingsDeleteTemplate((p) => brain.deleteTemplate(p.templateId)),
+    onSettingsApplyTemplate((p) => {
+      markUserAction();
+      brain.applyTemplate(p.gridId, p.templateId);
+    }),
+    onSettingsDeleteTemplate((p) => {
+      markUserAction();
+      brain.deleteTemplate(p.templateId);
+    }),
     // Settings window → brain (plan Task 19): exclusions editor. The brain
     // unmanages newly excluded windows immediately; the debounced config
     // save then re-syncs the tracker's live filter (write_config).
-    onSettingsSetExclusions((p) => brain.setExclusions(p.exclusions)),
+    onSettingsSetExclusions((p) => {
+      markUserAction();
+      brain.setExclusions(p.exclusions);
+    }),
     // Shell events (plan Task 18): Rust's authoritative pause flag is
     // mirrored into the brain (persists + updates the settings UI via the
     // snapshot); the settings General card sends autostart/hotkey prefs; the
     // tray toggles grid coverage per monitor.
     onPausedChanged((paused) => {
+      markUserAction(); // pause is only ever flipped by the user (tray/settings)
       brain.setShellPrefs({ paused });
       // Spec §6 calls pause a panic button — resuming must reconcile the
       // brain with whatever happened to the desktop while it was deaf.
       if (!paused) void reconcileAfterResume();
     }),
-    onSettingsSetPrefs((p) => brain.setShellPrefs(p)),
+    onSettingsSetPrefs((p) => {
+      markUserAction();
+      brain.setShellPrefs(p);
+    }),
     onTrayToggleGrid((p) =>
       toggleFromTray(p.monitorId).catch((e) => {
         console.error('tray-toggle-grid failed:', e);
@@ -453,6 +505,7 @@ export async function startBrainHost(): Promise<BrainHost> {
       await enableOnMonitor(monitorId, cols, rows);
     },
     async saveNow() {
+      markUserAction(); // explicit flush always writes
       if (saveTimer !== null) {
         clearTimeout(saveTimer);
         saveTimer = null;
