@@ -27,9 +27,10 @@ Deferred beyond that baseline:
 ## Distribution (spec §7)
 
 - **winget manifest** — planned fast-follow after v0.1.0 ships.
-- README demo GIF — a real recording needs a human at a GUI (the placeholder
-  blockquote was removed from the README so the docs don't ship a visible
-  construction sign; add the GIF under the intro paragraph when recorded).
+- README demo GIF + settings screenshot — a real recording needs a human at
+  a GUI. Both captures are line items in the release-gating smoke pass
+  ([`smoke-test-v0.1.0.md`](smoke-test-v0.1.0.md), "README assets"), so the
+  same session that verifies the overlay produces the proof for the README.
 
 ## Security review — accepted-not-fixed findings
 
@@ -90,7 +91,50 @@ log; what follows is what was deliberately not done, and why.
   `WindowEvent::Destroyed` unless quitting) shipped with unit-tested policy
   and the pure-TS rehydration proof; actually killing the WebView2 process
   and watching windows stay managed needs a human GUI session (listed
-  below).
+  below). *Update (critique round 2):* a `brain_alive` heartbeat now also
+  covers the deaths `Destroyed` cannot see (renderer crash with a live
+  window object, boot failure, wedged JS event loop) — but
+  `respawn_brain_host` itself has still never executed outside unit tests,
+  which is why the webview-kill test is a P0 item in the release-gating
+  smoke pass.
+
+## Critique round 2 (pre-tag) — consciously deferred findings
+
+Second triage against the pre-ship critique. What was *fixed* is in the git
+log (HWND-recycling re-adoption, full pause-resume reconciliation, the
+actuator's `IsIconic` guard, the brain-host heartbeat, targeted Rust-side
+emits, read-only settings enumeration, monitors-changed debounce, the
+settings mode-copy/pause/stepper/hotkey-display UX batch, README link and
+placeholder fixes). What follows was deliberately not done, and why.
+
+- **Release gate.** The `v0.1.0` tag is gated on the scripted human smoke
+  pass in [`smoke-test-v0.1.0.md`](smoke-test-v0.1.0.md) — this build
+  environment has no interactive GUI, so the pass cannot be run from here.
+  The "GUI-bound human smoke tests" list below maps onto that script. If
+  the two-physical-monitor spanning item cannot be run, spanning ships
+  anyway with the README's "newest feature, least real-world testing"
+  labeling (added this round) rather than being cut.
+- **Friendly monitor names.** Monitors are still presented as
+  `DISPLAY1`/`DISPLAY2` (GDI device names) with resolution + "primary"
+  metadata. Real display names need
+  `QueryDisplayConfig`/`DISPLAYCONFIG_TARGET_DEVICE_NAME` plumbed through
+  `MonitorInfo` and every UI surface; queued as a fast-follow.
+- **TS-side targeted emits** (`preview-state`, `state-snapshot`). The Rust
+  hot path (drag-pos at ~60 Hz plus all tracker events) now uses
+  `emit_to("main")`, which removes the per-frame fan-out. The brain-side
+  emits still broadcast: overlay windows have dynamic labels
+  (`overlay-<n>`) the host does not track, `preview-state` only fires on
+  footprint *changes* (not per frame), and `state-snapshot` only on state
+  changes — the remaining waste is small and the label-registry plumbing is
+  not worth it days before the tag.
+- **Per-window apply-failure feedback to the brain.** When `SetWindowPos`
+  fails for a live window ("alive but unmovable", e.g. turned elevated),
+  the tile and window now *documentedly* diverge until the next user
+  interaction (the actuator comment was corrected this round). Reporting
+  per-hwnd outcomes back through `apply_layout` so the brain can drop the
+  stale `appliedRects` entry needs a command-result contract change plus
+  brain retry logic; accepted as the same class of drift as external app
+  moves (above).
 
 ## Upstream library feedback (@griddle/core, @griddle/svelte)
 
@@ -112,7 +156,9 @@ the features:
 
 These behaviors are covered by automated tests at the logic level but their
 end-to-end feel was never verified by a human in this release cycle (the
-build environment has no interactive GUI):
+build environment has no interactive GUI). **This list is now the
+release-gating script [`smoke-test-v0.1.0.md`](smoke-test-v0.1.0.md) — the
+v0.1.0 tag must not be cut before its P0 items pass:**
 
 - Drag overlay look & feel: grid + footprint + ghosts during a real drag,
   fade-out on release, overlay never intercepting clicks (Task 15).

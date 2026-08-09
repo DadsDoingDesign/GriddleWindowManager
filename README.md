@@ -14,7 +14,8 @@ your machine. MIT licensed.
 
 ## Install
 
-1. Download `Griddle WM_0.1.0_x64-setup.exe` (or build it from source, below).
+1. Download `Griddle WM_0.1.0_x64-setup.exe` from this repository's
+   [releases page](../../releases) (or build it from source, below).
 2. Run the installer. It installs **per-user** — no administrator rights needed.
 3. Launch **Griddle WM** from the Start menu. A first-run page opens where you
    pick a monitor and enable your first grid (default 12×6).
@@ -80,6 +81,9 @@ windows cannot be placed or dropped there and snap to the nearest usable
 cells. Enabling a spanning grid replaces the per-monitor grids it covers, and
 re-enabling a per-monitor grid tears down a covering span.
 
+Spanning grids are the newest feature in 0.1.0 and have had the least
+real-world testing — please report anything odd.
+
 ### Hotkey, tray, pause
 
 - **Ctrl+Win+G** opens the settings window (rebindable in Settings →
@@ -114,7 +118,7 @@ written atomically, safe to back up.
   the grid editor, and templates.
 - No virtual-desktop integration; grids apply to whatever desktop is visible.
 - Binaries are unsigned (see SmartScreen note above); no auto-update — check
-  the releases page for new versions.
+  the [releases page](../../releases) for new versions.
 
 See [`docs/deferred.md`](docs/deferred.md) for the full list of known
 deferrals and planned follow-ups.
@@ -128,9 +132,10 @@ Prerequisites:
 - [Rust](https://rustup.rs/) stable ≥ 1.81 with the MSVC toolchain
 - WebView2 runtime (preinstalled on Windows 11)
 
+Clone this repository (the clone URL is on this page under **Code**), then
+from the checkout root:
+
 ```powershell
-git clone <this repo>
-cd GriddleWindowManager
 npm install
 
 # run the test suites
