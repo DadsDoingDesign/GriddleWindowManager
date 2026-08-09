@@ -18,6 +18,7 @@ pub fn run() {
                 )?;
             }
             monitors::start_display_watcher(app.handle().clone());
+            tracker::start_tracker(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

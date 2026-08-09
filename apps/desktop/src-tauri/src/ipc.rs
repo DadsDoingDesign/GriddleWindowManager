@@ -179,6 +179,14 @@ pub struct AppConfig {
     pub paused: bool,
 }
 
+/// Payload of the hwnd-only events (`window-destroyed`, `window-minimized`,
+/// `movesize-start`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HwndPayload {
+    pub hwnd: Hwnd,
+}
+
 /// Payload of the `movesize-end` event.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
