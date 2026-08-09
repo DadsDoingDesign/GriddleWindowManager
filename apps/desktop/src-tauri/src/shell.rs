@@ -191,14 +191,27 @@ pub fn monitor_id_from_menu_id(menu_id: &str) -> Option<&str> {
 
 /// Human label for a monitor's tray toggle, derived from the contract C1
 /// monitor id (`\\.\DISPLAY1@0,0` → `DISPLAY1`) plus size and primary flag.
+/// "Grid:" (not "Grid on") so the unchecked state doesn't read as a false
+/// statement — the checkmark alone carries on/off.
 pub fn monitor_menu_label(m: &MonitorInfo) -> String {
     let device = m.id.split('@').next().unwrap_or(&m.id);
     let trimmed = device.trim_start_matches(['\\', '.']);
     let name = if trimmed.is_empty() { device } else { trimmed };
     if m.primary {
-        format!("Grid on {name} ({}\u{d7}{}, primary)", m.width, m.height)
+        format!("Grid: {name} ({}\u{d7}{}, primary)", m.width, m.height)
     } else {
-        format!("Grid on {name} ({}\u{d7}{})", m.width, m.height)
+        format!("Grid: {name} ({}\u{d7}{})", m.width, m.height)
+    }
+}
+
+/// Tray tooltip: silent when everything fits; names the failure when windows
+/// float because their grid is full (spec §5.4 "grid-full hint" — the one
+/// moment the product misbehaves must not be the one moment it says nothing).
+pub fn tray_tooltip(floating: usize) -> String {
+    match floating {
+        0 => "Griddle WM".to_string(),
+        1 => "Griddle WM — 1 window didn't fit its grid and floats free".to_string(),
+        n => format!("Griddle WM — {n} windows didn't fit their grid and float free"),
     }
 }
 
@@ -333,13 +346,17 @@ fn on_menu_event(app: &AppHandle, menu_id: &str) {
 }
 
 /// Converge the tray onto live brain state: check items for monitors covered
-/// by an enabled grid, rebuild the item list when the topology changed.
-fn sync_tray(app: &AppHandle, enabled_monitor_ids: &[String]) {
+/// by an enabled grid, tooltip reflecting grid-full floating windows,
+/// rebuild the item list when the topology changed.
+fn sync_tray(app: &AppHandle, enabled_monitor_ids: &[String], floating: usize) {
     let monitors = crate::monitors::enumerate();
     let mut guard = tray_state().lock().unwrap_or_else(|p| p.into_inner());
     let Some(state) = guard.as_mut() else {
         return; // tray never came up (init_tray failed); nothing to sync
     };
+    if let Err(e) = state.tray.set_tooltip(Some(tray_tooltip(floating))) {
+        log::error!("failed to set tray tooltip: {e}");
+    }
     let same_monitors = state.monitor_items.len() == monitors.len()
         && state
             .monitor_items
@@ -372,16 +389,23 @@ fn sync_tray(app: &AppHandle, enabled_monitor_ids: &[String]) {
     }
 }
 
-/// Contract §C2 (Task 18 extension): `update_tray(enabledMonitorIds)` — the
-/// brain host calls this on every state snapshot so the tray reflects live
-/// grid state. Brain-host only (security review: least privilege — other
-/// webviews must not be able to spoof tray check state).
+/// Contract §C2 (Task 18 extension): `update_tray(enabledMonitorIds,
+/// floatingCount?)` — the brain host calls this on every state snapshot so
+/// the tray reflects live grid state; `floating_count` (windows whose grid
+/// could not fit them) drives the tooltip's grid-full hint. Brain-host only
+/// (security review: least privilege — other webviews must not be able to
+/// spoof tray state).
 #[tauri::command]
-pub fn update_tray(app: AppHandle, window: tauri::Window, enabled_monitor_ids: Vec<String>) {
+pub fn update_tray(
+    app: AppHandle,
+    window: tauri::Window,
+    enabled_monitor_ids: Vec<String>,
+    floating_count: Option<usize>,
+) {
     if crate::guard::authorize("update_tray", window.label()).is_err() {
         return;
     }
-    sync_tray(&app, &enabled_monitor_ids);
+    sync_tray(&app, &enabled_monitor_ids, floating_count.unwrap_or(0));
 }
 
 // ---------------------------------------------------------------------------
@@ -586,19 +610,34 @@ mod tests {
     #[test]
     fn monitor_label_strips_device_prefix_and_marks_primary() {
         let m = mon(r"\\.\DISPLAY1@0,0", 1920, 1080, true);
-        assert_eq!(monitor_menu_label(&m), "Grid on DISPLAY1 (1920\u{d7}1080, primary)");
+        assert_eq!(monitor_menu_label(&m), "Grid: DISPLAY1 (1920\u{d7}1080, primary)");
     }
 
     #[test]
     fn monitor_label_secondary_has_no_primary_marker() {
         let m = mon(r"\\.\DISPLAY2@1920,0", 2560, 1440, false);
-        assert_eq!(monitor_menu_label(&m), "Grid on DISPLAY2 (2560\u{d7}1440)");
+        assert_eq!(monitor_menu_label(&m), "Grid: DISPLAY2 (2560\u{d7}1440)");
     }
 
     #[test]
     fn monitor_label_survives_ids_without_device_prefix() {
         let m = mon("odd-id@0,0", 800, 600, false);
-        assert_eq!(monitor_menu_label(&m), "Grid on odd-id (800\u{d7}600)");
+        assert_eq!(monitor_menu_label(&m), "Grid: odd-id (800\u{d7}600)");
+    }
+
+    // -- tray tooltip (spec §5.4 grid-full hint) ------------------------------
+
+    #[test]
+    fn tray_tooltip_names_grid_full_floating_windows() {
+        assert_eq!(tray_tooltip(0), "Griddle WM");
+        assert_eq!(
+            tray_tooltip(1),
+            "Griddle WM — 1 window didn't fit its grid and floats free"
+        );
+        assert_eq!(
+            tray_tooltip(3),
+            "Griddle WM — 3 windows didn't fit their grid and float free"
+        );
     }
 
     // -- hotkey accelerator strings -----------------------------------------

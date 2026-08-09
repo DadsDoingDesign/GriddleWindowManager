@@ -179,10 +179,15 @@ export function showSettings(): Promise<void> {
 /**
  * Contract extension (plan Task 18): tell the tray which monitors currently
  * have an enabled grid so its per-monitor check items reflect live state.
- * The brain host calls this on every state snapshot.
+ * The brain host calls this on every state snapshot. `floatingCount` (spec
+ * §5.4) is the number of windows whose grid could not fit them — the tray
+ * tooltip surfaces it as the grid-full hint.
  */
-export function updateTray(enabledMonitorIds: string[]): Promise<void> {
-  return invoke('update_tray', { enabledMonitorIds });
+export function updateTray(
+  enabledMonitorIds: string[],
+  floatingCount = 0,
+): Promise<void> {
+  return invoke('update_tray', { enabledMonitorIds, floatingCount });
 }
 
 // ---------------------------------------------------------------------------

@@ -29,12 +29,21 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
+    "publisher": "Griddle WM contributors",
+    "copyright": "© 2026 Griddle WM contributors",
+    "shortDescription": "Grid-based window manager for Windows 11",
+    "longDescription": "Snaps real application windows onto user-configurable per-monitor (or monitor-spanning) grids, with a drag-time overlay preview and a live grid editor.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
   }
 }

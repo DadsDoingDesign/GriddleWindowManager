@@ -167,9 +167,10 @@ export async function startBrainHost(): Promise<BrainHost> {
     ...new Set(grids.filter((g) => g.enabled).flatMap((g) => g.monitorIds)),
   ];
 
-  const pushTrayState = (grids?: GridSettings[]) => {
+  const pushTrayState = (grids?: GridSettings[], floatingCount?: number) => {
     const source = grids ?? lastSnapshot?.grids ?? brain.exportConfig().grids;
-    updateTray(enabledMonitorIdsOf(source)).catch((e) =>
+    const floating = floatingCount ?? lastSnapshot?.floating.length ?? 0;
+    updateTray(enabledMonitorIdsOf(source), floating).catch((e) =>
       console.error('update_tray failed:', e),
     );
   };
@@ -186,7 +187,7 @@ export async function startBrainHost(): Promise<BrainHost> {
       onSnapshot(s) {
         lastSnapshot = s;
         emitStateSnapshot(s).catch((e) => console.error('state-snapshot emit failed:', e));
-        pushTrayState(s.grids);
+        pushTrayState(s.grids, s.floating.length);
         scheduleSave();
       },
     },

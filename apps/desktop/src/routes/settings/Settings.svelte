@@ -5,6 +5,7 @@
   // settings-* events to the brain page (contract §C2), which applies them
   // to real windows and persists the config.
   import { onDestroy, onMount } from 'svelte';
+  import { getVersion } from '@tauri-apps/api/app';
   import type { UnlistenFn } from '@tauri-apps/api/event';
   import {
     DEFAULT_HOTKEY,
@@ -52,6 +53,8 @@
   let autostart = $state(false);
   let hotkeyDraft = $state(DEFAULT_HOTKEY);
   let savedHotkey = $state(DEFAULT_HOTKEY);
+  let hotkeyError: string | null = $state(null);
+  let appVersion = $state('');
 
   // Exclusions editor (plan Task 19). The snapshot is the truth; the config
   // read at mount only bridges the gap until the first snapshot arrives.
@@ -68,6 +71,11 @@
 
   let unlisteners: UnlistenFn[] = [];
   onMount(async () => {
+    // Version next to the tagline: an unsigned app without auto-update needs
+    // to tell the user which release they are on.
+    getVersion()
+      .then((v) => (appVersion = `v${v}`))
+      .catch(() => {});
     unlisteners = await Promise.all([
       onStateSnapshot((s) => {
         snapshot = s;
@@ -208,12 +216,78 @@
     hotkeyDraft.trim() !== '' && hotkeyDraft.trim() !== savedHotkey,
   );
 
+  /**
+   * Modifier tokens the accelerator grammar accepts, mapped to their
+   * canonical spelling. 'Win' (the README's human name for the Windows key)
+   * is an alias for 'Super' — typing the key the way the docs teach it must
+   * just work.
+   */
+  const HOTKEY_MODIFIERS: Record<string, string> = {
+    ctrl: 'Ctrl',
+    control: 'Control',
+    shift: 'Shift',
+    alt: 'Alt',
+    altgr: 'AltGr',
+    option: 'Option',
+    super: 'Super',
+    meta: 'Meta',
+    cmd: 'Cmd',
+    command: 'Command',
+    win: 'Super',
+    windows: 'Super',
+    commandorcontrol: 'CommandOrControl',
+    cmdorctrl: 'CmdOrCtrl',
+  };
+
+  /**
+   * Normalize + validate an accelerator draft before it ever reaches the
+   * shell: canonicalize modifier spellings (mapping Win→Super), require at
+   * least one modifier plus exactly one non-modifier key. Returns the
+   * canonical string or an error message — a bad combination is refused
+   * here with feedback instead of silently failing to register.
+   */
+  function normalizeHotkey(raw: string): { hotkey: string } | { error: string } {
+    const tokens = raw
+      .split('+')
+      .map((t) => t.trim())
+      .filter((t) => t !== '');
+    if (tokens.length === 0) return { error: 'Enter a key combination.' };
+    const mods: string[] = [];
+    for (const t of tokens.slice(0, -1)) {
+      const mod = HOTKEY_MODIFIERS[t.toLowerCase()];
+      if (mod === undefined) {
+        return { error: `"${t}" is not a modifier — use Ctrl, Shift, Alt or Win.` };
+      }
+      mods.push(mod);
+    }
+    const key = tokens[tokens.length - 1]!;
+    if (HOTKEY_MODIFIERS[key.toLowerCase()] !== undefined) {
+      return { error: 'Finish the combination with a key, e.g. Ctrl+Win+G.' };
+    }
+    if (mods.length === 0) {
+      return { error: 'Add at least one modifier (Ctrl, Shift, Alt or Win).' };
+    }
+    const canonicalKey =
+      key.length === 1
+        ? key.toUpperCase()
+        : /^f([1-9]|1[0-9]|2[0-4])$/i.test(key)
+          ? key.toUpperCase()
+          : key[0]!.toUpperCase() + key.slice(1).toLowerCase();
+    return { hotkey: [...mods, canonicalKey].join('+') };
+  }
+
   function applyHotkey(): void {
-    const hotkey = hotkeyDraft.trim();
-    if (hotkey === '' || hotkey === savedHotkey) return;
-    savedHotkey = hotkey;
-    hotkeyDraft = hotkey;
-    void emitSettingsSetPrefs({ hotkey });
+    const raw = hotkeyDraft.trim();
+    if (raw === '' || raw === savedHotkey) return;
+    const result = normalizeHotkey(raw);
+    if ('error' in result) {
+      hotkeyError = result.error;
+      return;
+    }
+    hotkeyError = null;
+    savedHotkey = result.hotkey;
+    hotkeyDraft = result.hotkey;
+    void emitSettingsSetPrefs({ hotkey: result.hotkey });
   }
 
   // ── exclusions (plan Task 19) ────────────────────────────────────────────
@@ -287,7 +361,10 @@
     <header>
       <div>
         <h1>Griddle WM</h1>
-        <p class="tagline">Window grids for your desktop</p>
+        <p class="tagline">
+          Window grids for your desktop{#if appVersion}
+            <span class="version">{appVersion}</span>{/if}
+        </p>
       </div>
     </header>
 
@@ -330,7 +407,10 @@
           disabled={firstRunPick === null}
           onclick={enableFirstRun}>Enable grid</button
         >
-        <span class="hint">Starts as a 12 × 6 grid — change it any time.</span>
+        <span class="hint">
+          Starts as a 12 × 6 grid — your windows on this monitor snap into
+          place right away, and you can change everything later.
+        </span>
         <button class="quiet" onclick={() => (firstRun = false)}>
           Skip for now
         </button>
@@ -340,7 +420,10 @@
   <header>
     <div>
       <h1>Griddle WM</h1>
-      <p class="tagline">Per-monitor window grids</p>
+      <p class="tagline">
+        Window grids for your desktop{#if appVersion}
+          <span class="version">{appVersion}</span>{/if}
+      </p>
     </div>
     {#if snapshot?.paused}
       <span class="badge paused">Paused</span>
@@ -421,14 +504,14 @@
             <button
               class:active={grid.mode === 'collision'}
               aria-pressed={grid.mode === 'collision'}
-              title="Windows push each other aside — no overlap"
-              onclick={() => setMode(grid, 'collision')}>Collision</button
+              title="Windows push each other aside — never overlap"
+              onclick={() => setMode(grid, 'collision')}>Tile</button
             >
             <button
               class:active={grid.mode === 'overlay'}
               aria-pressed={grid.mode === 'overlay'}
-              title="Windows snap to cells but may overlap"
-              onclick={() => setMode(grid, 'overlay')}>Overlay</button
+              title="Windows snap to cells and may overlap"
+              onclick={() => setMode(grid, 'overlay')}>Stack</button
             >
           </div>
           <span class="tile-count">
@@ -521,14 +604,14 @@
           <button
             class:active={grid.mode === 'collision'}
             aria-pressed={grid.mode === 'collision'}
-            title="Windows push each other aside — no overlap"
-            onclick={() => setMode(grid, 'collision')}>Collision</button
+            title="Windows push each other aside — never overlap"
+            onclick={() => setMode(grid, 'collision')}>Tile</button
           >
           <button
             class:active={grid.mode === 'overlay'}
             aria-pressed={grid.mode === 'overlay'}
-            title="Windows snap to cells but may overlap"
-            onclick={() => setMode(grid, 'overlay')}>Overlay</button
+            title="Windows snap to cells and may overlap"
+            onclick={() => setMode(grid, 'overlay')}>Stack</button
           >
         </div>
         <span class="tile-count">
@@ -742,6 +825,7 @@
           bind:value={hotkeyDraft}
           placeholder={DEFAULT_HOTKEY}
           spellcheck="false"
+          oninput={() => (hotkeyError = null)}
           onkeydown={(e) => {
             if (e.key === 'Enter') applyHotkey();
           }}
@@ -751,10 +835,13 @@
         Apply
       </button>
     </div>
+    {#if hotkeyError}
+      <p class="hint error">{hotkeyError}</p>
+    {/if}
     <p class="hint">
-      Global shortcut that opens this window — e.g. Ctrl+Super+G (Super is the
-      Windows key). If the new combination cannot be registered, the previous
-      one stays active.
+      Global shortcut that opens this window — e.g. Ctrl+Win+G ("Win" and
+      "Super" both mean the Windows key). If another app already owns the new
+      combination, the previous one stays active.
     </p>
   </section>
 
@@ -799,6 +886,16 @@
     margin: 2px 0 0;
     font-size: 13px;
     color: var(--text-dim);
+  }
+  .version {
+    margin-left: 8px;
+    font-size: 11.5px;
+    font-family: var(--mono);
+    color: var(--text-dim);
+    opacity: 0.8;
+  }
+  .hint.error {
+    color: #f66a6a;
   }
 
   .empty {
