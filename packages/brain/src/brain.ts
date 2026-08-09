@@ -212,13 +212,93 @@ export class WindowManagerBrain {
   }
 
   windowAppeared(w: WindowInfo): void {
+    if (this.tileGrid.has(w.hwnd) || this.floating.has(w.hwnd)) {
+      this.readopt(w);
+      return;
+    }
     if (w.minimized) return;
-    if (this.tileGrid.has(w.hwnd) || this.floating.has(w.hwnd)) return;
     if (this.exclusions.has(w.exe)) return;
     const mg = this.gridForMonitor(w.monitorId);
     if (!mg) return;
     this.windows.set(w.hwnd, { ...w });
     this.placeWindow(mg, w);
+    this.flush();
+    this.emitSnapshot();
+  }
+
+  /**
+   * Convergence for a `window-appeared` whose hwnd the brain already tracks
+   * as tiled or floating. Normally this is the idempotent path — but Windows
+   * recycles HWND values, and a recycled handle's destroyed→appeared pair can
+   * race the host's async destroy vetting so that the destroy is dropped
+   * entirely. Ignoring the appearance would leave the *new* window silently
+   * inheriting the dead window's tile with stale title/exe/monitor in every
+   * snapshot; re-adopting instead makes the dropped-destroy race converge to
+   * correct state regardless of event ordering:
+   * excluded exe → the stale tile is dropped (the window is never touched);
+   * minimized → the minimize flow releases the tile; otherwise the stored
+   * `WindowInfo` is refreshed in place (the tile keeps its slot).
+   */
+  private readopt(w: WindowInfo): void {
+    if (this.exclusions.has(w.exe)) {
+      this.windowDestroyed(w.hwnd);
+      return;
+    }
+    if (w.minimized) {
+      // Refresh identity first so the minimize flow remembers the new tenant.
+      this.windows.set(w.hwnd, { ...w, minimized: false });
+      this.windowMinimized(w.hwnd);
+      return;
+    }
+    const prev = this.windows.get(w.hwnd);
+    this.windows.set(w.hwnd, { ...w });
+    const identityChanged =
+      !prev ||
+      prev.title !== w.title ||
+      prev.exe !== w.exe ||
+      prev.monitorId !== w.monitorId;
+    if (identityChanged) this.emitSnapshot();
+  }
+
+  /**
+   * Pause→resume reconciliation (spec §6 panic button): while paused the
+   * shell suppresses every window event, so on resume the brain's picture may
+   * be arbitrarily stale. Converge onto a fresh sweep of the live desktop:
+   *
+   *   - known windows missing from the sweep are destroyed;
+   *   - tiled windows minimized (or maximized) during the pause go through
+   *     the minimize flow, releasing their tile — no move is ever emitted for
+   *     an iconic window;
+   *   - tiled windows the user physically moved while paused are re-snapped
+   *     onto their slot (management is authoritative again the moment it
+   *     resumes) by dropping their applied rect before the flush;
+   *   - everything else re-runs `windowAppeared`, which re-adopts known
+   *     windows and places genuinely new ones.
+   */
+  reconcile(live: WindowInfo[]): void {
+    const liveSet = new Set(live.map((w) => w.hwnd));
+    const known = new Set<Hwnd>([
+      ...this.tileGrid.keys(),
+      ...this.floating.keys(),
+      ...this.remembered.keys(),
+    ]);
+    for (const hwnd of known) {
+      if (!liveSet.has(hwnd)) this.windowDestroyed(hwnd);
+    }
+    for (const w of live) {
+      if (this.tileGrid.has(w.hwnd) && !w.minimized && !this.exclusions.has(w.exe)) {
+        this.windows.set(w.hwnd, { ...w });
+        const applied = this.appliedRects.get(w.hwnd);
+        if (
+          applied &&
+          !sameRect(applied, { x: w.x, y: w.y, width: w.width, height: w.height })
+        ) {
+          this.appliedRects.delete(w.hwnd);
+        }
+        continue;
+      }
+      this.windowAppeared(w);
+    }
     this.flush();
     this.emitSnapshot();
   }

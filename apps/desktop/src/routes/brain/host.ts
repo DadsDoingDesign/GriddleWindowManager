@@ -309,27 +309,15 @@ export async function startBrainHost(): Promise<BrainHost> {
   /**
    * Pause→resume reconciliation (critique fix): while paused the tracker
    * suppresses every event but keeps its live set current, so windows opened
-   * during the pause are tracked-but-unannounced (no window-appeared will
-   * ever fire again) and windows closed during it linger as ghost tiles. On
-   * resume, diff a fresh sweep against the brain's view: feed destroys for
-   * managed windows that no longer exist, and (idempotent) appearances for
-   * everything alive.
+   * during the pause are tracked-but-unannounced, windows closed during it
+   * linger as ghost tiles, and windows the user moved or minimized diverge
+   * from their slots. `brain.reconcile` converges all of it against a fresh
+   * sweep: destroys for gone windows, the minimize flow for now-iconic ones,
+   * a re-snap for physically moved ones, placement for new ones.
    */
   const reconcileAfterResume = async () => {
     try {
-      const live = await listWindows();
-      const liveSet = new Set(live.map((w) => w.hwnd));
-      const known = new Set<string>();
-      if (lastSnapshot) {
-        for (const tiles of Object.values(lastSnapshot.tiles)) {
-          for (const t of tiles) known.add(t.hwnd);
-        }
-        for (const f of lastSnapshot.floating) known.add(f.hwnd);
-      }
-      for (const hwnd of known) {
-        if (!liveSet.has(hwnd)) brain.windowDestroyed(hwnd);
-      }
-      for (const w of live) brain.windowAppeared(w);
+      brain.reconcile(await listWindows());
     } catch (e) {
       console.error('resume reconciliation failed:', e);
     }
