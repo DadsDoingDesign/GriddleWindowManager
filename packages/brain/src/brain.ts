@@ -78,6 +78,15 @@ interface DragState {
   previewGridId: string | null;
   lastFootprint: Slot | null;
   lastGhosts: GhostMove[];
+  /**
+   * Last drag-pos sample seen. The commit re-runs the *same* cursor-anchored
+   * slot function the preview used (extrapolated by however far the rect
+   * moved after the last sample), so the overlay's highlighted cell and the
+   * cell the window lands in can never diverge.
+   */
+  lastDragPos: DragPos | null;
+  /** Whether the last preview was computed on the resize path. */
+  lastResizing: boolean;
 }
 
 const DEFAULT_HOTKEY = 'Ctrl+Super+G';
@@ -329,6 +338,8 @@ export class WindowManagerBrain {
       previewGridId: gridId,
       lastFootprint: slot,
       lastGhosts: [],
+      lastDragPos: null,
+      lastResizing: false,
     };
     this.cb.onPreview({ gridId, visible: true, footprint: slot, ghosts: [] });
   }
@@ -336,6 +347,7 @@ export class WindowManagerBrain {
   dragMoved(p: DragPos): void {
     const d = this.drag;
     if (!d || d.hwnd !== p.hwnd) return;
+    d.lastDragPos = p;
 
     const target = this.gridAtPoint(p.cursorX, p.cursorY);
     if (!target) {
@@ -344,30 +356,23 @@ export class WindowManagerBrain {
       return;
     }
     const { mg, mon } = target;
-    const dims = this.dims(mg.settings);
     const rect: Rect = { x: p.x, y: p.y, width: p.width, height: p.height };
-    // Non-resizable windows never report a size change, so this is safe for
-    // absolute tiles too (overlay-mode resizes must re-snap the footprint).
-    const resizing =
-      p.width !== d.startRect.width || p.height !== d.startRect.height;
-
-    let footprint: Slot;
-    if (resizing) {
-      footprint = snapRectToSlot(mon, dims, rect);
-    } else {
-      const size =
-        mg.settings.id === d.sourceGridId
-          ? { w: d.startSlot.w, h: d.startSlot.h }
-          : snapRectToSlot(mon, dims, rect); // footprint in the target grid's cells
-      footprint = slotFromCursor(mon, dims, p.cursorX, p.cursorY, size);
-    }
-    // Preview snaps to usable slots exactly like the commit will (spec §5.7).
-    const adjusted = this.nearestUsable(mg, footprint);
-    if (!adjusted) {
+    const computed = this.dragFootprint(mg, mon, d, p.cursorX, p.cursorY, rect);
+    if (!computed) {
       this.hidePreview(d);
       return;
     }
-    footprint = adjusted;
+    const { footprint, resizing } = computed;
+
+    // During a drag the grid is frozen, so the ghosts are a pure function of
+    // (target grid, footprint, resize-mode): identical inputs mean the last
+    // preview still stands — skip the simulation entirely.
+    const unchanged =
+      d.previewGridId === mg.settings.id &&
+      d.lastFootprint !== null &&
+      sameSlot(d.lastFootprint, footprint) &&
+      d.lastResizing === resizing;
+    if (unchanged) return;
 
     // Overlay-mode targets never reflow neighbors; absolute tiles displace
     // nothing either way — both preview with no ghosts.
@@ -376,12 +381,15 @@ export class WindowManagerBrain {
         ? []
         : this.simulateGhosts(mg, d, footprint, resizing);
 
-    const unchanged =
+    if (
       d.previewGridId === mg.settings.id &&
       d.lastFootprint !== null &&
       sameSlot(d.lastFootprint, footprint) &&
-      sameGhosts(d.lastGhosts, ghosts);
-    if (unchanged) return;
+      sameGhosts(d.lastGhosts, ghosts)
+    ) {
+      d.lastResizing = resizing;
+      return;
+    }
 
     if (d.previewGridId !== null && d.previewGridId !== mg.settings.id) {
       this.cb.onPreview({
@@ -394,7 +402,42 @@ export class WindowManagerBrain {
     d.previewGridId = mg.settings.id;
     d.lastFootprint = footprint;
     d.lastGhosts = ghosts;
+    d.lastResizing = resizing;
     this.cb.onPreview({ gridId: mg.settings.id, visible: true, footprint, ghosts });
+  }
+
+  /**
+   * The one slot function shared by preview and commit: footprint for a drag
+   * of `d` over grid `mg` with the cursor at (`cursorX`, `cursorY`) and the
+   * window at `rect`. Moves are cursor-anchored (`slotFromCursor`); resizes
+   * snap the rect itself. Returns null when the grid has no usable slot.
+   */
+  private dragFootprint(
+    mg: ManagedGrid,
+    mon: MonitorInfo,
+    d: DragState,
+    cursorX: number,
+    cursorY: number,
+    rect: Rect,
+  ): { footprint: Slot; resizing: boolean } | null {
+    const dims = this.dims(mg.settings);
+    // Non-resizable windows never report a size change, so this is safe for
+    // absolute tiles too (overlay-mode resizes must re-snap the footprint).
+    const resizing =
+      rect.width !== d.startRect.width || rect.height !== d.startRect.height;
+    let footprint: Slot;
+    if (resizing) {
+      footprint = snapRectToSlot(mon, dims, rect);
+    } else {
+      const size =
+        mg.settings.id === d.sourceGridId
+          ? { w: d.startSlot.w, h: d.startSlot.h }
+          : snapRectToSlot(mon, dims, rect); // footprint in the target grid's cells
+      footprint = slotFromCursor(mon, dims, cursorX, cursorY, size);
+    }
+    // Preview and commit snap to usable slots identically (spec §5.7).
+    const adjusted = this.nearestUsable(mg, footprint);
+    return adjusted ? { footprint: adjusted, resizing } : null;
   }
 
   moveSizeEnd(
@@ -410,10 +453,6 @@ export class WindowManagerBrain {
     if (!source || !source.grid.getTile(hwnd)) return; // grid vanished mid-drag
 
     const hitMon = this.monitorAt(rect.x + rect.width / 2, rect.y + rect.height / 2);
-    // A drop whose center lies on no monitor — half off-screen, or in the
-    // dead space of an L-shaped spanning grid — stays with the source grid
-    // and snaps to its nearest usable slot below.
-    const target = hitMon ? this.gridForMonitor(hitMon.id) : source;
 
     const info = this.windows.get(hwnd);
     if (info) {
@@ -427,7 +466,56 @@ export class WindowManagerBrain {
       });
     }
 
-    if (!target) {
+    // WYSIWYG commit anchor: when drag-pos samples were seen, re-run the
+    // exact slot function the preview used, with the cursor extrapolated by
+    // however far the rect moved after the last sample (normally zero) — the
+    // committed cell is then always the previewed cell. Without samples
+    // (drag pump never fired) fall back to rect snapping below.
+    let target: ManagedGrid | undefined;
+    let snapped: Slot | null = null;
+    let unmanage = false;
+    let resolved = false;
+    const lp = d.lastDragPos;
+    if (lp) {
+      const cursorX = lp.cursorX + (rect.x - lp.x);
+      const cursorY = lp.cursorY + (rect.y - lp.y);
+      const at = this.gridAtPoint(cursorX, cursorY);
+      if (at) {
+        const computed = this.dragFootprint(at.mg, at.mon, d, cursorX, cursorY, rect);
+        if (computed) {
+          target = at.mg;
+          snapped = computed.footprint;
+          resolved = true;
+        }
+      } else if (this.monitorAt(cursorX, cursorY)) {
+        // Cursor over an ungridded monitor — exactly what the (hidden)
+        // preview showed: the window unmanages where the user dropped it.
+        unmanage = true;
+        resolved = true;
+      }
+      // Cursor over no monitor at all (or a grid with zero usable cells):
+      // the anchor is unreliable, resolve from the rect below.
+    }
+    if (!resolved) {
+      // A drop whose center lies on no monitor — half off-screen, or in the
+      // dead space of an L-shaped spanning grid — stays with the source grid
+      // and snaps to its nearest usable slot below.
+      target = hitMon ? this.gridForMonitor(hitMon.id) : source;
+      unmanage = target === undefined;
+      if (target) {
+        const mon = this.monitorFor(target.settings);
+        if (!mon) return;
+        // Drops in the dead space of a spanning grid snap to the nearest
+        // usable slot (spec §5.7). A grid with zero usable cells cannot take
+        // the drop: the tile stays put and snaps back to its old cell.
+        snapped = this.nearestUsable(
+          target,
+          snapRectToSlot(mon, this.dims(target.settings), rect),
+        );
+      }
+    }
+
+    if (unmanage) {
       // Dropped on an ungridded monitor: the window becomes unmanaged and
       // stays exactly where the user left it — no move emitted.
       source.grid.removeTile(hwnd);
@@ -440,15 +528,7 @@ export class WindowManagerBrain {
       return;
     }
 
-    const mon = this.monitorFor(target.settings);
-    if (!mon) return;
-    // Drops in the dead space of a spanning grid snap to the nearest usable
-    // slot (spec §5.7). A grid with zero usable cells cannot take the drop:
-    // the tile stays put and the window snaps back to its old cell.
-    const snapped = this.nearestUsable(
-      target,
-      snapRectToSlot(mon, this.dims(target.settings), rect),
-    );
+    if (!target || !this.monitorFor(target.settings)) return;
     if (!snapped) {
       this.appliedRects.delete(hwnd);
       this.flush();

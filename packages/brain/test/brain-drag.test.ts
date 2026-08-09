@@ -285,6 +285,67 @@ describe('moveSizeEnd — move commit', () => {
   });
 });
 
+describe('moveSizeEnd — commit matches the previewed footprint (WYSIWYG)', () => {
+  it('commits the previewed cell for an off-center title-bar grab', () => {
+    // 12×6 grid, 160×172 cells. Window 1 is 3×2 at (0,0). The user grabs the
+    // title bar 20 px from the window's left edge and moves the window right
+    // by 240 px: rect x=240 (rect-origin rounding would say col 2), cursor at
+    // 260 (cursor-centered footprint says col 0). Preview and commit must
+    // agree — the window lands in the cell the overlay highlighted.
+    const { brain, previews, snapshots } = harness();
+    brain.enableGrid(makeGridSettings(), [makeWindow('1', { width: 480, height: 344 })]);
+
+    brain.moveSizeStart('1');
+    brain.dragMoved({ hwnd: '1', cursorX: 260, cursorY: 220, x: 240, y: 48, width: 480, height: 344 });
+    const previewed = last(previews);
+    expect(previewed.visible).toBe(true);
+    expect(previewed.footprint).toEqual({ col: 0, row: 0, w: 3, h: 2 });
+
+    brain.moveSizeEnd('1', { x: 240, y: 48, width: 480, height: 344 });
+
+    const committed = gridTiles(last(snapshots)).find((t) => t.hwnd === '1')!.slot;
+    expect(committed).toEqual(previewed.footprint);
+  });
+
+  it('extrapolates the cursor when the rect moved after the last drag-pos sample', () => {
+    // Last sample previewed col 6; the final movesize-end rect is 160 px
+    // further right (one cell) — the commit re-anchors on the extrapolated
+    // cursor and lands one cell over, exactly where a preview at that
+    // position would have been.
+    const { brain, snapshots } = harness();
+    brain.enableGrid(makeGridSettings(), [makeWindow('1', { width: 480, height: 344 })]);
+
+    brain.moveSizeStart('1');
+    brain.dragMoved({ hwnd: '1', cursorX: 1200, cursorY: 564, x: 960, y: 392, width: 480, height: 344 });
+    brain.moveSizeEnd('1', { x: 1120, y: 392, width: 480, height: 344 });
+
+    const committed = gridTiles(last(snapshots)).find((t) => t.hwnd === '1')!.slot;
+    expect(committed).toEqual({ col: 7, row: 2, w: 3, h: 2 });
+  });
+
+  it('commits the previewed target grid near a monitor seam', () => {
+    // Cursor (and preview) on monitor 2, but the window rect's center is
+    // still on monitor 1: the commit must follow the preview, not the rect.
+    const h = harness({ twoMonitors: true });
+    h.brain.enableGrid(makeGridSettings(), [makeWindow('1')]);
+    h.brain.enableGrid(makeGridSettings({ id: GRID2_ID, monitorIds: [MON2_ID] }), []);
+
+    h.brain.moveSizeStart('1');
+    // Window mostly on MON1 (center x = 1900), cursor just across the seam.
+    h.brain.dragMoved({ hwnd: '1', cursorX: 1930, cursorY: 392, x: 1660, y: 220, width: 480, height: 344 });
+    const previewed = last(h.previews);
+    expect(previewed.gridId).toBe(GRID2_ID);
+
+    h.brain.moveSizeEnd('1', { x: 1660, y: 220, width: 480, height: 344 });
+
+    const snap = last(h.snapshots);
+    expect(gridTiles(snap, GRID1_ID)).toEqual([]);
+    const tiles2 = gridTiles(snap, GRID2_ID);
+    expect(tiles2.map((t) => t.hwnd)).toEqual(['1']);
+    expect(tiles2[0]!.slot).toEqual(previewed.footprint);
+  });
+});
+
 describe('moveSizeEnd — resize commit', () => {
   it('resizes to the snapped footprint and reflows neighbors', () => {
     const { brain, applies, snapshots, mon } = harness();
