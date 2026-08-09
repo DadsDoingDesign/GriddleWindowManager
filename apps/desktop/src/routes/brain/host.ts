@@ -68,6 +68,15 @@ const SAVE_DEBOUNCE_MS = 500;
 const HEARTBEAT_MS = 3000;
 
 /**
+ * Dock/undock fires WM_DISPLAYCHANGE plus several WM_SETTINGCHANGE
+ * (SPI_SETWORKAREA) messages in a burst, each arriving as a
+ * `monitors-changed` event; every one triggers a full window sweep and a
+ * `setMonitors` that may tear down and revive grids. Coalescing the burst
+ * makes one transition do the work (and re-place windows) once.
+ */
+const MONITORS_DEBOUNCE_MS = 250;
+
+/**
  * Delay between the brain hiding a preview and the native overlay window
  * being hidden — long enough for the overlay page's 120 ms opacity fade to
  * finish, short enough to never be visible as lag.
@@ -94,6 +103,7 @@ export async function startBrainHost(): Promise<BrainHost> {
 
   let lastSnapshot: StateSnapshot | null = null;
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
+  let monitorsDebounce: ReturnType<typeof setTimeout> | null = null;
   let destroyed = false;
 
   const save = async () => {
@@ -345,14 +355,19 @@ export async function startBrainHost(): Promise<BrainHost> {
       brain.moveSizeEnd(p.hwnd, { x: p.x, y: p.y, width: p.width, height: p.height }),
     ),
     // Monitor hotplug / geometry change: feed a fresh window sweep so grids
-    // whose monitors (re)appeared revive with their windows immediately.
+    // whose monitors (re)appeared revive with their windows. The burst a
+    // single dock/undock produces is debounced to one transition.
     onMonitorsChanged((mons) => {
-      listWindows()
-        .then((wins) => brain.setMonitors(mons, wins))
-        .catch((e) => {
-          console.error('monitors-changed sweep failed:', e);
-          brain.setMonitors(mons);
-        });
+      if (monitorsDebounce !== null) clearTimeout(monitorsDebounce);
+      monitorsDebounce = setTimeout(() => {
+        monitorsDebounce = null;
+        listWindows()
+          .then((wins) => brain.setMonitors(mons, wins))
+          .catch((e) => {
+            console.error('monitors-changed sweep failed:', e);
+            brain.setMonitors(mons);
+          });
+      }, MONITORS_DEBOUNCE_MS);
     }),
     // Settings window → brain (plan Task 13).
     onSettingsReady(() => {
@@ -447,6 +462,7 @@ export async function startBrainHost(): Promise<BrainHost> {
     destroy() {
       destroyed = true;
       clearInterval(beatTimer);
+      if (monitorsDebounce !== null) clearTimeout(monitorsDebounce);
       if (saveTimer !== null) clearTimeout(saveTimer);
       for (const t of overlayHideTimers.values()) clearTimeout(t);
       overlayHideTimers.clear();

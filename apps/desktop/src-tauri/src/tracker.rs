@@ -253,14 +253,22 @@ pub(crate) fn live_set_test_lock() -> &'static Mutex<()> {
 }
 
 /// Contract §C2: `list_windows() -> WindowInfo[]`. Takes a fresh snapshot so
-/// callers always see the current desktop (and the live set is resynced).
-/// Callers: brain host + settings (security review: least privilege).
+/// callers always see the current desktop. Callers: brain host + settings
+/// (security review: least privilege). Only the brain host's call reseeds
+/// the live eligible set — the live set is the authority behind the
+/// `apply_layout`/`focus_window` security rule, and a read-shaped command
+/// from the less-privileged settings window must not mutate security-
+/// relevant state as a side effect (critique round 2).
 #[tauri::command]
 pub fn list_windows(window: tauri::Window) -> Vec<WindowInfo> {
     if crate::guard::authorize("list_windows", window.label()).is_err() {
         return Vec::new();
     }
-    snapshot()
+    if window.label() == crate::guard::MAIN_LABEL {
+        snapshot()
+    } else {
+        snapshot_readonly()
+    }
 }
 
 /// Contract C2 extension (critique fix, event-storm hardening): is `hwnd`
@@ -279,7 +287,9 @@ pub fn window_is_tracked(window: tauri::Window, hwnd: Hwnd) -> bool {
 }
 
 #[cfg(windows)]
-pub use win::{is_eligible, resync, snapshot, start_tracker, verify_for_actuation};
+pub use win::{
+    is_eligible, resync, snapshot, snapshot_readonly, start_tracker, verify_for_actuation,
+};
 #[cfg(windows)]
 pub(crate) use win::extended_frame_bounds;
 #[cfg(all(test, windows))]
@@ -287,6 +297,11 @@ pub(crate) use win::process_exe;
 
 #[cfg(not(windows))]
 pub fn snapshot() -> Vec<WindowInfo> {
+    Vec::new()
+}
+
+#[cfg(not(windows))]
+pub fn snapshot_readonly() -> Vec<WindowInfo> {
     Vec::new()
 }
 
@@ -547,6 +562,21 @@ mod win {
     /// Enumerate all eligible top-level windows and resync the live eligible
     /// set to exactly this snapshot.
     pub fn snapshot() -> Vec<WindowInfo> {
+        let out = enumerate_eligible();
+        reseed_tracked(&out);
+        out
+    }
+
+    /// Read-only desktop sweep: the same enumeration, no live-set reseed.
+    /// Serves the settings window's `list_windows` calls (critique round 2,
+    /// least privilege): the live set is the authority for the actuation
+    /// security rule, so a read from a less-privileged webview must not
+    /// mutate it.
+    pub fn snapshot_readonly() -> Vec<WindowInfo> {
+        enumerate_eligible()
+    }
+
+    fn enumerate_eligible() -> Vec<WindowInfo> {
         let mut out: Vec<WindowInfo> = Vec::new();
         unsafe {
             // EnumWindows fails only if the callback returns FALSE, which
@@ -556,7 +586,6 @@ mod win {
                 LPARAM(&mut out as *mut Vec<WindowInfo> as isize),
             );
         }
-        reseed_tracked(&out);
         out
     }
 
@@ -723,7 +752,11 @@ mod win {
         let Some(app) = APP_HANDLE.get() else {
             return;
         };
-        if let Err(e) = app.emit(event, payload) {
+        // Targeted emit (critique round 2, drag hot path): window events are
+        // consumed only by the brain host, so serializing + delivering them
+        // to every webview (settings + one overlay per monitor) is wasted
+        // per-event IPC work.
+        if let Err(e) = app.emit_to(crate::guard::MAIN_LABEL, event, payload) {
             log::error!("failed to emit {event}: {e}");
         }
     }
@@ -1297,6 +1330,51 @@ mod win_tests {
         unsafe { DestroyWindow(hwnd).expect("DestroyWindow") };
         assert!(!verify_for_actuation(key), "dead handle never verifies");
         let _ = untrack(key);
+    }
+
+    /// Critique round 2 (least privilege): the settings window's enumeration
+    /// path must not touch the live eligible set — the set is the authority
+    /// behind the actuation security rule, and only brain-host calls plus
+    /// the tracker's own resync may reseed it.
+    #[test]
+    fn snapshot_readonly_never_mutates_the_live_set() {
+        let _guard = live_set_test_lock()
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        // A fake entry no real enumeration would return: a reseed would
+        // purge it, a read-only sweep must leave it alone.
+        let key = -301isize;
+        insert_tracked(
+            key,
+            WindowInfo {
+                hwnd: key.to_string(),
+                title: "T".into(),
+                exe: "t.exe".into(),
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 100,
+                monitor_id: "m".into(),
+                minimized: false,
+                resizable: true,
+            },
+        );
+
+        let before: std::collections::HashSet<String> = tracked_windows()
+            .into_iter()
+            .map(|w| w.hwnd)
+            .collect();
+        let _ = snapshot_readonly();
+        let after: std::collections::HashSet<String> = tracked_windows()
+            .into_iter()
+            .map(|w| w.hwnd)
+            .collect();
+        assert!(is_tracked(key), "read-only sweep must not purge the live set");
+        assert_eq!(before, after, "read-only sweep must not seed or purge anything");
+
+        // The real snapshot purges the fake entry (reseed semantics intact).
+        let _ = snapshot();
+        assert!(!is_tracked(key), "real snapshot reseeds the live set");
     }
 
     /// Snapshot against the live desktop: sane shapes, and the live set is

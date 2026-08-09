@@ -280,7 +280,10 @@ mod win {
             width: rect.width,
             height: rect.height,
         };
-        if let Err(e) = app.emit(events::DRAG_POS, payload) {
+        // Targeted emit (critique round 2, drag hot path): at ~60 Hz during a
+        // drag, only the brain host consumes drag-pos — broadcasting would
+        // serialize + deliver every sample to settings and every overlay too.
+        if let Err(e) = app.emit_to(crate::guard::MAIN_LABEL, events::DRAG_POS, payload) {
             log::error!("failed to emit {}: {e}", events::DRAG_POS);
         }
     }

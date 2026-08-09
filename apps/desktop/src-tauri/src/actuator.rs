@@ -180,7 +180,8 @@ pub fn apply_layout(app: tauri::AppHandle, window: tauri::Window, layout: ApplyL
         let payload = HwndPayload {
             hwnd: key.to_string(),
         };
-        if let Err(e) = app.emit(events::WINDOW_DESTROYED, payload) {
+        // Targeted emit: window-destroyed is consumed only by the brain host.
+        if let Err(e) = app.emit_to(crate::guard::MAIN_LABEL, events::WINDOW_DESTROYED, payload) {
             log::error!("failed to emit {}: {e}", events::WINDOW_DESTROYED);
         }
     }
