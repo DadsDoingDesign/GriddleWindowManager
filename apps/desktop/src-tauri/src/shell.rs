@@ -53,6 +53,54 @@ const MENU_ID_TOGGLE_PREFIX: &str = "toggle:";
 
 static PAUSED: AtomicBool = AtomicBool::new(false);
 
+// ---------------------------------------------------------------------------
+// Brain-host watchdog (critique fix, resilience / webview death)
+// ---------------------------------------------------------------------------
+
+/// Set once the user asked to quit, so the watchdog never respawns the brain
+/// window while the app is tearing itself down.
+static EXITING: AtomicBool = AtomicBool::new(false);
+
+/// Is the app shutting down on purpose?
+pub fn is_exiting() -> bool {
+    EXITING.load(Ordering::SeqCst)
+}
+
+/// Mark the app as deliberately quitting (tray Quit).
+pub fn mark_exiting() {
+    EXITING.store(true, Ordering::SeqCst);
+}
+
+/// Pure watchdog policy: should a destroyed window with `label` trigger a
+/// brain-host respawn? Only the hidden brain window (`main`), and never
+/// during a deliberate quit.
+pub fn should_respawn_brain(label: &str, exiting: bool) -> bool {
+    label == crate::guard::MAIN_LABEL && !exiting
+}
+
+/// Recreate the hidden brain-host window after its webview died (WebView2
+/// renderer crash, page error). The respawned page runs the normal boot
+/// sequence — `read_config` + `list_windows` + grid revival — so every
+/// managed window is re-adopted from the persisted config (the rehydration
+/// path proven by the brain's respawn test). Without this, a dead brain
+/// silently ends all window management while the tray keeps looking healthy.
+pub fn respawn_brain_host(app: &AppHandle) {
+    log::error!("brain host window died unexpectedly; respawning");
+    match WebviewWindowBuilder::new(
+        app,
+        crate::guard::MAIN_LABEL,
+        WebviewUrl::App("/brain".into()),
+    )
+    .title("Griddle WM Brain")
+    .inner_size(800.0, 600.0)
+    .visible(false)
+    .build()
+    {
+        Ok(_) => log::info!("brain host respawned; rehydrating from config"),
+        Err(e) => log::error!("failed to respawn brain host: {e}"),
+    }
+}
+
 /// Is window management paused? Checked by the tracker before emitting any
 /// window event and by the actuator before applying any layout.
 pub fn is_paused() -> bool {
@@ -263,6 +311,7 @@ fn on_menu_event(app: &AppHandle, menu_id: &str) {
         }
         MENU_ID_QUIT => {
             log::info!("tray: quit requested");
+            mark_exiting(); // the brain-host watchdog must not respawn now
             app.exit(0);
         }
         other => {
@@ -388,6 +437,17 @@ pub fn apply_hotkey(app: &AppHandle, hotkey: &str) {
     }
 }
 
+/// The accelerator string currently registered (the binding a rejected
+/// rebind should fall back to). Defaults to [`DEFAULT_HOTKEY`] before any
+/// registration succeeded.
+pub fn current_hotkey() -> String {
+    hotkey_lock()
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone()
+        .unwrap_or_else(|| DEFAULT_HOTKEY.to_string())
+}
+
 /// Global-shortcut handler: contract C2 `hotkey-settings {}` + open settings.
 pub fn on_hotkey(app: &AppHandle) {
     if let Err(e) = app.emit(
@@ -473,6 +533,17 @@ mod tests {
         assert!(set_paused_flag(false), "true -> false is a change");
         assert!(!is_paused());
         assert!(!set_paused_flag(false), "false -> false is not");
+    }
+
+    // -- brain-host watchdog policy -------------------------------------------
+
+    #[test]
+    fn watchdog_respawns_only_the_brain_window_and_never_during_quit() {
+        assert!(should_respawn_brain("main", false), "dead brain respawns");
+        assert!(!should_respawn_brain("main", true), "not during a quit");
+        assert!(!should_respawn_brain("settings", false), "settings closes freely");
+        assert!(!should_respawn_brain("overlay-0", false), "overlays close freely");
+        assert!(!should_respawn_brain("", false));
     }
 
     // -- tray menu id scheme -------------------------------------------------

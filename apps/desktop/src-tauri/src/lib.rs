@@ -11,6 +11,8 @@ pub mod shell;
 mod test_windows;
 pub mod tracker;
 
+use tauri::Manager as _;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -69,6 +71,16 @@ pub fn run() {
             }
             Ok(())
         })
+        // Brain-host watchdog (critique fix, resilience / webview death): if
+        // the hidden brain webview dies, the whole product silently stops —
+        // respawn it; the fresh page rehydrates from the persisted config.
+        .on_window_event(|window, event| {
+            if matches!(event, tauri::WindowEvent::Destroyed)
+                && shell::should_respawn_brain(window.label(), shell::is_exiting())
+            {
+                shell::respawn_brain_host(&window.app_handle().clone());
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             tracker::list_windows,
             tracker::window_is_tracked,
@@ -83,6 +95,17 @@ pub fn run() {
             shell::show_settings,
             shell::update_tray,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app, event| {
+            // Tray app: never exit just because the last window went away
+            // (e.g. the brain webview died and is mid-respawn, or the user
+            // closed settings before any overlay existed). A deliberate
+            // `app.exit(code)` — tray Quit — always carries a code.
+            if let tauri::RunEvent::ExitRequested { code: None, api, .. } = &event {
+                if !shell::is_exiting() {
+                    api.prevent_exit();
+                }
+            }
+        });
 }

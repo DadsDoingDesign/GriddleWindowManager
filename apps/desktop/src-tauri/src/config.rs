@@ -78,12 +78,20 @@ fn quarantine(dir: &Path, path: &Path) {
 }
 
 /// Atomically persist `config` under `dir` (created if missing):
-/// write temp file, fsync, rename over the real one.
+/// write temp file, fsync, rename over the real one. The temp name is
+/// unique per write (pid + sequence), so concurrent writers — e.g. a second
+/// debounced save racing shutdown — can no longer truncate each other's
+/// in-flight temp file (security review deferred item 4, now fixed).
 pub fn write_config_to(dir: &Path, config: &AppConfig) -> io::Result<()> {
     fs::create_dir_all(dir)?;
     let json = serde_json::to_vec_pretty(config)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-    let tmp = dir.join(TMP_FILE);
+    static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let tmp = dir.join(format!(
+        "{TMP_FILE}.{}-{}",
+        std::process::id(),
+        TMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
     {
         let mut f = fs::File::create(&tmp)?;
         f.write_all(&json)?;
@@ -115,6 +123,30 @@ pub(crate) fn enforce_authoritative_fields(config: &mut AppConfig) {
         );
         config.paused = live;
     }
+    sanitize_hotkey(config, &crate::shell::current_hotkey());
+}
+
+/// Security review deferred item 2 (now fixed): never persist an accelerator
+/// `Shortcut::parse` rejects — it would silently fail to register on every
+/// later launch, leaving the user with no hotkey at all. An invalid string
+/// is replaced with `fallback` (the currently registered binding), which is
+/// itself backstopped by the default.
+pub(crate) fn sanitize_hotkey(config: &mut AppConfig, fallback: &str) {
+    use tauri_plugin_global_shortcut::Shortcut;
+    if config.hotkey.parse::<Shortcut>().is_ok() {
+        return;
+    }
+    let replacement = if fallback.parse::<Shortcut>().is_ok() {
+        fallback.to_string()
+    } else {
+        crate::shell::DEFAULT_HOTKEY.to_string()
+    };
+    log::warn!(
+        "write_config: rejecting unparseable hotkey {:?}; persisting {:?} instead",
+        config.hotkey,
+        replacement
+    );
+    config.hotkey = replacement;
 }
 
 /// Contract §C2: `read_config() -> AppConfig | null`. Also pushes the loaded
@@ -194,6 +226,16 @@ mod tests {
         }
     }
 
+    /// No leftover temp file (any name containing ".tmp") in `dir`.
+    fn no_tmp_files(dir: &Path) -> bool {
+        fs::read_dir(dir)
+            .map(|it| {
+                it.filter_map(|e| e.ok())
+                    .all(|e| !e.file_name().to_string_lossy().contains(".tmp"))
+            })
+            .unwrap_or(true)
+    }
+
     fn sample_config() -> AppConfig {
         use crate::ipc::{GridMode, GridSettings, Slot, Template};
         AppConfig {
@@ -245,10 +287,7 @@ mod tests {
         let cfg = sample_config();
         write_config_to(dir.path(), &cfg).expect("write");
         assert_eq!(read_config_from(dir.path()), Some(cfg));
-        assert!(
-            !dir.path().join(TMP_FILE).exists(),
-            "temp file cleaned up after rename"
-        );
+        assert!(no_tmp_files(dir.path()), "temp file cleaned up after rename");
     }
 
     #[test]
@@ -262,7 +301,31 @@ mod tests {
         let read = read_config_from(dir.path()).expect("readable");
         assert!(read.paused);
         assert_eq!(read.exclusions, vec!["slack.exe", "figma.exe"]);
-        assert!(!dir.path().join(TMP_FILE).exists());
+        assert!(no_tmp_files(dir.path()));
+    }
+
+    /// Security review deferred item 4 (now fixed): two interleaved writers
+    /// use distinct temp names, so neither can truncate the other's in-flight
+    /// temp file; the config ends up as one of the two writes, intact.
+    #[test]
+    fn concurrent_writers_use_unique_temp_names() {
+        let dir = ScratchDir::new();
+        let a = sample_config();
+        let mut b = sample_config();
+        b.exclusions.push("second.exe".into());
+        let threads: Vec<_> = [a.clone(), b.clone()]
+            .into_iter()
+            .map(|cfg| {
+                let path = dir.path().to_path_buf();
+                std::thread::spawn(move || write_config_to(&path, &cfg).expect("write"))
+            })
+            .collect();
+        for t in threads {
+            t.join().expect("writer thread");
+        }
+        let read = read_config_from(dir.path()).expect("readable after the race");
+        assert!(read == a || read == b, "one intact write wins");
+        assert!(no_tmp_files(dir.path()), "no temp litter after the race");
     }
 
     #[test]
@@ -384,6 +447,31 @@ mod tests {
         let pristine = cfg.clone();
         enforce_authoritative_fields(&mut cfg);
         assert_eq!(cfg, pristine, "matching pause flag leaves config intact");
+    }
+
+    /// Security review deferred item 2 (now fixed): an unparseable hotkey is
+    /// never persisted — it is replaced by the currently registered binding
+    /// (or the default), so a restart can never silently lose the hotkey.
+    #[test]
+    fn unparseable_hotkey_is_replaced_before_persisting() {
+        let mut cfg = sample_config();
+        cfg.hotkey = "NotAKey+G".into();
+        sanitize_hotkey(&mut cfg, "Ctrl+Alt+G");
+        assert_eq!(cfg.hotkey, "Ctrl+Alt+G", "falls back to the live binding");
+
+        let mut cfg = sample_config();
+        cfg.hotkey = String::new();
+        sanitize_hotkey(&mut cfg, "also+garbage+");
+        assert_eq!(
+            cfg.hotkey,
+            crate::shell::DEFAULT_HOTKEY,
+            "default backstops an invalid fallback"
+        );
+
+        let mut cfg = sample_config();
+        cfg.hotkey = "Ctrl+Super+F12".into();
+        sanitize_hotkey(&mut cfg, "Ctrl+Alt+G");
+        assert_eq!(cfg.hotkey, "Ctrl+Super+F12", "valid hotkeys pass through");
     }
 
     #[test]
