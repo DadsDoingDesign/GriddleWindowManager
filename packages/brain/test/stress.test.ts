@@ -365,12 +365,14 @@ describe('stress: monitor topology flaps', () => {
     h.brain.enableGrid(gridSettings(GRID2, [MON2.id], 8, 4), []);
 
     const rnd = mulberry32(0xf1a9);
-    const on1: string[] = [];
+    const wins: WindowInfo[] = [];
+    let on2Count = 0;
     for (let i = 0; i < 30; i++) {
       const mon = i < 20 ? MON1 : MON2;
       const { width, height } = smallSize(rnd);
       const w = makeWindow(mon, width, height);
-      if (mon === MON1) on1.push(w.hwnd);
+      wins.push(w);
+      if (mon === MON2) on2Count++;
       h.brain.windowAppeared(w);
     }
 
@@ -378,39 +380,73 @@ describe('stress: monitor topology flaps', () => {
     for (let flap = 0; flap < 40; flap++) {
       const before = h.applies.length;
       if (flap % 2 === 0) {
-        // Unplug MON2.
-        h.brain.setMonitors([MON1]);
+        // Unplug MON2: its grid deactivates (stays enabled for revival).
+        h.brain.setMonitors([MON1], wins);
         // Windows keep appearing while the monitor is gone — on the missing
         // monitor they are simply not placeable (no throw, no bad rect).
         const { width, height } = smallSize(rnd);
-        h.brain.windowAppeared(makeWindow(MON2, width, height));
+        const w2 = makeWindow(MON2, width, height);
+        wins.push(w2);
+        on2Count++;
+        h.brain.windowAppeared(w2);
         const w1 = makeWindow(MON1, width, height);
-        on1.push(w1.hwnd);
+        wins.push(w1);
         h.brain.windowAppeared(w1);
       } else {
-        // Replug, alternating work-area geometry (taskbar flipped).
-        h.brain.setMonitors([MON1, flap % 4 === 1 ? MON2_SHIFTED : MON2]);
-        // A drag on MON1 forces a flush while MON2's geometry just changed.
-        const hw = on1[Math.floor(rnd() * on1.length)]!;
-        h.brain.moveSizeStart(hw);
-        h.brain.moveSizeEnd(hw, {
-          x: MON1.workX + Math.floor(rnd() * 1200),
-          y: MON1.workY + Math.floor(rnd() * 700),
-          width: 200,
-          height: 200,
-        });
+        // Replug, alternating work-area geometry (taskbar flipped). The
+        // sweep-fed setMonitors revives MON2's grid and flushes on its own:
+        // no synthetic drag is needed for the windows to track the change.
+        h.brain.setMonitors([MON1, flap % 4 === 1 ? MON2_SHIFTED : MON2], wins);
+        const snap = lastSnap(h);
+        expect(
+          snap.tiles[GRID2]!.length,
+          'replug must revive the grid with its windows',
+        ).toBeGreaterThan(0);
+        expect(
+          h.applies.length,
+          'replug must emit moves without an unrelated event',
+        ).toBeGreaterThan(before);
       }
       assertMovesInBounds(h.applies, before, allowed);
       assertGridConsistency(h.brain, lastSnap(h));
     }
 
     // Final replug: MON2's grid adopts a fresh window again.
-    h.brain.setMonitors([MON1, MON2]);
+    h.brain.setMonitors([MON1, MON2], wins);
     const w = makeWindow(MON2, 300, 220);
     h.brain.windowAppeared(w);
     const snap = lastSnap(h);
     expect(snap.tiles[GRID2]!.some((t) => t.hwnd === w.hwnd)).toBe(true);
     assertGridConsistency(h.brain, snap);
+  });
+
+  it('a work-area geometry change alone re-applies the affected grid', () => {
+    const h = makeHarness();
+    h.brain.setMonitors([MON1, MON2]);
+    h.brain.enableGrid(gridSettings(GRID2, [MON2.id], 8, 4), []);
+    const rnd = mulberry32(0xbee5);
+    const hwnds: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      const { width, height } = smallSize(rnd);
+      const w = makeWindow(MON2, width, height);
+      hwnds.push(w.hwnd);
+      h.brain.windowAppeared(w);
+    }
+
+    // Taskbar moved: same monitor id, new work area. No drag, no window
+    // event — setMonitors itself must re-emit every affected rect.
+    const before = h.applies.length;
+    h.brain.setMonitors([MON1, MON2_SHIFTED]);
+    expect(h.applies.length, 'geometry change must flush').toBeGreaterThan(before);
+    const moved = new Set<string>();
+    assertMovesInBounds(h.applies, before, [MON2_SHIFTED]);
+    for (let i = before; i < h.applies.length; i++) {
+      for (const m of h.applies[i]!.moves) moved.add(m.hwnd);
+    }
+    for (const hw of hwnds) {
+      expect(moved.has(hw), `window ${hw} not re-applied after geometry change`).toBe(true);
+    }
+    assertGridConsistency(h.brain, lastSnap(h));
   });
 
   it('spanning grid survives a member monitor flapping away and back', () => {

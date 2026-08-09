@@ -177,14 +177,37 @@ export class WindowManagerBrain {
 
   // ── native inputs ──────────────────────────────────────────────────────
 
-  setMonitors(mons: MonitorInfo[]): void {
+  /**
+   * Monitor topology / geometry change. Beyond storing the new list this
+   * (1) deactivates live grids whose monitor(s) left — the layout snapshot
+   * is kept and the settings stay enabled, so the grid revives on replug;
+   * (2) revives enabled-but-inert grids whose monitors are all present
+   * again (dock/undock), restoring the stored layout against `windows`
+   * (the host passes a fresh sweep); (3) recomputes spanning dead space;
+   * and (4) flushes, so tiled windows track a changed work area (moved
+   * taskbar, resolution change) immediately instead of at the next
+   * unrelated event.
+   */
+  setMonitors(mons: MonitorInfo[], windows: WindowInfo[] = []): void {
     this.monitors = new Map(mons.map((m) => [m.id, m]));
+
+    for (const id of [...this.grids.keys()]) {
+      const mg = this.grids.get(id);
+      if (mg && !this.monitorFor(mg.settings)) this.releaseGrid(id);
+    }
+    for (const settings of [...this.gridSettings.values()]) {
+      if (!settings.enabled || this.grids.has(settings.id)) continue;
+      if (!this.monitorFor(settings)) continue;
+      this.enableGrid(settings, windows);
+    }
+
     // Monitor geometry defines a spanning grid's dead space — recompute it.
     for (const mg of this.grids.values()) {
       if (mg.settings.monitorIds.length <= 1) continue;
       const mon = this.monitorFor(mg.settings);
       if (mon) mg.unusable = this.unusableFor(mg.settings, mon);
     }
+    this.flush();
     this.emitSnapshot();
   }
 
@@ -1453,14 +1476,28 @@ export class WindowManagerBrain {
     return false;
   }
 
-  /** Drop a grid instance and everything tracked under it. No snapshot emit. */
+  /** Disable a grid: release the live instance and mark it not-enabled. */
   private teardownGrid(gridId: string): void {
-    if (this.drag?.sourceGridId === gridId) this.cancelDrag();
     const settings = this.gridSettings.get(gridId);
     if (settings) this.gridSettings.set(gridId, { ...settings, enabled: false });
+    this.releaseGrid(gridId);
+  }
+
+  /**
+   * Drop a live grid instance and everything tracked under it, without
+   * touching the enabled flag (monitor-unplug deactivation keeps the grid
+   * enabled so it revives on replug). The layout snapshot is stored for that
+   * revival — but an *empty* grid never clobbers a previously stored layout,
+   * so a revive-with-no-sweep can't erase the slots a later re-enable with a
+   * sweep would restore. No snapshot emit.
+   */
+  private releaseGrid(gridId: string): void {
+    if (this.drag?.sourceGridId === gridId) this.cancelDrag();
     const mg = this.grids.get(gridId);
     if (!mg) return;
-    this.storedLayouts[gridId] = mg.grid.toJSON();
+    if (mg.grid.tiles.length > 0 || this.storedLayouts[gridId] === undefined) {
+      this.storedLayouts[gridId] = mg.grid.toJSON();
+    }
     for (const [hwnd, gid] of this.tileGrid) {
       if (gid === gridId) {
         this.tileGrid.delete(hwnd);

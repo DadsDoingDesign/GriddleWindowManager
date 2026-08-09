@@ -181,16 +181,14 @@ export async function startBrainHost(): Promise<BrainHost> {
     cfg,
   );
 
-  // Seed monitors before any placement, then bring enabled grids back up
-  // against the current desktop.
+  // Seed monitors with a fresh window sweep: setMonitors itself revives
+  // every enabled grid whose monitors are present (restoring the persisted
+  // layouts against the sweep), so boot and monitor-hotplug share one path.
   const monitors = await listMonitors();
-  brain.setMonitors(monitors);
   const windows = await listWindows();
+  brain.setMonitors(monitors, windows);
   for (const g of cfg.grids) {
-    if (g.enabled) {
-      brain.enableGrid(g, windows);
-      prewarmOverlays(g.monitorIds);
-    }
+    if (g.enabled) prewarmOverlays(g.monitorIds);
   }
   // Bring the tray in line with the restored config even when no grid is
   // enabled (no snapshot fired above → stale checks would linger otherwise).
@@ -203,7 +201,8 @@ export async function startBrainHost(): Promise<BrainHost> {
       ? mons.find((m) => m.id === monitorId)
       : (mons.find((m) => m.primary) ?? mons[0]);
     if (!mon) throw new Error(`enableGridOnMonitor: no such monitor ${monitorId ?? ''}`);
-    brain.setMonitors(mons);
+    const wins = await listWindows();
+    brain.setMonitors(mons, wins);
     const existing = brain
       .exportConfig()
       .grids.find((g) => g.id === `grid:${mon.id}`);
@@ -216,7 +215,7 @@ export async function startBrainHost(): Promise<BrainHost> {
       enabled: true,
       activeTemplateId: null,
     };
-    brain.enableGrid(settings, await listWindows());
+    brain.enableGrid(settings, wins);
     prewarmOverlays(settings.monitorIds);
   };
 
@@ -227,7 +226,8 @@ export async function startBrainHost(): Promise<BrainHost> {
    */
   const enableSpan = async (monitorIds: string[], cols = 12, rows = 6) => {
     const mons = await listMonitors();
-    brain.setMonitors(mons);
+    const wins = await listWindows();
+    brain.setMonitors(mons, wins);
     const ids = [...new Set(monitorIds)]
       .filter((id) => mons.some((m) => m.id === id))
       .sort();
@@ -245,7 +245,7 @@ export async function startBrainHost(): Promise<BrainHost> {
       enabled: true,
       activeTemplateId: null,
     };
-    brain.enableGrid(settings, await listWindows());
+    brain.enableGrid(settings, wins);
     prewarmOverlays(ids);
   };
 
@@ -302,7 +302,16 @@ export async function startBrainHost(): Promise<BrainHost> {
     onMoveSizeEnd((p) =>
       brain.moveSizeEnd(p.hwnd, { x: p.x, y: p.y, width: p.width, height: p.height }),
     ),
-    onMonitorsChanged((mons) => brain.setMonitors(mons)),
+    // Monitor hotplug / geometry change: feed a fresh window sweep so grids
+    // whose monitors (re)appeared revive with their windows immediately.
+    onMonitorsChanged((mons) => {
+      listWindows()
+        .then((wins) => brain.setMonitors(mons, wins))
+        .catch((e) => {
+          console.error('monitors-changed sweep failed:', e);
+          brain.setMonitors(mons);
+        });
+    }),
     // Settings window → brain (plan Task 13).
     onSettingsReady(() => {
       if (lastSnapshot) {
