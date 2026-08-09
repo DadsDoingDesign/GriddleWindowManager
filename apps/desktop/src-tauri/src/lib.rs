@@ -21,6 +21,9 @@ pub fn run() {
             }
             monitors::start_display_watcher(app.handle().clone());
             tracker::start_tracker(app.handle().clone());
+            // Until Task 18 adds the tray + hotkey there is no UI trigger for
+            // the settings window, so open it on launch for now.
+            shell::open_settings(app.handle())?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -33,6 +36,7 @@ pub fn run() {
             config::read_config,
             config::write_config,
             shell::set_paused,
+            shell::show_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

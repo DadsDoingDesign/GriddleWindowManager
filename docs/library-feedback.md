@@ -117,3 +117,26 @@ export. Verified against `node_modules/@griddle/core/dist/*.d.ts` and
   The brain now clamps pins against the tile's footprint itself; a
   `clampToBounds` option (or documented behavior statement) on
   `setTilePinned` would prevent this class of bug for consumers.
+
+## Task 13 findings (2026-08-08)
+
+- **`<GriddleGrid>` works well as a mirror of external state**, with one
+  caveat: the component commits drops into `api.grid` itself (via its
+  internal `DragController` / `moveTile`), so a consumer whose source of
+  truth lives elsewhere (our brain) must reconcile the editor grid against
+  every authoritative snapshot after the `dragEnd` event. A "controlled"
+  mode — preview locally, emit the proposed move, let the consumer commit —
+  would avoid the transient divergence window.
+- **`dragEnd`/`resizeEnd` payloads `{tileId, committed}` are exactly right**
+  for commit-on-drop editors, but they are typed `CustomEvent<any>`
+  (reiterating the Task 1 note) — the settings editor needs a cast to read
+  them. Exporting the payload interfaces would fix this.
+- **Dark themes need `:global` CSS surgery.** `.grid-bg` grid lines and the
+  drop indicator use hardcoded light-theme rgba colors; the editor overrides
+  them via `:global(.grid-bg)` etc. Exposing them as CSS custom properties
+  (like `--griddle-tile-radius` already is) would make theming first-class.
+- **Absolute-tile drags land unclamped.** The component's pin-drag path
+  calls `setTilePinned` with whatever `pixelsToPin` rounds to, so a tile
+  dropped past the right edge ends with `pinned.x + w > cols` (same
+  unclamped-pin behavior as the Task 7 note, now reproduced through the
+  Svelte adapter). The editor clamps before forwarding to the brain.

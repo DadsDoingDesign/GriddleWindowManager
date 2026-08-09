@@ -46,6 +46,25 @@ export interface SettingsMovePayload {
   slot: { col: number; row: number; w: number; h: number };
 }
 
+/** Payload of `settings-enable-grid` (settings → brain, plan Task 13). */
+export interface SettingsEnableGridPayload {
+  monitorId: string;
+  cols: number;
+  rows: number;
+}
+
+/** Payload of `settings-disable-grid` (settings → brain, plan Task 13). */
+export interface SettingsDisableGridPayload {
+  gridId: string;
+}
+
+/** Payload of `settings-set-dims` (settings → brain, plan Task 13). */
+export interface SettingsSetDimsPayload {
+  gridId: string;
+  cols: number;
+  rows: number;
+}
+
 // ---------------------------------------------------------------------------
 // Commands (webview → Rust)
 // ---------------------------------------------------------------------------
@@ -84,6 +103,10 @@ export function setPaused(paused: boolean): Promise<void> {
 
 export function focusWindow(hwnd: Hwnd): Promise<void> {
   return invoke('focus_window', { hwnd });
+}
+
+export function showSettings(): Promise<void> {
+  return invoke('show_settings');
 }
 
 // ---------------------------------------------------------------------------
@@ -166,4 +189,43 @@ export function emitSettingsMove(p: SettingsMovePayload): Promise<void> {
 
 export function onSettingsMove(cb: (p: SettingsMovePayload) => void): Promise<UnlistenFn> {
   return on('settings-move', cb);
+}
+
+/** Settings window announces itself; the brain re-emits its last snapshot. */
+export function emitSettingsReady(): Promise<void> {
+  return emit('settings-ready', {});
+}
+
+export function onSettingsReady(cb: () => void): Promise<UnlistenFn> {
+  return on('settings-ready', () => cb());
+}
+
+export function emitSettingsEnableGrid(p: SettingsEnableGridPayload): Promise<void> {
+  return emit('settings-enable-grid', p);
+}
+
+export function onSettingsEnableGrid(
+  cb: (p: SettingsEnableGridPayload) => void,
+): Promise<UnlistenFn> {
+  return on('settings-enable-grid', cb);
+}
+
+export function emitSettingsDisableGrid(p: SettingsDisableGridPayload): Promise<void> {
+  return emit('settings-disable-grid', p);
+}
+
+export function onSettingsDisableGrid(
+  cb: (p: SettingsDisableGridPayload) => void,
+): Promise<UnlistenFn> {
+  return on('settings-disable-grid', cb);
+}
+
+export function emitSettingsSetDims(p: SettingsSetDimsPayload): Promise<void> {
+  return emit('settings-set-dims', p);
+}
+
+export function onSettingsSetDims(
+  cb: (p: SettingsSetDimsPayload) => void,
+): Promise<UnlistenFn> {
+  return on('settings-set-dims', cb);
 }

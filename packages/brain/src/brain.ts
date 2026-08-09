@@ -416,7 +416,7 @@ export class WindowManagerBrain {
     const snapped = snapRectToSlot(mon, this.dims(target.settings), rect);
 
     if (target === source) {
-      this.commitSameGrid(source, d, snapped);
+      this.commitSameGrid(source, d.hwnd, snapped);
     } else {
       this.commitTransfer(source, target, d, snapped);
     }
@@ -673,6 +673,38 @@ export class WindowManagerBrain {
     this.emitSnapshot();
   }
 
+  /**
+   * Editor input (contract §C3, plan Task 13): place an existing tile at an
+   * exact slot — settings-editor drops route here via the `settings-move`
+   * event. The slot is sanitized and clamped into the grid, then the same
+   * commit rules as a native drop apply (move / resize / displacement / pin
+   * update) and the real window lands in one apply. An in-flight native drag
+   * of the same window is cancelled — the editor's drop wins.
+   */
+  moveTileFromEditor(gridId: string, hwnd: Hwnd, slot: Slot): void {
+    const mg = this.grids.get(gridId);
+    if (!mg || !mg.grid.getTile(hwnd)) return;
+    const parts = [slot.col, slot.row, slot.w, slot.h];
+    if (!parts.every((n) => Number.isFinite(n))) return;
+    if (this.drag?.hwnd === hwnd) this.cancelDrag(hwnd);
+
+    const dims = this.dims(mg.settings);
+    const snapped = clampSlot(
+      {
+        col: Math.round(slot.col),
+        row: Math.round(slot.row),
+        w: Math.round(slot.w),
+        h: Math.round(slot.h),
+      },
+      dims.cols,
+      dims.rows,
+    );
+    this.commitSameGrid(mg, hwnd, snapped);
+    this.touch(hwnd); // now the most recent (top-most in overlay stacking)
+    this.flush();
+    this.emitSnapshot();
+  }
+
   exportConfig(): AppConfig {
     const layouts: Record<string, unknown> = { ...this.storedLayouts };
     for (const [id, mg] of this.grids) layouts[id] = mg.grid.toJSON();
@@ -872,8 +904,7 @@ export class WindowManagerBrain {
   }
 
   /** Commit a drop that stays on the same grid: move, resize, or pin update. */
-  private commitSameGrid(mg: ManagedGrid, d: DragState, snapped: Slot): void {
-    const hwnd = d.hwnd;
+  private commitSameGrid(mg: ManagedGrid, hwnd: Hwnd, snapped: Slot): void {
     const tile = mg.grid.getTile(hwnd);
     if (!tile) return;
 

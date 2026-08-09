@@ -1,0 +1,33 @@
+/* Settings window base theme (dark). Component-level styles live in the
+   Svelte components; this file only sets the page-wide palette and reset. */
+
+:root {
+  --bg: #0f1116;
+  --card: #171a21;
+  --well: #10131a;
+  --border: #262b36;
+  --text: #c6ccd6;
+  --text-strong: #eef0f4;
+  --text-dim: #828b9a;
+  --accent: #8b7cf6;
+
+  --sans: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --mono: 'Cascadia Mono', ui-monospace, Consolas, monospace;
+
+  color-scheme: dark;
+  font: 14px/1.45 var(--sans);
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+}
+
+* {
+  -webkit-user-select: none;
+  user-select: none;
+}

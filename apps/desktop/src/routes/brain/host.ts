@@ -25,6 +25,11 @@ import {
   onMonitorsChanged,
   onMoveSizeEnd,
   onMoveSizeStart,
+  onSettingsDisableGrid,
+  onSettingsEnableGrid,
+  onSettingsMove,
+  onSettingsReady,
+  onSettingsSetDims,
   onWindowAppeared,
   onWindowDestroyed,
   onWindowMinimized,
@@ -99,8 +104,32 @@ export async function startBrainHost(): Promise<BrainHost> {
     if (g.enabled) brain.enableGrid(g, windows);
   }
 
-  // Native events → brain. Listeners registered after the initial snapshot
-  // seeding so an event can never race the constructor.
+  /** Enable a collision grid on a monitor against a fresh window sweep. */
+  const enableOnMonitor = async (monitorId?: string, cols = 12, rows = 6) => {
+    const mons = await listMonitors();
+    const mon = monitorId
+      ? mons.find((m) => m.id === monitorId)
+      : (mons.find((m) => m.primary) ?? mons[0]);
+    if (!mon) throw new Error(`enableGridOnMonitor: no such monitor ${monitorId ?? ''}`);
+    brain.setMonitors(mons);
+    const existing = brain
+      .exportConfig()
+      .grids.find((g) => g.id === `grid:${mon.id}`);
+    const settings: GridSettings = {
+      id: `grid:${mon.id}`,
+      monitorIds: [mon.id],
+      cols,
+      rows,
+      mode: existing?.mode ?? 'collision',
+      enabled: true,
+      activeTemplateId: null,
+    };
+    brain.enableGrid(settings, await listWindows());
+  };
+
+  // Native events → brain, plus settings-window inputs (contract §C2).
+  // Listeners registered after the initial snapshot seeding so an event can
+  // never race the constructor.
   const unlisteners: UnlistenFn[] = await Promise.all([
     onWindowAppeared((w) => brain.windowAppeared(w)),
     onWindowDestroyed((p) => brain.windowDestroyed(p.hwnd)),
@@ -112,8 +141,22 @@ export async function startBrainHost(): Promise<BrainHost> {
       brain.moveSizeEnd(p.hwnd, { x: p.x, y: p.y, width: p.width, height: p.height }),
     ),
     onMonitorsChanged((mons) => brain.setMonitors(mons)),
-    // NOTE: `settings-move` (editor → brain) is wired in Task 13 alongside
-    // the brain's moveTileFromEditor implementation.
+    // Settings window → brain (plan Task 13).
+    onSettingsReady(() => {
+      if (lastSnapshot) {
+        emitStateSnapshot(lastSnapshot).catch((e) =>
+          console.error('state-snapshot re-emit failed:', e),
+        );
+      }
+    }),
+    onSettingsMove((p) => brain.moveTileFromEditor(p.gridId, p.hwnd, p.slot)),
+    onSettingsEnableGrid((p) =>
+      enableOnMonitor(p.monitorId, p.cols, p.rows).catch((e) =>
+        console.error('settings-enable-grid failed:', e),
+      ),
+    ),
+    onSettingsDisableGrid((p) => brain.disableGrid(p.gridId)),
+    onSettingsSetDims((p) => brain.reflowGrid(p.gridId, p.cols, p.rows)),
   ]);
 
   const host: BrainHost = {
@@ -122,22 +165,7 @@ export async function startBrainHost(): Promise<BrainHost> {
       return lastSnapshot;
     },
     async enableGridOnMonitor(monitorId?: string, cols = 12, rows = 6) {
-      const mons = await listMonitors();
-      const mon = monitorId
-        ? mons.find((m) => m.id === monitorId)
-        : (mons.find((m) => m.primary) ?? mons[0]);
-      if (!mon) throw new Error(`enableGridOnMonitor: no such monitor ${monitorId ?? ''}`);
-      brain.setMonitors(mons);
-      const settings: GridSettings = {
-        id: `grid:${mon.id}`,
-        monitorIds: [mon.id],
-        cols,
-        rows,
-        mode: 'collision',
-        enabled: true,
-        activeTemplateId: null,
-      };
-      brain.enableGrid(settings, await listWindows());
+      await enableOnMonitor(monitorId, cols, rows);
     },
     async saveNow() {
       if (saveTimer !== null) {
