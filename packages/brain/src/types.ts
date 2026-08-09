@@ -55,6 +55,19 @@ export interface GridSettings {
   padding?: number;
 }
 
+/**
+ * Per-app default placement (spec v0.2 §2). `exe` is the lowercase basename
+ * (e.g. "slack.exe"); `gridId: null` means the rule matches any grid. One
+ * rule per (exe, gridId) — saving again overwrites. The slot is clamped into
+ * the target grid's current dims when the rule fires (on `windowAppeared`
+ * only, never retroactively).
+ */
+export interface AppRule {
+  exe: string;
+  gridId: string | null;
+  slot: Slot;
+}
+
 export interface Template {
   id: string;
   name: string;
@@ -117,12 +130,15 @@ export interface FloatingWindow {
 // could not fit — they float free until space opens up.
 // Contract extension (Task 19): `exclusions` carries the live exclusion list
 // (lowercase exe names) so the settings editor always shows the truth.
+// Contract extension (spec v0.2 §2): `appRules` carries the live per-app
+// placement rules so the settings rules card always shows them.
 export interface StateSnapshot {
   grids: GridSettings[];
   templates: Template[];
   tiles: Record<string, TileSnapshot[]>; // gridId -> tiles in placement order
   floating: FloatingWindow[];
   exclusions: string[];
+  appRules: AppRule[];
   paused: boolean;
 }
 
@@ -136,4 +152,12 @@ export interface AppConfig {
   hotkey: string; // default "Ctrl+Super+G"
   autostart: boolean;
   paused: boolean;
+  /**
+   * Per-app placement rules (spec v0.2 §2). Optional like `gap`/`padding`:
+   * absent in every v1 config and reads as [] (persist.ts keeps the field
+   * only when the stored value was an array, the Rust mirror uses
+   * `#[serde(default)]` — spec §4 migration groundwork; the full v2 schema
+   * bump ships with startup views).
+   */
+  appRules?: AppRule[];
 }

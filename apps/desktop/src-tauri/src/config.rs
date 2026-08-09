@@ -245,7 +245,7 @@ mod tests {
     }
 
     fn sample_config() -> AppConfig {
-        use crate::ipc::{GridMode, GridSettings, Slot, Template};
+        use crate::ipc::{AppRule, GridMode, GridSettings, Slot, Template};
         AppConfig {
             version: 1,
             grids: vec![GridSettings {
@@ -280,6 +280,16 @@ mod tests {
             hotkey: "Ctrl+Super+G".into(),
             autostart: false,
             paused: false,
+            app_rules: vec![AppRule {
+                exe: "code.exe".into(),
+                grid_id: None,
+                slot: Slot {
+                    col: 6,
+                    row: 0,
+                    w: 6,
+                    h: 6,
+                },
+            }],
         }
     }
 
@@ -362,6 +372,42 @@ mod tests {
             !dir.path().join(BAK_FILE).exists(),
             "a spacing-less config is valid, not corrupt"
         );
+    }
+
+    /// Spec v0.2 §4 groundwork, same pattern as the spacing fields: a config
+    /// written before `appRules` existed must keep deserializing — the field
+    /// defaults to an empty list via `#[serde(default)]`, never a quarantine.
+    #[test]
+    fn config_without_app_rules_reads_with_empty_default() {
+        let dir = ScratchDir::new();
+        fs::create_dir_all(dir.path()).unwrap();
+        let mut json = serde_json::to_value(sample_config()).unwrap();
+        json.as_object_mut().unwrap().remove("appRules");
+        fs::write(
+            dir.path().join(CONFIG_FILE),
+            serde_json::to_vec(&json).unwrap(),
+        )
+        .unwrap();
+
+        let read = read_config_from(dir.path()).expect("rule-less config must stay readable");
+        assert!(read.app_rules.is_empty());
+        assert!(
+            !dir.path().join(BAK_FILE).exists(),
+            "a rule-less config is valid, not corrupt"
+        );
+    }
+
+    /// The camelCase wire shape of an app rule is part of contract C1:
+    /// `gridId: null` must round-trip as the any-grid scope.
+    #[test]
+    fn app_rules_round_trip_with_camel_case_and_null_grid_id() {
+        let dir = ScratchDir::new();
+        let cfg = sample_config();
+        write_config_to(dir.path(), &cfg).expect("write");
+        let raw = fs::read_to_string(dir.path().join(CONFIG_FILE)).unwrap();
+        assert!(raw.contains("\"appRules\""), "camelCase field name on disk");
+        assert!(raw.contains("\"gridId\": null"), "any-grid scope is null");
+        assert_eq!(read_config_from(dir.path()), Some(cfg));
     }
 
     #[test]

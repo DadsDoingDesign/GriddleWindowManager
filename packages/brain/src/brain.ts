@@ -29,6 +29,7 @@ import {
 import { makeUserTemplate, mergeWithBuiltins } from './templates';
 import type {
   AppConfig,
+  AppRule,
   ApplyLayout,
   DragPos,
   FloatingWindow,
@@ -92,6 +93,14 @@ interface DragState {
 }
 
 const DEFAULT_HOTKEY = 'Ctrl+Super+G';
+
+/**
+ * Map key of an app rule's (exe, gridId) identity (spec v0.2 §2: one rule
+ * per pair). `\n` can appear in neither part, so keys cannot collide.
+ */
+function appRuleKey(exe: string, gridId: string | null): string {
+  return `${exe}\n${gridId ?? ''}`;
+}
 
 function clamp(v: number, lo: number, hi: number): number {
   return Math.min(Math.max(v, lo), hi);
@@ -158,6 +167,8 @@ export class WindowManagerBrain {
 
   private templates: Template[];
   private exclusions: Set<string>;
+  /** Per-app placement rules keyed by (exe, gridId) — spec v0.2 §2. */
+  private appRules = new Map<string, AppRule>();
   /** Layout snapshots for grids that are not live (from config / disable). */
   private storedLayouts: Record<string, unknown>;
   private hotkey: string;
@@ -172,6 +183,9 @@ export class WindowManagerBrain {
     this.hotkey = cfg?.hotkey ?? DEFAULT_HOTKEY;
     this.autostart = cfg?.autostart ?? false;
     this.paused = cfg?.paused ?? false;
+    for (const r of cfg?.appRules ?? []) {
+      this.appRules.set(appRuleKey(r.exe, r.gridId), { ...r, slot: { ...r.slot } });
+    }
     for (const g of cfg?.grids ?? []) {
       this.gridSettings.set(g.id, { ...g });
     }
@@ -220,10 +234,18 @@ export class WindowManagerBrain {
     }
     if (w.minimized) return;
     if (this.exclusions.has(w.exe)) return;
+    // Restore-previous beats every app rule (spec v0.2 §2 precedence): a
+    // hwnd with a remembered slot re-enters through the restore flow — the
+    // reconcile sweep routes a window minimized-then-restored during a pause
+    // here rather than through `window-restored`.
+    if (this.remembered.has(w.hwnd)) {
+      this.windowRestored(w);
+      return;
+    }
     const mg = this.gridForMonitor(w.monitorId);
     if (!mg) return;
     this.windows.set(w.hwnd, { ...w });
-    this.placeWindow(mg, w);
+    this.placeAppeared(mg, w);
     this.flush();
     this.emitSnapshot();
   }
@@ -992,7 +1014,13 @@ export class WindowManagerBrain {
       hotkey: this.hotkey,
       autostart: this.autostart,
       paused: this.paused,
+      appRules: this.appRuleList(),
     };
+  }
+
+  /** Deep-copied rule list in insertion order (snapshot + export). */
+  private appRuleList(): AppRule[] {
+    return [...this.appRules.values()].map((r) => ({ ...r, slot: { ...r.slot } }));
   }
 
   /**
@@ -1063,6 +1091,42 @@ export class WindowManagerBrain {
     }
     this.flush(); // removals shift nothing (gravity 'none'); defensive only
     this.emitSnapshot();
+  }
+
+  /**
+   * Contract extension (spec v0.2 §2): save a per-app placement rule. The
+   * exe is normalized (trim, lowercase); `gridId: null` means any grid; the
+   * slot must be an integer rect at a non-negative origin, ≥1×1 — but it is
+   * NOT bounded to any grid's dims (it clamps into the target grid's
+   * current dims when it fires). One rule per (exe, gridId): saving again
+   * overwrites. Never moves any window — rules apply on `windowAppeared`
+   * only, so already-managed windows stay exactly where they are. Invalid
+   * input and an identical existing rule are silent no-ops (no snapshot).
+   */
+  setAppRule(rule: AppRule): void {
+    const exe = rule.exe.trim().toLowerCase();
+    if (exe.length === 0) return;
+    if (rule.gridId !== null && rule.gridId.length === 0) return;
+    const { col, row, w, h } = rule.slot;
+    if (![col, row, w, h].every((n) => Number.isInteger(n))) return;
+    if (col < 0 || row < 0 || w < 1 || h < 1) return;
+    const slot: Slot = { col, row, w, h };
+    const key = appRuleKey(exe, rule.gridId);
+    const prev = this.appRules.get(key);
+    if (prev && sameSlot(prev.slot, slot)) return;
+    this.appRules.set(key, { exe, gridId: rule.gridId, slot });
+    this.emitSnapshot();
+  }
+
+  /**
+   * Contract extension (spec v0.2 §2): remove the rule stored for exactly
+   * this (exe, gridId) scope. Returns whether one existed; a miss emits no
+   * snapshot. Never moves any window.
+   */
+  removeAppRule(exe: string, gridId: string | null): boolean {
+    const removed = this.appRules.delete(appRuleKey(exe.trim().toLowerCase(), gridId));
+    if (removed) this.emitSnapshot();
+    return removed;
   }
 
   // ── internals ──────────────────────────────────────────────────────────
@@ -1537,6 +1601,86 @@ export class WindowManagerBrain {
   }
 
   /**
+   * Spec v0.2 §2 placement precedence for a genuinely new window — fires on
+   * `windowAppeared` only (restore-previous was already handled there):
+   * grid-specific app rule → any-grid app rule → active template's first
+   * empty slot → auto-place. A rule slot is clamped into the grid's current
+   * dims; overlay grids and non-resizable windows take it as an absolute
+   * tile (overlap allowed), an occupied slot in collision mode displaces
+   * (`addTileWithDisplacement` at the rule slot), and a slot that cannot
+   * take the tile (dead space, failed displacement) falls through to the
+   * next precedence level.
+   */
+  private placeAppeared(mg: ManagedGrid, w: WindowInfo): void {
+    const dims = this.dims(mg.settings);
+    const overlay = mg.settings.mode === 'overlay';
+    for (const rule of this.appRulesFor(w.exe, mg.settings.id)) {
+      const slot = clampSlot(rule.slot, dims.cols, dims.rows);
+      if (this.addAtSlot(mg, w.hwnd, slot, overlay, w)) {
+        this.touch(w.hwnd);
+        return;
+      }
+    }
+    const tplSlot = this.emptyTemplateSlot(mg);
+    if (tplSlot && this.addAtSlot(mg, w.hwnd, tplSlot, overlay, w)) {
+      this.touch(w.hwnd);
+      return;
+    }
+    this.placeWindow(mg, w);
+  }
+
+  /**
+   * Rules matching a window of `exe` appearing on `gridId`, in precedence
+   * order: the grid-specific rule first, the any-grid rule second (spec
+   * v0.2 §2 — grid-specific beats any-grid; a rule scoped to a *different*
+   * grid never matches).
+   */
+  private appRulesFor(exe: string, gridId: string): AppRule[] {
+    const out: AppRule[] = [];
+    const specific = this.appRules.get(appRuleKey(exe, gridId));
+    if (specific) out.push(specific);
+    const any = this.appRules.get(appRuleKey(exe, null));
+    if (any) out.push(any);
+    return out;
+  }
+
+  /**
+   * First empty slot of the grid's active template (spec §5.4), or null.
+   * Only consulted while the template's dims still match the grid's
+   * (applyTemplate keeps them in sync and reflow clears the reference; a
+   * stale config that disagrees is ignored). "Empty" means the slot
+   * intersects no existing tile — including absolute ones, which Griddle's
+   * `tilesIn` skips (docs/library-feedback.md) — and touches no dead-space
+   * cell of a spanning grid.
+   */
+  private emptyTemplateSlot(mg: ManagedGrid): Slot | null {
+    const id = mg.settings.activeTemplateId;
+    if (id === null) return null;
+    const tpl = this.templates.find((t) => t.id === id);
+    if (!tpl || tpl.cols !== mg.settings.cols || tpl.rows !== mg.settings.rows) {
+      return null;
+    }
+    for (const slot of tpl.slots) {
+      if (!this.usable(mg, slot)) continue;
+      if (!this.slotIntersectsTile(mg, slot)) return { ...slot };
+    }
+    return null;
+  }
+
+  /** Whether any tile of the grid (in-flow or absolute) overlaps `slot`. */
+  private slotIntersectsTile(mg: ManagedGrid, slot: Slot): boolean {
+    return mg.grid.tiles.some((t) => {
+      const s = tileSlotOf(t);
+      return (
+        s.col < slot.col + slot.w &&
+        slot.col < s.col + s.w &&
+        s.row < slot.row + slot.h &&
+        slot.row < s.row + s.h
+      );
+    });
+  }
+
+  /**
    * Place a window into a grid: absolute for non-resizable windows and for
    * overlay-mode grids (snapped in place, overlap allowed), else first-fit in
    * reading order, else displacement at the snapped slot. When even
@@ -1715,6 +1859,7 @@ export class WindowManagerBrain {
       tiles,
       floating,
       exclusions: [...this.exclusions],
+      appRules: this.appRuleList(),
       paused: this.paused,
     });
   }

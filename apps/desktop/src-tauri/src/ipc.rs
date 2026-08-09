@@ -82,6 +82,18 @@ pub struct GridSettings {
     pub padding: u32,
 }
 
+/// Per-app default placement (spec v0.2 §2). `exe` is the lowercase
+/// basename; `grid_id: None` means the rule matches any grid. One rule per
+/// (exe, gridId); the slot clamps into the target grid's current dims when
+/// the rule fires (on `window-appeared` only).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppRule {
+    pub exe: String,
+    pub grid_id: Option<String>,
+    pub slot: Slot,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Template {
@@ -169,6 +181,8 @@ pub struct StateSnapshot {
     pub floating: Vec<FloatingWindow>,
     /// Live exclusion list, lowercase exe names (Task 19 extension).
     pub exclusions: Vec<String>,
+    /// Live per-app placement rules (spec v0.2 §2 extension).
+    pub app_rules: Vec<AppRule>,
     pub paused: bool,
 }
 
@@ -187,6 +201,11 @@ pub struct AppConfig {
     pub hotkey: String,
     pub autostart: bool,
     pub paused: bool,
+    /// Per-app placement rules (spec v0.2 §2). Defaults to empty so every
+    /// v1 config written before the field existed keeps deserializing
+    /// (same migration pattern as `GridSettings::gap`/`padding`).
+    #[serde(default)]
+    pub app_rules: Vec<AppRule>,
 }
 
 /// Payload of the hwnd-only events (`window-destroyed`, `window-minimized`,

@@ -9,7 +9,7 @@
 // grid-enable time — a corrupt entry just means that grid starts empty.
 
 import { MAX_SPACING_PX } from './coords';
-import type { AppConfig, GridSettings, Slot, Template } from './types';
+import type { AppConfig, AppRule, GridSettings, Slot, Template } from './types';
 
 export const DEFAULT_HOTKEY = 'Ctrl+Super+G';
 
@@ -23,6 +23,7 @@ export function defaultConfig(): AppConfig {
     hotkey: DEFAULT_HOTKEY,
     autostart: false,
     paused: false,
+    appRules: [],
   };
 }
 
@@ -112,6 +113,33 @@ function sanitizeTemplate(raw: unknown): Template | null {
 }
 
 /**
+ * App-rule validation (spec v0.2 §2). The slot only needs to be a sane
+ * ≥1×1 integer rect at a non-negative origin — it is NOT bounded to any
+ * grid's dims here, because the rule clamps into the target grid's *current*
+ * dims when it fires. `gridId` must be null (any grid) or a non-empty
+ * string; anything else drops the rule.
+ */
+function sanitizeAppRule(raw: unknown): AppRule | null {
+  if (!isRecord(raw)) return null;
+  if (typeof raw.exe !== 'string') return null;
+  const exe = raw.exe.trim().toLowerCase();
+  if (exe.length === 0) return null;
+  let gridId: string | null;
+  if (raw.gridId === null || raw.gridId === undefined) {
+    gridId = null;
+  } else if (isNonEmptyString(raw.gridId)) {
+    gridId = raw.gridId;
+  } else {
+    return null;
+  }
+  if (!isRecord(raw.slot)) return null;
+  const { col, row, w, h } = raw.slot;
+  if (!isInt(col) || !isInt(row) || !isInt(w) || !isInt(h)) return null;
+  if (col < 0 || row < 0 || w < 1 || h < 1) return null;
+  return { exe, gridId, slot: { col, row, w, h } };
+}
+
+/**
  * Structural validation of a parsed config value. Returns `null` when the
  * value is not an AppConfig at all (not an object / unsupported version);
  * otherwise returns a config with every invalid grid/template/exclusion
@@ -153,6 +181,23 @@ export function sanitizeConfig(raw: unknown): AppConfig | null {
     }
   }
 
+  // One rule per (exe, gridId): duplicates keep the first, like grids and
+  // templates. The field stays absent when the raw config had none (v1
+  // migration defaulting, same convention as gap/padding).
+  let appRules: AppRule[] | undefined;
+  if (Array.isArray(raw.appRules)) {
+    appRules = [];
+    const ruleKeys = new Set<string>();
+    for (const r of raw.appRules) {
+      const rule = sanitizeAppRule(r);
+      if (rule === null) continue;
+      const key = `${rule.exe}\n${rule.gridId ?? ''}`;
+      if (ruleKeys.has(key)) continue;
+      ruleKeys.add(key);
+      appRules.push(rule);
+    }
+  }
+
   return {
     version: 1,
     grids,
@@ -164,6 +209,7 @@ export function sanitizeConfig(raw: unknown): AppConfig | null {
     hotkey: isNonEmptyString(raw.hotkey) ? raw.hotkey : DEFAULT_HOTKEY,
     autostart: raw.autostart === true,
     paused: raw.paused === true,
+    ...(appRules !== undefined ? { appRules } : {}),
   };
 }
 
