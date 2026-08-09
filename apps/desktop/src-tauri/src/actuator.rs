@@ -309,6 +309,17 @@ mod win {
         for &(key, target) in targets {
             let hwnd = HWND(key as *mut c_void);
             let verified = crate::tracker::verify_for_actuation(key);
+            // A minimized window must never be repositioned — DeferWindowPos
+            // on an iconic window corrupts the placement it restores to (the
+            // classic tiling-WM embarrassment). The brain releases minimized
+            // windows' tiles, so a move for one is always a race (minimize
+            // between layout computation and apply, or a stale post-pause
+            // layout): skip it; the minimize event or the resume
+            // reconciliation releases the tile.
+            if verified && unsafe { IsIconic(hwnd) }.as_bool() {
+                log::info!("apply_layout: hwnd {key} is minimized, skipping");
+                continue;
+            }
             // A maximized window must never be repositioned in place — it
             // would stay "maximized" by state while arbitrarily sized. The
             // brain releases maximized windows' tiles, so this only fires on
@@ -416,8 +427,12 @@ mod win {
                 Ok(()) => applied += 1,
                 Err(e) => {
                     if unsafe { IsWindow(Some(p.hwnd)) }.as_bool() {
-                        // Alive but unmovable (e.g. became elevated): skip;
-                        // the brain keeps the tile and a later sweep resyncs.
+                        // Alive but unmovable (e.g. became elevated): skip.
+                        // The brain keeps the tile and believes the move
+                        // landed, so tile and window diverge until the next
+                        // user interaction with that window re-snaps it —
+                        // the same accepted drift as external app moves
+                        // (docs/deferred.md, "external move/resize drift").
                         log::error!("SetWindowPos failed for live hwnd {}: {e}", p.key);
                     } else {
                         log::info!("apply_layout: hwnd {} died mid-apply, untracking", p.key);
@@ -784,6 +799,55 @@ mod win_tests {
             !crate::tracker::is_tracked(key),
             "dead handle removed from the live set"
         );
+    }
+
+    /// Critique fix (pause-resume reconciliation): a minimized (iconic)
+    /// window must never be repositioned — `DeferWindowPos` on an iconic
+    /// window corrupts the placement it restores to. The brain releases
+    /// minimized windows' tiles, so a move for one is always a race
+    /// (minimize between layout computation and apply, or a stale
+    /// post-pause layout); the guard skips it entirely.
+    #[test]
+    fn minimized_window_is_skipped_not_moved() {
+        use windows::Win32::UI::WindowsAndMessaging::{
+            IsIconic, ShowWindow, SW_MINIMIZE, SW_RESTORE,
+        };
+        let _guard = crate::tracker::live_set_test_lock()
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        let hwnd = create_test_window();
+        let key = track(hwnd);
+        unsafe {
+            let _ = ShowWindow(hwnd, SW_MINIMIZE);
+        }
+        assert!(unsafe { IsIconic(hwnd) }.as_bool(), "test window minimized");
+
+        let target = Rect {
+            x: 150,
+            y: 120,
+            width: 400,
+            height: 300,
+        };
+        let mut destroyed = Vec::new();
+        let applied = apply_validated(&one_move(key, target), &mut |k| destroyed.push(k));
+        assert_eq!(applied, 0, "iconic window is skipped, never moved");
+        assert!(destroyed.is_empty(), "alive window is not reported destroyed");
+        assert!(unsafe { IsIconic(hwnd) }.as_bool(), "window stays minimized");
+        assert!(
+            !matches_expected(key, &target),
+            "no expected rect recorded for a skipped window"
+        );
+        assert!(crate::tracker::is_tracked(key), "window stays tracked");
+
+        // After a restore the same layout applies normally again.
+        unsafe {
+            let _ = ShowWindow(hwnd, SW_RESTORE);
+        }
+        let applied = apply_validated(&one_move(key, target), &mut |k| destroyed.push(k));
+        assert_eq!(applied, 1, "restored window moves again");
+
+        let _ = crate::tracker::untrack(key);
+        unsafe { DestroyWindow(hwnd).expect("DestroyWindow") };
     }
 
     #[test]
