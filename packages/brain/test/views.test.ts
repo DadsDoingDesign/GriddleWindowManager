@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { CLAIM_WINDOW_MS, WindowManagerBrain } from '../src/brain';
-import { cellRect } from '../src/coords';
+import { cellRect, MAX_SPACING_PX } from '../src/coords';
 import { defaultConfig, parseConfig, sanitizeConfig, serializeConfig } from '../src/persist';
 import type {
   AppConfig,
@@ -559,6 +559,236 @@ describe('AppConfig v2 migration (spec v0.2 §4)', () => {
     const out = b.brain.exportConfig();
     expect(out.views).toEqual(cfg.views);
     expect(out.startupViewId).toBe('view:1');
+  });
+});
+
+// ── critique round: claims × the monitor-hotplug revive path ───────────────
+// The autostart scenario spec v0.2 §3 promises to support: at logon the
+// startup view's grid lives on a monitor the docking station enumerates a few
+// seconds later. `applyView` leaves that grid inert and registers its
+// assignments as claims; when `monitors-changed` fires, the revive sweep runs
+// through `enableGrid`, which must honour the claims instead of auto-placing.
+
+describe('pending claims × monitor hotplug', () => {
+  /** View on the MON2 grid, captured while MON2 was present. */
+  function viewOnMon2(): { cfg: AppConfig; viewId: string } {
+    const grid2 = makeGridSettings({ id: `grid:${MON2_ID}`, monitorIds: [MON2_ID] });
+    const a = harness(undefined, [makeMonitor(), makeMonitor2()]);
+    a.brain.enableGrid(grid2, [
+      makeWindow('1', { exe: 'claimed.exe', monitorId: MON2_ID, x: 1920, y: 0 }),
+    ]);
+    a.brain.moveTileFromEditor(grid2.id, '1', { col: 6, row: 2, w: 4, h: 3 });
+    const view = a.brain.captureView('Docked');
+    return {
+      cfg: parseConfig(serializeConfig(a.brain.exportConfig()))!,
+      viewId: view.id,
+    };
+  }
+
+  it('a monitor arriving inside the claim window honours the assignments', () => {
+    const { cfg, viewId } = viewOnMon2();
+    // Boot with the external monitor still absent: the grid stays inert and
+    // the assignment becomes a pending claim.
+    const b = harness(cfg, [makeMonitor()]);
+    expect(b.brain.applyView(viewId, [])).toBe(true);
+
+    // Dock: the monitor (and the app's window) show up together.
+    b.clock.t += 5_000;
+    b.brain.setMonitors(
+      [makeMonitor(), makeMonitor2()],
+      [makeWindow('90', { exe: 'claimed.exe', monitorId: MON2_ID, x: 1920, y: 0 })],
+    );
+
+    const slots = tileSlots(last(b.snapshots), `grid:${MON2_ID}`);
+    expect(slots.get('90')).toEqual({ col: 6, row: 2, w: 4, h: 3 });
+  });
+
+  it('after the claim window lapses the revive sweep auto-places again', () => {
+    const { cfg, viewId } = viewOnMon2();
+    const b = harness(cfg, [makeMonitor()]);
+    expect(b.brain.applyView(viewId, [])).toBe(true);
+
+    b.clock.t += CLAIM_WINDOW_MS;
+    b.brain.setMonitors(
+      [makeMonitor(), makeMonitor2()],
+      [
+        makeWindow('90', {
+          exe: 'claimed.exe',
+          monitorId: MON2_ID,
+          x: 1920,
+          y: 0,
+          width: 500,
+          height: 400,
+        }),
+      ],
+    );
+    // Auto-placed at the first free 3×2 instead of the view's 4×3 slot.
+    const slots = tileSlots(last(b.snapshots), `grid:${MON2_ID}`);
+    expect(slots.get('90')).toEqual({ col: 0, row: 0, w: 3, h: 2 });
+  });
+});
+
+// ── critique round: claims × pause ─────────────────────────────────────────
+
+describe('pending claims × pause', () => {
+  function claimedView(): { cfg: AppConfig; viewId: string } {
+    const a = harness();
+    a.brain.enableGrid(makeGridSettings(), [makeWindow('1', { exe: 'claimed.exe' })]);
+    a.brain.moveTileFromEditor(GRID_ID, '1', { col: 6, row: 2, w: 4, h: 3 });
+    const view = a.brain.captureView('Work');
+    return {
+      cfg: parseConfig(serializeConfig(a.brain.exportConfig()))!,
+      viewId: view.id,
+    };
+  }
+
+  it('a pause longer than the claim window does not consume it', () => {
+    // Boot paused (a persisted pause survives restarts), apply the startup
+    // view, resume after more than two minutes: the claims are still live,
+    // because pause suppressed every window-appeared that could take them.
+    const { cfg, viewId } = claimedView();
+    const b = harness({ ...cfg, paused: true });
+    expect(b.brain.applyView(viewId, [])).toBe(true);
+
+    b.clock.t += 5 * CLAIM_WINDOW_MS;
+    b.brain.setShellPrefs({ paused: false });
+    b.brain.windowAppeared(makeWindow('50', { exe: 'claimed.exe' }));
+    expect(tileSlots(last(b.snapshots)).get('50')).toEqual({
+      col: 6,
+      row: 2,
+      w: 4,
+      h: 3,
+    });
+  });
+
+  it('the frozen window still lapses on the running clock after the resume', () => {
+    const { cfg, viewId } = claimedView();
+    const b = harness({ ...cfg, paused: true });
+    expect(b.brain.applyView(viewId, [])).toBe(true);
+    b.clock.t += 5 * CLAIM_WINDOW_MS;
+    b.brain.setShellPrefs({ paused: false });
+
+    b.clock.t += CLAIM_WINDOW_MS;
+    b.brain.windowAppeared(makeWindow('50', { exe: 'claimed.exe' }));
+    // Lapsed: normal auto-placement, not the view's slot.
+    expect(tileSlots(last(b.snapshots)).get('50')).toEqual({
+      col: 0,
+      row: 0,
+      w: 3,
+      h: 2,
+    });
+  });
+
+  it('claims that lapsed before the pause began stay lapsed', () => {
+    const { cfg, viewId } = claimedView();
+    const b = harness(cfg);
+    expect(b.brain.applyView(viewId, [])).toBe(true);
+    b.clock.t += CLAIM_WINDOW_MS; // lapsed while running
+    b.brain.setShellPrefs({ paused: true });
+    b.clock.t += 10_000;
+    b.brain.setShellPrefs({ paused: false });
+    b.brain.windowAppeared(makeWindow('50', { exe: 'claimed.exe' }));
+    expect(tileSlots(last(b.snapshots)).get('50')).toEqual({
+      col: 0,
+      row: 0,
+      w: 3,
+      h: 2,
+    });
+  });
+});
+
+// ── critique round: constructor intake normalization ───────────────────────
+// The shipped read path is Rust serde straight into the constructor —
+// `sanitizeConfig` only runs in tests — so the brain must hold its own
+// invariants for a hand-edited but serde-valid config.
+
+describe('constructor intake normalization', () => {
+  it('lowercases app-rule exes so they can actually match tracker exes', () => {
+    const cfg: AppConfig = {
+      ...defaultConfig(),
+      appRules: [{ exe: '  Slack.EXE ', gridId: null, slot: { col: 4, row: 0, w: 2, h: 2 } }],
+    };
+    const { brain, snapshots } = harness(cfg);
+    expect(brain.exportConfig().appRules).toEqual([
+      { exe: 'slack.exe', gridId: null, slot: { col: 4, row: 0, w: 2, h: 2 } },
+    ]);
+    brain.enableGrid(makeGridSettings(), []);
+    brain.windowAppeared(makeWindow('1', { exe: 'slack.exe' }));
+    expect(tileSlots(last(snapshots)).get('1')).toEqual({
+      col: 4,
+      row: 0,
+      w: 2,
+      h: 2,
+    });
+  });
+
+  it('drops an app rule whose gridId is the empty string (any-grid collision)', () => {
+    const cfg: AppConfig = {
+      ...defaultConfig(),
+      appRules: [
+        { exe: 'a.exe', gridId: '', slot: { col: 1, row: 1, w: 1, h: 1 } },
+        { exe: 'b.exe', gridId: null, slot: { col: 2, row: 0, w: 1, h: 1 } },
+      ],
+    };
+    const { brain } = harness(cfg);
+    expect(brain.exportConfig().appRules).toEqual([
+      { exe: 'b.exe', gridId: null, slot: { col: 2, row: 0, w: 1, h: 1 } },
+    ]);
+  });
+
+  it('clamps out-of-range grid spacing instead of echoing it forever', () => {
+    const cfg: AppConfig = {
+      ...defaultConfig(),
+      grids: [makeGridSettings({ gap: 999, padding: -5 })],
+    };
+    const { brain, snapshots } = harness(cfg);
+    const stored = brain.exportConfig().grids[0]!;
+    expect(stored.gap).toBe(MAX_SPACING_PX);
+    expect(stored.padding).toBe(0);
+    expect(last(snapshots).grids[0]!.gap).toBe(MAX_SPACING_PX);
+  });
+
+  it('leaves absent spacing absent (a v1 config round-trips unchanged)', () => {
+    const cfg: AppConfig = { ...defaultConfig(), grids: [makeGridSettings()] };
+    const { brain } = harness(cfg);
+    const stored = brain.exportConfig().grids[0]!;
+    expect('gap' in stored).toBe(false);
+    expect('padding' in stored).toBe(false);
+  });
+
+  it('normalizes view-assignment exes and view grid spacing', () => {
+    const cfg: AppConfig = {
+      ...defaultConfig(),
+      views: [
+        {
+          id: 'view:1',
+          name: 'Hand-edited',
+          grids: [
+            {
+              settings: makeGridSettings({ gap: 999 }),
+              assignments: [
+                { exe: ' Code.EXE ', slot: { col: 6, row: 0, w: 3, h: 2 } },
+                { exe: '   ', slot: { col: 0, row: 0, w: 1, h: 1 } },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const { brain, snapshots } = harness(cfg);
+    const view = brain.exportConfig().views[0]!;
+    expect(view.grids[0]!.settings.gap).toBe(MAX_SPACING_PX);
+    expect(view.grids[0]!.assignments).toEqual([
+      { exe: 'code.exe', slot: { col: 6, row: 0, w: 3, h: 2 } },
+    ]);
+    // …and the normalized exe actually claims.
+    expect(brain.applyView('view:1', [makeWindow('9', { exe: 'code.exe' })])).toBe(true);
+    expect(tileSlots(last(snapshots)).get('9')).toEqual({
+      col: 6,
+      row: 0,
+      w: 3,
+      h: 2,
+    });
   });
 });
 

@@ -103,6 +103,10 @@ const DEFAULT_HOTKEY = 'Ctrl+Super+G';
  * matching an unclaimed exe assignment takes that slot, beating app rules;
  * afterwards (or once every claim is taken) normal rules resume. Expiry is
  * evaluated lazily against the injected clock — the brain runs no timers.
+ *
+ * The deadline is wall-clock with one exception: a pause freezes it
+ * (`setShellPrefs`), because pause suppresses the very events that consume
+ * claims.
  */
 export const CLAIM_WINDOW_MS = 120_000;
 
@@ -114,19 +118,70 @@ function appRuleKey(exe: string, gridId: string | null): string {
   return `${exe}\n${gridId ?? ''}`;
 }
 
-/** Deep copy of a view (constructor intake, snapshot/export output). */
-function copyView(v: View): View {
+/**
+ * Validate + normalize an app rule (spec v0.2 §2), shared by `setAppRule` and
+ * constructor intake. The exe is trimmed and lowercased (tracker exes are
+ * lowercase, so a raw "Slack.exe" would silently never match); `gridId` must
+ * be null (any grid) or a NON-EMPTY string — `''` would collide with the
+ * any-grid sentinel in `appRuleKey`. The slot must be an integer rect at a
+ * non-negative origin, ≥1×1, but is NOT bounded to any grid's dims: it
+ * clamps into the target grid's current dims when it fires. Returns null for
+ * anything that fails.
+ */
+function normalizeAppRule(rule: AppRule): AppRule | null {
+  const exe = rule.exe.trim().toLowerCase();
+  if (exe.length === 0) return null;
+  if (rule.gridId !== null && rule.gridId.length === 0) return null;
+  const { col, row, w, h } = rule.slot;
+  if (![col, row, w, h].every((n) => Number.isInteger(n))) return null;
+  if (col < 0 || row < 0 || w < 1 || h < 1) return null;
+  return { exe, gridId: rule.gridId, slot: { col, row, w, h } };
+}
+
+/**
+ * Spacing hygiene for `GridSettings` entering the brain (constructor intake,
+ * `enableGrid`, view intake): a present gap/padding is clamped to an integer
+ * in 0..MAX_SPACING_PX; an absent one stays absent (absent means 0
+ * everywhere, and a v1 config must round-trip byte-identical).
+ *
+ * Why here and not only in persist.ts: the *shipped* read path is Rust serde
+ * (`config.rs::read_config`) straight into this constructor — `sanitizeConfig`
+ * only runs in tests. Rust's `u32` has no range check, so a hand-edited
+ * `gap: 999` would otherwise be echoed in every snapshot, shown by the
+ * settings stepper, and re-persisted forever even though the math clamps it
+ * at use. Normalizing at intake makes the invariant hold for both loaders.
+ */
+function normalizeGridSettings(g: GridSettings): GridSettings {
+  const out: GridSettings = { ...g, monitorIds: [...g.monitorIds] };
+  if (out.gap !== undefined) out.gap = clampSpacing(out.gap);
+  if (out.padding !== undefined) out.padding = clampSpacing(out.padding);
+  return out;
+}
+
+/**
+ * Deep copy of a view (snapshot/export output). `normalize` additionally
+ * applies constructor-intake hygiene: assignment exes are trimmed+lowercased
+ * (and empty ones dropped — they could never match a tracker exe) and grid
+ * spacing is clamped, for the same loader-independence reason as
+ * `normalizeGridSettings`.
+ */
+function copyView(v: View, normalize = false): View {
   return {
     id: v.id,
     name: v.name,
-    grids: v.grids.map(
-      (g): ViewGrid => ({
-        settings: { ...g.settings, monitorIds: [...g.settings.monitorIds] },
-        assignments: g.assignments.map(
-          (a): ViewAssignment => ({ exe: a.exe, slot: { ...a.slot } }),
-        ),
-      }),
-    ),
+    grids: v.grids.map((g): ViewGrid => {
+      const settings = normalize
+        ? normalizeGridSettings(g.settings)
+        : { ...g.settings, monitorIds: [...g.settings.monitorIds] };
+      let assignments = g.assignments.map(
+        (a): ViewAssignment => ({
+          exe: normalize ? a.exe.trim().toLowerCase() : a.exe,
+          slot: { ...a.slot },
+        }),
+      );
+      if (normalize) assignments = assignments.filter((a) => a.exe.length > 0);
+      return { settings, assignments };
+    }),
   };
 }
 
@@ -217,6 +272,15 @@ export class WindowManagerBrain {
   private pendingClaims: PendingClaim[] = [];
   /** now()-timestamp at which the pending claims lapse. */
   private claimsDeadline = 0;
+  /**
+   * now() when the current pause began, or null while running. The claim
+   * deadline is wall-clock, but pause suppresses every `window-appeared` at
+   * the tracker — so a pause spanning the window would silently consume it
+   * (boot with a startup view while paused, resume two minutes later, and
+   * the view would never claim anything). Resuming adds the paused span back
+   * to `claimsDeadline`; see `setShellPrefs`.
+   */
+  private pausedSince: number | null = null;
   /** Injected clock (tests pass a fake; the host uses Date.now). */
   private readonly now: () => number;
   /** Layout snapshots for grids that are not live (from config / disable). */
@@ -234,17 +298,27 @@ export class WindowManagerBrain {
     this.hotkey = cfg?.hotkey ?? DEFAULT_HOTKEY;
     this.autostart = cfg?.autostart ?? false;
     this.paused = cfg?.paused ?? false;
-    for (const r of cfg?.appRules ?? []) {
-      this.appRules.set(appRuleKey(r.exe, r.gridId), { ...r, slot: { ...r.slot } });
+    // A pause that survived a restart (config `paused: true`) is already
+    // running when the constructor returns — start its clock here so the
+    // startup view's claim window is not eaten by it.
+    this.pausedSince = this.paused ? this.now() : null;
+    // Constructor intake runs the same validation `setAppRule` does: the
+    // shipped read path is Rust serde, which accepts anything serde-valid
+    // (a "Slack.exe" that could never match, a `gridId: ""` colliding with
+    // the any-grid sentinel), so the brain's own invariants must not depend
+    // on which loader fed it.
+    for (const raw of cfg?.appRules ?? []) {
+      const rule = normalizeAppRule(raw);
+      if (rule) this.appRules.set(appRuleKey(rule.exe, rule.gridId), rule);
     }
-    this.views = (cfg?.views ?? []).map(copyView);
+    this.views = (cfg?.views ?? []).map((v) => copyView(v, true));
     // A dangling startup id (sanitizeConfig already resets it, but the
     // constructor is not only fed sanitized configs) reads as "none".
     const startup = cfg?.startupViewId ?? null;
     this.startupViewId =
       startup !== null && this.views.some((v) => v.id === startup) ? startup : null;
     for (const g of cfg?.grids ?? []) {
-      this.gridSettings.set(g.id, { ...g });
+      this.gridSettings.set(g.id, normalizeGridSettings(g));
     }
   }
 
@@ -274,11 +348,15 @@ export class WindowManagerBrain {
       this.enableGrid(settings, windows);
     }
 
-    // Monitor geometry defines a spanning grid's dead space — recompute it.
+    // Monitor geometry defines a spanning grid's dead space — recompute it,
+    // then rescue any tile the new dead cells swallowed (a taskbar appearing
+    // on a member, or a resolution change, can turn a live cell into seam).
     for (const mg of this.grids.values()) {
       if (mg.settings.monitorIds.length <= 1) continue;
       const mon = this.monitorFor(mg.settings);
-      if (mon) mg.unusable = this.unusableFor(mg.settings, mon);
+      if (!mon) continue;
+      mg.unusable = this.unusableFor(mg.settings, mon);
+      this.repairDeadSpace(mg);
     }
     this.flush();
     this.emitSnapshot();
@@ -749,7 +827,7 @@ export class WindowManagerBrain {
 
   enableGrid(g: GridSettings, windows: WindowInfo[]): void {
     if (this.grids.has(g.id)) this.teardownGrid(g.id);
-    const settings: GridSettings = { ...g, enabled: true, monitorIds: [...g.monitorIds] };
+    const settings: GridSettings = { ...normalizeGridSettings(g), enabled: true };
     this.gridSettings.set(g.id, settings);
 
     // One live grid per monitor: enabling a grid (spanning or per-monitor)
@@ -789,6 +867,15 @@ export class WindowManagerBrain {
       if (this.exclusions.has(w.exe)) continue;
       if (this.tileGrid.has(w.hwnd) || this.floating.has(w.hwnd)) continue;
       this.windows.set(w.hwnd, { ...w });
+      // Pending view claims beat auto-placement here exactly as they do in
+      // `windowAppeared` (spec v0.2 §3). This sweep is also the monitor-
+      // hotplug revive path (`setMonitors`), which is precisely how a startup
+      // view meets a monitor that enumerates seconds after logon (docking
+      // station / DP link training): without this the revive would auto-place
+      // every swept window and the view's assignments would be silently
+      // ignored. Windows whose slot the stored layout already restored keep
+      // it — restore-previous outranks every rule (spec v0.2 §2).
+      if (this.claimWindow(w)) continue;
       this.placeWindow(mg, w);
     }
     this.flush();
@@ -903,10 +990,14 @@ export class WindowManagerBrain {
 
   /**
    * Contract §C3 extension (spec v0.2 §1): change a grid's gap/padding.
-   * Values are clamped to integers in 0..MAX_SPACING_PX. Cell assignments
-   * never change — only their pixel projection does — so the live grid
-   * re-applies every tile in one batch (flush diffs desired rects). Also
-   * works on a disabled grid: the remembered settings update and persist.
+   * Values are clamped to integers in 0..MAX_SPACING_PX. On a single-monitor
+   * grid cell assignments never change — only their pixel projection does —
+   * so the live grid re-applies every tile in one batch (flush diffs desired
+   * rects). On a *spanning* grid the dead-space set is a function of the cell
+   * pixel rects, so spacing can move a cell wholly into the seam: the
+   * recomputed `unusable` set is followed by a repair sweep that re-places
+   * every tile it stranded (`repairDeadSpace`). Also works on a disabled
+   * grid: the remembered settings update and persist.
    */
   setSpacing(gridId: string, gap: number, padding: number): void {
     const settings = this.gridSettings.get(gridId);
@@ -924,10 +1015,13 @@ export class WindowManagerBrain {
       // math throughout a drag — abort any drag on this grid, like reflow.
       if (this.drag?.sourceGridId === gridId) this.cancelDrag();
       // Padding moves cell pixel rects, and pixel rects decide which cells
-      // of a spanning union are dead space — keep the set current.
+      // of a spanning union are dead space — keep the set current, then
+      // rescue any tile the new dead cells swallowed (an unrepaired tile
+      // would flush to a rect straddling no physical monitor).
       const mon = this.monitorFor(updated);
       if (mon && updated.monitorIds.length > 1) {
         mg.unusable = this.unusableFor(updated, mon);
+        this.repairDeadSpace(mg);
       }
       this.flush();
     }
@@ -1084,7 +1178,7 @@ export class WindowManagerBrain {
       autostart: this.autostart,
       paused: this.paused,
       appRules: this.appRuleList(),
-      views: this.views.map(copyView),
+      views: this.views.map((v) => copyView(v)),
       startupViewId: this.startupViewId,
     };
   }
@@ -1102,11 +1196,34 @@ export class WindowManagerBrain {
    * Rust reads back out of the persisted config (autostart registration,
    * hotkey re-bind). Only actual changes re-emit a snapshot; an empty hotkey
    * is ignored (the accelerator must stay non-empty per contract C1).
+   *
+   * Pause also freezes the view-claim window (spec v0.2 §3): the 120 s
+   * deadline is wall-clock, but pause suppresses every `window-appeared` at
+   * the tracker, so a pause spanning the window would consume it without a
+   * single claim ever getting a chance — the persisted-pause + startup-view
+   * boot is exactly that case. Resuming pushes the deadline out by the
+   * paused span instead.
    */
   setShellPrefs(prefs: { paused?: boolean; autostart?: boolean; hotkey?: string }): void {
     let changed = false;
     if (prefs.paused !== undefined && prefs.paused !== this.paused) {
       this.paused = prefs.paused;
+      if (this.paused) {
+        this.pausedSince = this.now();
+      } else {
+        // Claims are only ever consumed by `windowAppeared`, which the shell
+        // suppresses while paused — give the window back the paused span so a
+        // long pause cannot silently eat it. Claims that had already lapsed
+        // when the pause began stay lapsed.
+        if (
+          this.pausedSince !== null &&
+          this.pendingClaims.length > 0 &&
+          this.claimsDeadline > this.pausedSince
+        ) {
+          this.claimsDeadline += this.now() - this.pausedSince;
+        }
+        this.pausedSince = null;
+      }
       changed = true;
     }
     if (prefs.autostart !== undefined && prefs.autostart !== this.autostart) {
@@ -1175,17 +1292,12 @@ export class WindowManagerBrain {
    * input and an identical existing rule are silent no-ops (no snapshot).
    */
   setAppRule(rule: AppRule): void {
-    const exe = rule.exe.trim().toLowerCase();
-    if (exe.length === 0) return;
-    if (rule.gridId !== null && rule.gridId.length === 0) return;
-    const { col, row, w, h } = rule.slot;
-    if (![col, row, w, h].every((n) => Number.isInteger(n))) return;
-    if (col < 0 || row < 0 || w < 1 || h < 1) return;
-    const slot: Slot = { col, row, w, h };
-    const key = appRuleKey(exe, rule.gridId);
+    const normalized = normalizeAppRule(rule);
+    if (!normalized) return;
+    const key = appRuleKey(normalized.exe, normalized.gridId);
     const prev = this.appRules.get(key);
-    if (prev && sameSlot(prev.slot, slot)) return;
-    this.appRules.set(key, { exe, gridId: rule.gridId, slot });
+    if (prev && sameSlot(prev.slot, normalized.slot)) return;
+    this.appRules.set(key, normalized);
     this.emitSnapshot();
   }
 
@@ -1426,6 +1538,37 @@ export class WindowManagerBrain {
       this.tileGrid.delete(t.id);
       this.floating.set(t.id, gridId);
       this.appliedRects.delete(t.id);
+    }
+  }
+
+  /**
+   * Re-place every tile of `mg` whose slot is no longer usable, after the
+   * dead-space set was recomputed under it (spec v0.2 §1 × §5.7: a spanning
+   * grid's dead cells depend on `cellRect`, so a gap/padding change alone can
+   * move a cell into the seam). Most-recent-first so it wins contested cells,
+   * then the same fallback chain as `reflowGrid`: nearest usable slot →
+   * first-fit / displacement → floating. A no-op when nothing was stranded.
+   */
+  private repairDeadSpace(mg: ManagedGrid): void {
+    const stranded = mg.grid.tiles
+      .map((t) => ({ id: t.id, slot: tileSlotOf(t) }))
+      .filter((t) => !this.usable(mg, t.slot))
+      .sort((a, b) => this.recencyOf(b.id) - this.recencyOf(a.id));
+    if (stranded.length === 0) return;
+    if (this.drag && stranded.some((t) => t.id === this.drag?.hwnd)) this.cancelDrag();
+
+    for (const t of stranded) {
+      mg.grid.removeTile(t.id);
+      this.tileGrid.delete(t.id);
+      this.appliedRects.delete(t.id);
+    }
+    const overlay = mg.settings.mode === 'overlay';
+    for (const t of stranded) {
+      const info = this.windows.get(t.id);
+      const target = this.nearestUsable(mg, t.slot);
+      if (target && this.addAtSlot(mg, t.id, target, overlay, info)) continue;
+      if (info && this.placeWindow(mg, info)) continue;
+      this.floating.set(t.id, mg.settings.id);
     }
   }
 
@@ -2103,7 +2246,7 @@ export class WindowManagerBrain {
       floating,
       exclusions: [...this.exclusions],
       appRules: this.appRuleList(),
-      views: this.views.map(copyView),
+      views: this.views.map((v) => copyView(v)),
       startupViewId: this.startupViewId,
       paused: this.paused,
     });

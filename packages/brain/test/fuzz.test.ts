@@ -1,14 +1,19 @@
 // Fuzz gate (plan Task 7, spec §8; extended for spec v0.2 §5): a seeded PRNG
 // drives 1,000 random ops (appear/destroy/minimize/restore/drag/setMode/
-// reflow/applyTemplate/setSpacing) across two gridded monitors that carry
-// random gap/padding. After EVERY op the suite asserts:
-//   1. every rect ever emitted lies inside some monitor's *effective* work
-//      area (work area shrunk by that grid's current padding),
+// reflow/applyTemplate/setSpacing) across three grids that carry random
+// gap/padding — two per-monitor grids plus one *spanning* grid over an
+// L-shaped 2-monitor union, so the gap/padding math is exercised against
+// dead space too (a spanning grid's dead cells are derived from cell pixel
+// rects, so spacing moves them). After EVERY op the suite asserts:
+//   1. every rect ever emitted lies inside some grid's *effective* work area
+//      (work area — or union work area — shrunk by that grid's padding),
 //   2. collision grids have no overlapping in-flow tiles (walking
 //      grid.toJSON() via exportConfig), and every tile is in grid bounds,
 //   2b. rect-level (spec v0.2 §5): the px rects of a collision grid's
 //       in-flow tiles never overlap and stay inside the effective area —
 //       the cell-level check alone can't see gap/padding math errors,
+//   2c. every tile of a spanning grid sits on a slot the brain itself calls
+//       usable (no tile stranded in dead space by a spacing change),
 //   3. no hwnd is tiled twice, and floating ∩ tiled = ∅,
 //   4. nothing throws.
 // Any failure reports the seed (set FUZZ_SEED=<n> to reproduce a run).
@@ -16,6 +21,7 @@
 import { describe, expect, it } from 'vitest';
 import { WindowManagerBrain } from '../src/brain';
 import { cellRect, effectiveSpacing } from '../src/coords';
+import { spanGridId, unionWorkArea } from '../src/spanning';
 
 // packages/brain compiles with "types": [] to enforce its zero-DOM/zero-Node
 // constraint on src/. Tests DO run under Node (vitest), so declare the two
@@ -58,11 +64,54 @@ const MON2: MonitorInfo = {
   dpi: 144,
   primary: false,
 };
-const MONITORS = [MON1, MON2];
+// Third and fourth monitors, spanned by one grid over their L-shaped union:
+// MON3 is 1920×1032 of work area (taskbar at the bottom), MON4 is a shorter
+// 1280×720 panel to its right, so the union's bottom-right corner is dead
+// space no tile may ever occupy.
+const MON3: MonitorInfo = {
+  id: '\\\\.\\DISPLAY3@4480,0',
+  x: 4480,
+  y: 0,
+  width: 1920,
+  height: 1080,
+  workX: 4480,
+  workY: 0,
+  workWidth: 1920,
+  workHeight: 1032,
+  dpi: 96,
+  primary: false,
+};
+const MON4: MonitorInfo = {
+  id: '\\\\.\\DISPLAY4@6400,0',
+  x: 6400,
+  y: 0,
+  width: 1280,
+  height: 720,
+  workX: 6400,
+  workY: 0,
+  workWidth: 1280,
+  workHeight: 720,
+  dpi: 96,
+  primary: false,
+};
+const MONITORS = [MON1, MON2, MON3, MON4];
 const GRID1 = `grid:${MON1.id}`;
 const GRID2 = `grid:${MON2.id}`;
-const GRID_IDS = [GRID1, GRID2];
+const SPAN = spanGridId([MON3.id, MON4.id]);
+const GRID_IDS = [GRID1, GRID2, SPAN];
 const TEMPLATE_IDS = builtinTemplates().map((t) => t.id);
+
+/** The monitor a grid lays out against: itself, or the synthetic union. */
+function layoutMonitorFor(g: GridSettings): MonitorInfo | undefined {
+  const mons: MonitorInfo[] = [];
+  for (const id of g.monitorIds) {
+    const m = MONITORS.find((mon) => mon.id === id);
+    if (!m) return undefined;
+    mons.push(m);
+  }
+  if (mons.length === 0) return undefined;
+  return mons.length === 1 ? mons[0]! : unionWorkArea(mons);
+}
 
 /** Deterministic 32-bit PRNG (mulberry32). Returns floats in [0, 1). */
 function mulberry32(seed: number): () => number {
@@ -105,25 +154,37 @@ interface PxRect {
   height: number;
 }
 
-/**
- * The area a rect on `mon` must stay inside: the effective (padded) work
- * area of the enabled grid covering the monitor, or the raw work area when
- * no grid covers it.
- */
-function boundsFor(mon: MonitorInfo, grids: GridSettings[]): PxRect {
-  const g = grids.find(
-    (g) => g.enabled && g.monitorIds.length === 1 && g.monitorIds[0] === mon.id,
-  );
-  if (!g) {
-    return { x: mon.workX, y: mon.workY, width: mon.workWidth, height: mon.workHeight };
-  }
-  const eff = effectiveSpacing(mon, {
+/** The effective (padded) area a grid's rects must stay inside. */
+function boundsOfGrid(g: GridSettings, layoutMon: MonitorInfo): PxRect {
+  const eff = effectiveSpacing(layoutMon, {
     cols: g.cols,
     rows: g.rows,
     gap: g.gap,
     padding: g.padding,
   });
   return { x: eff.x, y: eff.y, width: eff.width, height: eff.height };
+}
+
+/**
+ * Every area an emitted rect may lie in: each enabled grid's effective area
+ * (per-monitor or spanning), plus the raw work area of monitors no enabled
+ * grid covers.
+ */
+function allowedBounds(grids: GridSettings[]): PxRect[] {
+  const out: PxRect[] = [];
+  const covered = new Set<string>();
+  for (const g of grids) {
+    if (!g.enabled) continue;
+    const layoutMon = layoutMonitorFor(g);
+    if (!layoutMon) continue;
+    out.push(boundsOfGrid(g, layoutMon));
+    for (const id of g.monitorIds) covered.add(id);
+  }
+  for (const m of MONITORS) {
+    if (covered.has(m.id)) continue;
+    out.push({ x: m.workX, y: m.workY, width: m.workWidth, height: m.workHeight });
+  }
+  return out;
 }
 
 function rectInside(r: PxRect, b: PxRect): boolean {
@@ -152,7 +213,7 @@ function checkInvariants(
   snapshots: StateSnapshot[],
 ): void {
   const cfg = brain.exportConfig();
-  const bounds = MONITORS.map((mon) => boundsFor(mon, cfg.grids));
+  const bounds = allowedBounds(cfg.grids);
 
   // 1. every emitted rect in bounds of some monitor's effective work area
   // (settings changes flush in the same op, so `cfg` matches the emit)
@@ -220,16 +281,30 @@ function checkInvariants(
       }
     }
 
+    // 2c. spanning grids: no tile may sit on a slot the brain itself calls
+    // unusable. Spacing changes move the dead-space set, so a tile can only
+    // stay legal if setSpacing/setMonitors re-place what they stranded.
+    if (g.monitorIds.length > 1) {
+      for (const t of snap.tiles) {
+        const s = slotOfRaw(t);
+        if (!brain.slotUsable(g.id, s)) {
+          throw new Error(
+            `tile ${t.id} sits on dead space of ${g.id} ` +
+              `(gap=${g.gap ?? 0} pad=${g.padding ?? 0}): ${JSON.stringify(s)}`,
+          );
+        }
+      }
+    }
+
     // 2b. rect-level (spec v0.2 §5): now that gaps exist, project every
     // in-flow tile to its px rect and require it inside the effective area
     // — and, in collision mode, pairwise disjoint. Cell-level disjointness
-    // alone cannot catch gap/padding math errors.
-    const gridMon = MONITORS.find(
-      (m) => g.monitorIds.length === 1 && g.monitorIds[0] === m.id,
-    );
+    // alone cannot catch gap/padding math errors. Spanning grids project
+    // against their synthetic union monitor.
+    const gridMon = layoutMonitorFor(g);
     if (gridMon) {
       const dims = { cols, rows, gap: g.gap, padding: g.padding };
-      const eff = boundsFor(gridMon, [g]);
+      const eff = boundsOfGrid(g, gridMon);
       const pxRects = inFlow.map((t) => ({ id: t.id, rect: cellRect(gridMon, dims, t) }));
       for (const { id, rect } of pxRects) {
         if (!rectInside(rect, eff)) {
@@ -305,8 +380,22 @@ function runFuzz(seed: number, opCount: number): void {
     gap: randInt(0, 64),
     padding: randInt(0, 64),
   };
+  // Third grid: one span over MON3+MON4's L-shaped union (spec v0.2 §5 —
+  // random gap/padding must hold the dead-space invariants too).
+  const g3: GridSettings = {
+    id: SPAN,
+    monitorIds: [MON3.id, MON4.id],
+    cols: 8,
+    rows: 4,
+    mode: 'collision',
+    enabled: true,
+    activeTemplateId: null,
+    gap: randInt(0, 64),
+    padding: randInt(0, 64),
+  };
   brain.enableGrid(g1, []);
   brain.enableGrid(g2, []);
+  brain.enableGrid(g3, []);
 
   const wins = new Map<string, ModelWindow>();
   let hwndCounter = 0;

@@ -363,3 +363,163 @@ describe('spanning grid — persistence and topology changes', () => {
     assertAppliesCovered(h.applies);
   });
 });
+
+// ── dead-space repair (critique round, spec v0.2 §1 × §5.7) ────────────────
+// A spanning grid's dead cells are derived from cell *pixel* rects, so they
+// move when gap/padding changes or when a member monitor's work area does.
+// Both paths must re-place the tiles those newly dead cells swallowed —
+// otherwise flush() sends a window to a rect that lies on no physical screen.
+
+/**
+ * Three monitors in a row whose middle one is short and vertically centred:
+ * A 1920×1200 at the origin, B 1920×600 at (1920, 300), C 1920×1200 at
+ * (3840, 0). Union work area 5760×1200 at the origin, with dead space above
+ * and below B. On a 6×4 grid at padding 0 the cell (col 1, row 0) sits
+ * entirely inside A (x 960–1920, y 0–300); at padding 60 the columns
+ * contract toward the centre and it becomes x 1000–1940 — the 20 px that
+ * crosses into B's column is above B's top edge, i.e. dead.
+ */
+const TRI_A: MonitorInfo = {
+  id: '\\\\.\\DISPLAY1@0,0',
+  x: 0,
+  y: 0,
+  width: 1920,
+  height: 1200,
+  workX: 0,
+  workY: 0,
+  workWidth: 1920,
+  workHeight: 1200,
+  dpi: 96,
+  primary: true,
+};
+const TRI_B: MonitorInfo = {
+  id: '\\\\.\\DISPLAY2@1920,300',
+  x: 1920,
+  y: 300,
+  width: 1920,
+  height: 600,
+  workX: 1920,
+  workY: 300,
+  workWidth: 1920,
+  workHeight: 600,
+  dpi: 96,
+  primary: false,
+};
+const TRI_C: MonitorInfo = {
+  id: '\\\\.\\DISPLAY3@3840,0',
+  x: 3840,
+  y: 0,
+  width: 1920,
+  height: 1200,
+  workX: 3840,
+  workY: 0,
+  workWidth: 1920,
+  workHeight: 1200,
+  dpi: 96,
+  primary: false,
+};
+const TRI_ID = spanGridId([TRI_A.id, TRI_B.id, TRI_C.id]);
+
+function triSettings(overrides: Partial<GridSettings> = {}): GridSettings {
+  return {
+    id: TRI_ID,
+    monitorIds: [TRI_A.id, TRI_B.id, TRI_C.id],
+    cols: 6,
+    rows: 4,
+    mode: 'collision',
+    enabled: true,
+    activeTemplateId: null,
+    ...overrides,
+  };
+}
+
+function triHarness(mons: MonitorInfo[] = [TRI_A, TRI_B, TRI_C]): Harness {
+  const applies: ApplyLayout[] = [];
+  const snapshots: StateSnapshot[] = [];
+  const previews: PreviewState[] = [];
+  const brain = new WindowManagerBrain({
+    onApply: (l) => applies.push(l),
+    onPreview: (p) => previews.push(p),
+    onSnapshot: (s) => snapshots.push(s),
+  });
+  brain.setMonitors(mons);
+  return { brain, applies, snapshots, previews };
+}
+
+describe('spanning grid — spacing changes dead space', () => {
+  it('setSpacing re-places tiles its new dead cells swallowed', () => {
+    const h = triHarness();
+    h.brain.enableGrid(triSettings(), [makeWindow('1', { width: 960, height: 300 })]);
+    h.brain.moveTileFromEditor(TRI_ID, '1', { col: 1, row: 0, w: 1, h: 1 });
+    expect(slotOf(last(h.snapshots), '1', TRI_ID)).toEqual({
+      col: 1,
+      row: 0,
+      w: 1,
+      h: 1,
+    });
+    expect(h.brain.slotUsable(TRI_ID, { col: 1, row: 0, w: 1, h: 1 })).toBe(true);
+
+    h.brain.setSpacing(TRI_ID, 0, 60);
+
+    // The cell the tile sat on is dead now — and the tile is not on it.
+    expect(h.brain.slotUsable(TRI_ID, { col: 1, row: 0, w: 1, h: 1 })).toBe(false);
+    const slot = slotOf(last(h.snapshots), '1', TRI_ID);
+    expect(slot).not.toEqual({ col: 1, row: 0, w: 1, h: 1 });
+    expect(h.brain.slotUsable(TRI_ID, slot)).toBe(true);
+    // Every rect ever emitted still lands on a real screen.
+    for (const layout of h.applies) {
+      for (const m of layout.moves) {
+        expect(
+          rectCoveredByWorkAreas(
+            { x: m.x, y: m.y, width: m.width, height: m.height },
+            [TRI_A, TRI_B, TRI_C],
+          ),
+          `move ${m.hwnd} → ${m.x},${m.y} ${m.width}×${m.height} must be on-screen`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it('setSpacing leaves tiles on cells that stay usable', () => {
+    const h = triHarness();
+    h.brain.enableGrid(triSettings(), [makeWindow('1', { width: 960, height: 300 })]);
+    h.brain.moveTileFromEditor(TRI_ID, '1', { col: 0, row: 0, w: 1, h: 1 });
+    h.brain.setSpacing(TRI_ID, 0, 60);
+    expect(slotOf(last(h.snapshots), '1', TRI_ID)).toEqual({
+      col: 0,
+      row: 0,
+      w: 1,
+      h: 1,
+    });
+  });
+
+  it('setMonitors re-places tiles a shrinking member work area killed', () => {
+    // B loses 300 px of work area at its top (a taskbar appears there), so
+    // the union's dead space grows down over the cells of row 1.
+    const h = triHarness();
+    h.brain.enableGrid(triSettings(), [makeWindow('1', { width: 960, height: 300 })]);
+    h.brain.moveTileFromEditor(TRI_ID, '1', { col: 2, row: 1, w: 1, h: 1 });
+    expect(h.brain.slotUsable(TRI_ID, { col: 2, row: 1, w: 1, h: 1 })).toBe(true);
+
+    const shrunkB: MonitorInfo = { ...TRI_B, workY: 600, workHeight: 300 };
+    const before = h.applies.length;
+    h.brain.setMonitors([TRI_A, shrunkB, TRI_C]);
+
+    expect(h.brain.slotUsable(TRI_ID, { col: 2, row: 1, w: 1, h: 1 })).toBe(false);
+    const slot = slotOf(last(h.snapshots), '1', TRI_ID);
+    expect(h.brain.slotUsable(TRI_ID, slot)).toBe(true);
+    // Only rects emitted under the *new* topology are checked — the pre-change
+    // applies were correct against the monitors that existed then.
+    for (const layout of h.applies.slice(before)) {
+      for (const m of layout.moves) {
+        expect(
+          rectCoveredByWorkAreas(
+            { x: m.x, y: m.y, width: m.width, height: m.height },
+            [TRI_A, shrunkB, TRI_C],
+          ),
+          `move ${m.hwnd} → ${m.x},${m.y} ${m.width}×${m.height} must be on-screen`,
+        ).toBe(true);
+      }
+    }
+  });
+});
