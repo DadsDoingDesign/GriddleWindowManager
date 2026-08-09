@@ -101,20 +101,24 @@ pub fn write_config_to(dir: &Path, config: &AppConfig) -> io::Result<()> {
 
 /// Contract §C2: `read_config() -> AppConfig | null`. Also pushes the loaded
 /// exclusion list into the tracker so eligibility matches the config from the
-/// first snapshot on.
+/// first snapshot on, and converges shell state (initial pause seed, hotkey,
+/// autostart — plan Task 18) onto the loaded config.
 #[tauri::command]
-pub fn read_config() -> Option<AppConfig> {
+pub fn read_config(app: tauri::AppHandle) -> Option<AppConfig> {
     let dir = config_dir()?;
     let cfg = read_config_from(&dir)?;
     crate::tracker::set_exclusions(cfg.exclusions.clone());
+    crate::shell::sync_from_config(&app, &cfg);
     Some(cfg)
 }
 
 /// Contract §C2: `write_config(config: AppConfig)`. Keeps the tracker's
-/// exclusion list in sync with what is being persisted.
+/// exclusion list and the shell's hotkey/autostart registrations in sync
+/// with what is being persisted.
 #[tauri::command]
-pub fn write_config(config: AppConfig) -> Result<(), String> {
+pub fn write_config(app: tauri::AppHandle, config: AppConfig) -> Result<(), String> {
     crate::tracker::set_exclusions(config.exclusions.clone());
+    crate::shell::sync_from_config(&app, &config);
     let dir = config_dir().ok_or_else(|| "APPDATA is not set".to_string())?;
     write_config_to(&dir, &config).map_err(|e| {
         log::error!("write_config: {e}");

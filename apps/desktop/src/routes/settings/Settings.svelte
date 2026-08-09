@@ -7,6 +7,7 @@
   import { onDestroy, onMount } from 'svelte';
   import type { UnlistenFn } from '@tauri-apps/api/event';
   import {
+    DEFAULT_HOTKEY,
     unionWorkArea,
     type GridSettings,
     type MonitorInfo,
@@ -19,9 +20,12 @@
     emitSettingsReady,
     emitSettingsSetDims,
     emitSettingsSetMode,
+    emitSettingsSetPrefs,
     listMonitors,
     onMonitorsChanged,
     onStateSnapshot,
+    readConfig,
+    setPaused,
   } from '../../lib/ipc';
   import GridEditor from './GridEditor.svelte';
   import TemplateGallery from './TemplateGallery.svelte';
@@ -39,6 +43,13 @@
   /** Stepper values for the spanning grid about to be created. */
   let spanDraft = $state({ ...DEFAULT_DIMS });
 
+  // General card (plan Task 18): autostart + hotkey (paused lives in the
+  // snapshot). Initial values come from the persisted config; afterwards this
+  // window is the only writer, so local state stays truthful.
+  let autostart = $state(false);
+  let hotkeyDraft = $state(DEFAULT_HOTKEY);
+  let savedHotkey = $state(DEFAULT_HOTKEY);
+
   let unlisteners: UnlistenFn[] = [];
   onMount(async () => {
     unlisteners = await Promise.all([
@@ -46,6 +57,12 @@
       onMonitorsChanged((m) => (monitors = m)),
     ]);
     monitors = await listMonitors();
+    const cfg = await readConfig();
+    if (cfg) {
+      autostart = cfg.autostart;
+      hotkeyDraft = cfg.hotkey;
+      savedHotkey = cfg.hotkey;
+    }
     // Ask the brain to re-emit its latest snapshot for this fresh window.
     await emitSettingsReady();
   });
@@ -149,6 +166,29 @@
   const sortedMonitors = $derived(
     [...monitors].sort((a, b) => Number(b.primary) - Number(a.primary) || a.x - b.x),
   );
+
+  function togglePaused(paused: boolean): void {
+    // Rust owns the pause flag; the resulting `paused-changed` round-trips
+    // through the brain and lands back here via the snapshot.
+    void setPaused(paused);
+  }
+
+  function toggleAutostart(enabled: boolean): void {
+    autostart = enabled;
+    void emitSettingsSetPrefs({ autostart: enabled });
+  }
+
+  const hotkeyDirty = $derived(
+    hotkeyDraft.trim() !== '' && hotkeyDraft.trim() !== savedHotkey,
+  );
+
+  function applyHotkey(): void {
+    const hotkey = hotkeyDraft.trim();
+    if (hotkey === '' || hotkey === savedHotkey) return;
+    savedHotkey = hotkey;
+    hotkeyDraft = hotkey;
+    void emitSettingsSetPrefs({ hotkey });
+  }
 </script>
 
 <div class="page">
@@ -448,6 +488,60 @@
     </section>
   {/if}
 
+  <section class="card">
+    <div class="card-head">
+      <div class="mon-info">
+        <h2>General</h2>
+        <p class="meta">Pause, startup and the settings hotkey.</p>
+      </div>
+    </div>
+    <div class="controls">
+      <label class="switch">
+        <input
+          type="checkbox"
+          checked={snapshot?.paused ?? false}
+          onchange={(e) => togglePaused(e.currentTarget.checked)}
+        />
+        <span class="track"><span class="thumb"></span></span>
+        <span class="switch-label wide">Pause window management</span>
+      </label>
+    </div>
+    <div class="controls">
+      <label class="switch">
+        <input
+          type="checkbox"
+          checked={autostart}
+          onchange={(e) => toggleAutostart(e.currentTarget.checked)}
+        />
+        <span class="track"><span class="thumb"></span></span>
+        <span class="switch-label wide">Start with Windows</span>
+      </label>
+    </div>
+    <div class="controls">
+      <label class="field">
+        <span class="lbl">Settings hotkey</span>
+        <input
+          class="hotkey-input"
+          type="text"
+          bind:value={hotkeyDraft}
+          placeholder={DEFAULT_HOTKEY}
+          spellcheck="false"
+          onkeydown={(e) => {
+            if (e.key === 'Enter') applyHotkey();
+          }}
+        />
+      </label>
+      <button class="primary" disabled={!hotkeyDirty} onclick={applyHotkey}>
+        Apply
+      </button>
+    </div>
+    <p class="hint">
+      Global shortcut that opens this window — e.g. Ctrl+Super+G (Super is the
+      Windows key). If the new combination cannot be registered, the previous
+      one stays active.
+    </p>
+  </section>
+
   {#if snapshot && snapshot.floating.length > 0}
     <section class="card">
       <h2>Floating windows</h2>
@@ -591,6 +685,33 @@
     font-size: 13px;
     color: var(--text);
     min-width: 52px;
+  }
+  .switch-label.wide {
+    min-width: 0;
+  }
+
+  .field {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .field .lbl {
+    font-size: 12.5px;
+    color: var(--text-dim);
+    white-space: nowrap;
+  }
+  .hotkey-input {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--well);
+    color: var(--text-strong);
+    font: 500 13px/1.2 var(--mono);
+    padding: 7px 10px;
+    width: 180px;
+  }
+  .hotkey-input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
   }
 
   .controls {

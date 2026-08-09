@@ -777,6 +777,36 @@ export class WindowManagerBrain {
     };
   }
 
+  /**
+   * Contract extension (Task 18): shell preferences. `paused` mirrors Rust's
+   * authoritative pause flag (the host feeds `paused-changed` events here so
+   * the state persists and the settings UI updates via the snapshot);
+   * `autostart` and `hotkey` are the settings-window General toggles, which
+   * Rust reads back out of the persisted config (autostart registration,
+   * hotkey re-bind). Only actual changes re-emit a snapshot; an empty hotkey
+   * is ignored (the accelerator must stay non-empty per contract C1).
+   */
+  setShellPrefs(prefs: { paused?: boolean; autostart?: boolean; hotkey?: string }): void {
+    let changed = false;
+    if (prefs.paused !== undefined && prefs.paused !== this.paused) {
+      this.paused = prefs.paused;
+      changed = true;
+    }
+    if (prefs.autostart !== undefined && prefs.autostart !== this.autostart) {
+      this.autostart = prefs.autostart;
+      changed = true;
+    }
+    if (
+      prefs.hotkey !== undefined &&
+      prefs.hotkey.length > 0 &&
+      prefs.hotkey !== this.hotkey
+    ) {
+      this.hotkey = prefs.hotkey;
+      changed = true;
+    }
+    if (changed) this.emitSnapshot();
+  }
+
   // ── internals ──────────────────────────────────────────────────────────
 
   /** Mark `hwnd` as the most recently interacted-with window. */

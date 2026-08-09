@@ -187,6 +187,13 @@ pub struct HwndPayload {
     pub hwnd: Hwnd,
 }
 
+/// Payload of the `tray-toggle-grid` event (contract §C2: `{monitorId}`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrayToggleGrid {
+    pub monitor_id: String,
+}
+
 /// Payload of the `movesize-end` event.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

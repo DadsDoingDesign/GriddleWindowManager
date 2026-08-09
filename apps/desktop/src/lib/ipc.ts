@@ -100,6 +100,18 @@ export interface SettingsDeleteTemplatePayload {
   templateId: string;
 }
 
+/**
+ * Payload of `settings-set-prefs` (settings → brain, plan Task 18): the
+ * General-card toggles. Routed to `setShellPrefs`; the persisted config then
+ * drives Rust's autostart registration and hotkey re-bind. Pause is absent
+ * here on purpose — its authority is the `set_paused` command, echoed back
+ * via `paused-changed`.
+ */
+export interface SettingsSetPrefsPayload {
+  hotkey?: string;
+  autostart?: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Commands (webview → Rust)
 // ---------------------------------------------------------------------------
@@ -142,6 +154,15 @@ export function focusWindow(hwnd: Hwnd): Promise<void> {
 
 export function showSettings(): Promise<void> {
   return invoke('show_settings');
+}
+
+/**
+ * Contract extension (plan Task 18): tell the tray which monitors currently
+ * have an enabled grid so its per-monitor check items reflect live state.
+ * The brain host calls this on every state snapshot.
+ */
+export function updateTray(enabledMonitorIds: string[]): Promise<void> {
+  return invoke('update_tray', { enabledMonitorIds });
 }
 
 // ---------------------------------------------------------------------------
@@ -332,4 +353,14 @@ export function onSettingsDeleteTemplate(
   cb: (p: SettingsDeleteTemplatePayload) => void,
 ): Promise<UnlistenFn> {
   return on('settings-delete-template', cb);
+}
+
+export function emitSettingsSetPrefs(p: SettingsSetPrefsPayload): Promise<void> {
+  return emit('settings-set-prefs', p);
+}
+
+export function onSettingsSetPrefs(
+  cb: (p: SettingsSetPrefsPayload) => void,
+): Promise<UnlistenFn> {
+  return on('settings-set-prefs', cb);
 }

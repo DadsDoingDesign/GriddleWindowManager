@@ -251,6 +251,11 @@ mod win {
     }
 
     fn emit_drag_pos(hwnd: isize, cursor: POINT, rect: Rect) {
+        // Plan Task 18: pause mid-drag silences the sampler immediately (the
+        // thread keeps ticking until movesize-end, but emits nothing).
+        if crate::shell::is_paused() {
+            return;
+        }
         let Some(app) = APP_HANDLE.get() else {
             return;
         };

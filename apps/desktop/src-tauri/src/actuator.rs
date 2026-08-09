@@ -149,6 +149,15 @@ fn validated_targets(layout: &ApplyLayout) -> Vec<(isize, Rect)> {
 /// actually repositioned. Factored out of the command so tests can drive it
 /// without an `AppHandle`.
 pub(crate) fn apply_validated(layout: &ApplyLayout, on_destroyed: &mut dyn FnMut(isize)) -> usize {
+    // Plan Task 18: pause short-circuits the actuator — no window moves at
+    // all while paused (spec §6 panic button).
+    if crate::shell::is_paused() {
+        log::debug!(
+            "apply_layout: paused, dropping {} move(s)",
+            layout.moves.len()
+        );
+        return 0;
+    }
     let targets = validated_targets(layout);
     if targets.is_empty() {
         return 0;
@@ -631,6 +640,45 @@ mod win_tests {
         // The move was recorded, so the tracker would suppress it.
         assert!(matches_expected(key, &frame_after));
         assert!(matches_expected(key, &target));
+
+        let _ = crate::tracker::untrack(key);
+        unsafe { DestroyWindow(hwnd).expect("DestroyWindow") };
+    }
+
+    /// Plan Task 18: pause short-circuits the actuator entirely.
+    #[test]
+    fn paused_actuator_moves_nothing_even_for_tracked_windows() {
+        // The live-set lock also serializes every test touching the
+        // process-global pause flag (see shell.rs tests).
+        let _guard = crate::tracker::live_set_test_lock()
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        let hwnd = create_test_window();
+        let key = track(hwnd);
+        let before = raw_rect(hwnd);
+        let target = Rect {
+            x: 300,
+            y: 200,
+            width: 480,
+            height: 360,
+        };
+
+        crate::shell::set_paused_flag(true);
+        let mut destroyed = Vec::new();
+        let applied = apply_validated(&one_move(key, target), &mut |k| destroyed.push(k));
+        crate::shell::set_paused_flag(false);
+
+        assert_eq!(applied, 0, "paused: nothing moves");
+        assert!(destroyed.is_empty());
+        assert_eq!(raw_rect(hwnd), before, "window must not have moved");
+        assert!(
+            !matches_expected(key, &target),
+            "no expected rect recorded while paused"
+        );
+
+        // Resume: the same layout applies normally again.
+        let applied = apply_validated(&one_move(key, target), &mut |k| destroyed.push(k));
+        assert_eq!(applied, 1, "resume restores actuation");
 
         let _ = crate::tracker::untrack(key);
         unsafe { DestroyWindow(hwnd).expect("DestroyWindow") };

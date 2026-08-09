@@ -526,6 +526,12 @@ mod win {
     }
 
     fn emit<T: serde::Serialize + Clone>(event: &str, payload: T) {
+        // Plan Task 18: pause short-circuits all tracker emission — the live
+        // eligible set keeps updating (the security rule stays truthful) but
+        // the brain hears nothing until resume.
+        if crate::shell::is_paused() {
+            return;
+        }
         let Some(app) = APP_HANDLE.get() else {
             return;
         };
@@ -604,6 +610,11 @@ mod win {
     }
 
     fn on_movesize_start(hwnd: HWND) {
+        // Plan Task 18: while paused a drag is just a drag — no event, and no
+        // drag-pos sampler either.
+        if crate::shell::is_paused() {
+            return;
+        }
         let key = hwnd.0 as isize;
         if is_tracked(key) {
             emit(

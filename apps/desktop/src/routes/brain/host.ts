@@ -34,16 +34,20 @@ import {
   onSettingsDisableGrid,
   onSettingsEnableGrid,
   onSettingsEnableSpan,
+  onPausedChanged,
   onSettingsMove,
   onSettingsReady,
   onSettingsSetDims,
   onSettingsSetMode,
+  onSettingsSetPrefs,
+  onTrayToggleGrid,
   onWindowAppeared,
   onWindowDestroyed,
   onWindowMinimized,
   onWindowRestored,
   readConfig,
   showOverlay,
+  updateTray,
   writeConfig,
 } from '../../lib/ipc';
 
@@ -143,6 +147,20 @@ export async function startBrainHost(): Promise<BrainHost> {
     }
   };
 
+  // -- Tray sync (plan Task 18) ----------------------------------------------
+  // The tray's per-monitor check items mirror which monitors are covered by
+  // an enabled grid; every snapshot pushes the truth into `update_tray`.
+  const enabledMonitorIdsOf = (grids: GridSettings[]): string[] => [
+    ...new Set(grids.filter((g) => g.enabled).flatMap((g) => g.monitorIds)),
+  ];
+
+  const pushTrayState = (grids?: GridSettings[]) => {
+    const source = grids ?? lastSnapshot?.grids ?? brain.exportConfig().grids;
+    updateTray(enabledMonitorIdsOf(source)).catch((e) =>
+      console.error('update_tray failed:', e),
+    );
+  };
+
   const brain = new WindowManagerBrain(
     {
       onApply(layout) {
@@ -155,6 +173,7 @@ export async function startBrainHost(): Promise<BrainHost> {
       onSnapshot(s) {
         lastSnapshot = s;
         emitStateSnapshot(s).catch((e) => console.error('state-snapshot emit failed:', e));
+        pushTrayState(s.grids);
         scheduleSave();
       },
     },
@@ -172,6 +191,9 @@ export async function startBrainHost(): Promise<BrainHost> {
       prewarmOverlays(g.monitorIds);
     }
   }
+  // Bring the tray in line with the restored config even when no grid is
+  // enabled (no snapshot fired above → stale checks would linger otherwise).
+  pushTrayState();
 
   /** Enable a collision grid on a monitor against a fresh window sweep. */
   const enableOnMonitor = async (monitorId?: string, cols = 12, rows = 6) => {
@@ -224,6 +246,23 @@ export async function startBrainHost(): Promise<BrainHost> {
     };
     brain.enableGrid(settings, await listWindows());
     prewarmOverlays(ids);
+  };
+
+  /**
+   * Tray toggle (plan Task 18): flip grid coverage for a monitor. A monitor
+   * covered by any enabled grid (per-monitor or spanning) gets that grid
+   * disabled; an uncovered one gets its per-monitor grid (re-)enabled with
+   * its remembered dims. Either path snapshots, which re-syncs the tray.
+   */
+  const toggleFromTray = async (monitorId: string) => {
+    const grids = brain.exportConfig().grids;
+    const covering = grids.find((g) => g.enabled && g.monitorIds.includes(monitorId));
+    if (covering) {
+      brain.disableGrid(covering.id);
+      return;
+    }
+    const remembered = grids.find((g) => g.id === `grid:${monitorId}`);
+    await enableOnMonitor(monitorId, remembered?.cols ?? 12, remembered?.rows ?? 6);
   };
 
   // Native events → brain, plus settings-window inputs (contract §C2).
@@ -283,6 +322,19 @@ export async function startBrainHost(): Promise<BrainHost> {
     }),
     onSettingsApplyTemplate((p) => brain.applyTemplate(p.gridId, p.templateId)),
     onSettingsDeleteTemplate((p) => brain.deleteTemplate(p.templateId)),
+    // Shell events (plan Task 18): Rust's authoritative pause flag is
+    // mirrored into the brain (persists + updates the settings UI via the
+    // snapshot); the settings General card sends autostart/hotkey prefs; the
+    // tray toggles grid coverage per monitor.
+    onPausedChanged((paused) => brain.setShellPrefs({ paused })),
+    onSettingsSetPrefs((p) => brain.setShellPrefs(p)),
+    onTrayToggleGrid((p) =>
+      toggleFromTray(p.monitorId).catch((e) => {
+        console.error('tray-toggle-grid failed:', e);
+        // The click optimistically flipped the check; put truth back.
+        pushTrayState();
+      }),
+    ),
   ]);
 
   const host: BrainHost = {

@@ -12,6 +12,30 @@ pub mod tracker;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Single-instance must be the first plugin so a second launch is
+        // caught before anything else initializes; it surfaces the existing
+        // instance's settings window instead (plan Task 18).
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            log::info!("second instance launch intercepted; opening settings");
+            if let Err(e) = shell::open_settings(app) {
+                log::error!("single-instance: failed to open settings: {e}");
+            }
+        }))
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _shortcut, event| {
+                    // Only one shortcut is ever registered (the settings
+                    // hotkey), so any event here is ours.
+                    if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                        shell::on_hotkey(app);
+                    }
+                })
+                .build(),
+        )
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -23,9 +47,10 @@ pub fn run() {
             monitors::start_display_watcher(app.handle().clone());
             drag_pump::init(app.handle().clone());
             tracker::start_tracker(app.handle().clone());
-            // Until Task 18 adds the tray + hotkey there is no UI trigger for
-            // the settings window, so open it on launch for now.
-            shell::open_settings(app.handle())?;
+            shell::init_tray(app.handle())?;
+            // Register the default hotkey now; read_config re-registers the
+            // user's binding as soon as the brain host loads the config.
+            shell::apply_hotkey(app.handle(), shell::DEFAULT_HOTKEY);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -39,6 +64,7 @@ pub fn run() {
             config::write_config,
             shell::set_paused,
             shell::show_settings,
+            shell::update_tray,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
