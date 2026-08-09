@@ -200,6 +200,19 @@ export function onSettingsReady(cb: () => void): Promise<UnlistenFn> {
   return on('settings-ready', () => cb());
 }
 
+/**
+ * Overlay webview announces itself once loaded; the brain re-emits its last
+ * snapshot so the overlay learns its grid's dims/monitors (plan Task 15
+ * contract extension).
+ */
+export function emitOverlayReady(): Promise<void> {
+  return emit('overlay-ready', {});
+}
+
+export function onOverlayReady(cb: () => void): Promise<UnlistenFn> {
+  return on('overlay-ready', () => cb());
+}
+
 export function emitSettingsEnableGrid(p: SettingsEnableGridPayload): Promise<void> {
   return emit('settings-enable-grid', p);
 }

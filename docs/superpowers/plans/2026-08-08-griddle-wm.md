@@ -92,9 +92,10 @@ Events Rust → webviews (payloads from C1):
 Events brain → overlays: `preview-state {PreviewState}` (overlays filter by their gridId).
 Events brain → settings: `state-snapshot {grids, templates, tiles: Record<gridId, Array<{hwnd, title, exe, slot: Slot}>>, paused}` (emitted on every state change).
 Events settings → brain (contract extension, Task 13): `settings-ready {}` (settings window loaded; brain re-emits its last `state-snapshot`) · `settings-move {gridId, hwnd, slot: Slot}` (editor tile drop → `moveTileFromEditor`) · `settings-enable-grid {monitorId, cols, rows}` (→ `enableGrid` with a fresh window sweep) · `settings-disable-grid {gridId}` (→ `disableGrid`) · `settings-set-dims {gridId, cols, rows}` (→ `reflowGrid`).
+Events overlay → brain (contract extension, Task 15): `overlay-ready {}` (overlay webview loaded; brain re-emits its last `state-snapshot` — overlays learn their grid's cols/rows/monitorIds from the broadcast `state-snapshot` and their geometry from `list_monitors`).
 
 Commands (webview → Rust), all `#[tauri::command]`:
-`list_windows() -> WindowInfo[]` · `list_monitors() -> MonitorInfo[]` · `apply_layout(layout: ApplyLayout)` · `show_overlay(monitor_id) / hide_overlay(monitor_id)` · `read_config() -> AppConfig | null` · `write_config(config: AppConfig)` · `set_paused(paused: bool)` · `focus_window(hwnd)` · `show_settings()` (contract extension, Task 13: create-or-focus the settings window; Task 18's tray/hotkey reuse it).
+`list_windows() -> WindowInfo[]` · `list_monitors() -> MonitorInfo[]` · `apply_layout(layout: ApplyLayout)` · `show_overlay(monitor_id) / hide_overlay(monitor_id)` (contract extension, Task 15: both create the overlay window on demand and re-position it to the monitor's current bounds — `hide_overlay` creates it *hidden*, which the brain host uses to pre-warm overlay webviews at startup/grid-enable so the first drag never waits on WebView2 spin-up) · `read_config() -> AppConfig | null` · `write_config(config: AppConfig)` · `set_paused(paused: bool)` · `focus_window(hwnd)` · `show_settings()` (contract extension, Task 13: create-or-focus the settings window; Task 18's tray/hotkey reuse it).
 
 **Security rule (spec §7):** `apply_layout` and `focus_window` must verify every hwnd against the tracker's live eligible set; unknown hwnds are skipped and logged.
 

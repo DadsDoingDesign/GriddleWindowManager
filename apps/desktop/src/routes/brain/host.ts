@@ -19,12 +19,14 @@ import {
   applyLayout,
   emitPreviewState,
   emitStateSnapshot,
+  hideOverlay,
   listMonitors,
   listWindows,
   onDragPos,
   onMonitorsChanged,
   onMoveSizeEnd,
   onMoveSizeStart,
+  onOverlayReady,
   onSettingsDisableGrid,
   onSettingsEnableGrid,
   onSettingsMove,
@@ -35,11 +37,19 @@ import {
   onWindowMinimized,
   onWindowRestored,
   readConfig,
+  showOverlay,
   writeConfig,
 } from '../../lib/ipc';
 
 /** How long after the last state change the config is persisted. */
 const SAVE_DEBOUNCE_MS = 500;
+
+/**
+ * Delay between the brain hiding a preview and the native overlay window
+ * being hidden — long enough for the overlay page's 120 ms opacity fade to
+ * finish, short enough to never be visible as lag.
+ */
+const OVERLAY_FADE_OUT_MS = 200;
 
 export interface BrainHost {
   brain: WindowManagerBrain;
@@ -78,6 +88,55 @@ export async function startBrainHost(): Promise<BrainHost> {
     saveTimer = setTimeout(() => void save(), SAVE_DEBOUNCE_MS);
   };
 
+  // -- Overlay lifecycle (plan Task 15) -------------------------------------
+  // The brain's preview events drive the native overlay windows: a visible
+  // preview shows the overlay(s) of the grid's monitor(s); a hidden preview
+  // hides them after the overlay page's fade-out has played.
+  const overlayHideTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  /** Monitors covered by a grid id, from the last snapshot or the id itself. */
+  const monitorIdsForGrid = (gridId: string): string[] => {
+    const fromSnapshot = lastSnapshot?.grids.find((g) => g.id === gridId)?.monitorIds;
+    if (fromSnapshot && fromSnapshot.length > 0) return fromSnapshot;
+    // Fallback: grid ids are `grid:<monitorId>` or `grid:span:<a+b>` (plan
+    // global constraints), so the monitors are recoverable from the id.
+    if (gridId.startsWith('grid:span:')) return gridId.slice('grid:span:'.length).split('+');
+    if (gridId.startsWith('grid:')) return [gridId.slice('grid:'.length)];
+    return [];
+  };
+
+  const syncOverlays = (gridId: string, visible: boolean) => {
+    for (const monitorId of monitorIdsForGrid(gridId)) {
+      const pending = overlayHideTimers.get(monitorId);
+      if (visible) {
+        if (pending !== undefined) {
+          clearTimeout(pending);
+          overlayHideTimers.delete(monitorId);
+        }
+        showOverlay(monitorId).catch((e) => console.error('show_overlay failed:', e));
+      } else if (pending === undefined) {
+        overlayHideTimers.set(
+          monitorId,
+          setTimeout(() => {
+            overlayHideTimers.delete(monitorId);
+            hideOverlay(monitorId).catch((e) => console.error('hide_overlay failed:', e));
+          }, OVERLAY_FADE_OUT_MS),
+        );
+      }
+    }
+  };
+
+  /**
+   * Create the overlay windows for these monitors hidden, so the first drag
+   * does not wait for WebView2 to spin up (`hide_overlay` pre-warm, C2
+   * Task 15 extension).
+   */
+  const prewarmOverlays = (monitorIds: string[]) => {
+    for (const monitorId of monitorIds) {
+      hideOverlay(monitorId).catch((e) => console.error('overlay pre-warm failed:', e));
+    }
+  };
+
   const brain = new WindowManagerBrain(
     {
       onApply(layout) {
@@ -85,6 +144,7 @@ export async function startBrainHost(): Promise<BrainHost> {
       },
       onPreview(p) {
         emitPreviewState(p).catch((e) => console.error('preview-state emit failed:', e));
+        syncOverlays(p.gridId, p.visible);
       },
       onSnapshot(s) {
         lastSnapshot = s;
@@ -101,7 +161,10 @@ export async function startBrainHost(): Promise<BrainHost> {
   brain.setMonitors(monitors);
   const windows = await listWindows();
   for (const g of cfg.grids) {
-    if (g.enabled) brain.enableGrid(g, windows);
+    if (g.enabled) {
+      brain.enableGrid(g, windows);
+      prewarmOverlays(g.monitorIds);
+    }
   }
 
   /** Enable a collision grid on a monitor against a fresh window sweep. */
@@ -125,6 +188,7 @@ export async function startBrainHost(): Promise<BrainHost> {
       activeTemplateId: null,
     };
     brain.enableGrid(settings, await listWindows());
+    prewarmOverlays(settings.monitorIds);
   };
 
   // Native events → brain, plus settings-window inputs (contract §C2).
@@ -143,6 +207,15 @@ export async function startBrainHost(): Promise<BrainHost> {
     onMonitorsChanged((mons) => brain.setMonitors(mons)),
     // Settings window → brain (plan Task 13).
     onSettingsReady(() => {
+      if (lastSnapshot) {
+        emitStateSnapshot(lastSnapshot).catch((e) =>
+          console.error('state-snapshot re-emit failed:', e),
+        );
+      }
+    }),
+    // Overlay webview → brain (plan Task 15): same re-emit, so a freshly
+    // created overlay learns its grid's dims without waiting for a change.
+    onOverlayReady(() => {
       if (lastSnapshot) {
         emitStateSnapshot(lastSnapshot).catch((e) =>
           console.error('state-snapshot re-emit failed:', e),
@@ -177,6 +250,8 @@ export async function startBrainHost(): Promise<BrainHost> {
     destroy() {
       destroyed = true;
       if (saveTimer !== null) clearTimeout(saveTimer);
+      for (const t of overlayHideTimers.values()) clearTimeout(t);
+      overlayHideTimers.clear();
       for (const u of unlisteners) u();
     },
   };
