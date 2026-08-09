@@ -159,6 +159,16 @@ pub fn exclusions() -> Vec<String> {
         .clone()
 }
 
+/// Actuation-time identity check (security review, "handle reuse"): does a
+/// fresh probe of a handle still denote the window we tracked? Windows
+/// recycles HWND values quickly, so a handle that died and was re-issued to
+/// another process between tracking and actuation must not be moved/focused.
+/// The owning exe is the stable identity we hold for a tracked window; a
+/// probe whose exe differs (or could not be queried) is a different window.
+pub fn probe_matches_tracked(tracked: &WindowInfo, probe: &WindowProbe) -> bool {
+    probe.exe.as_deref() == Some(tracked.exe.as_str())
+}
+
 /// Contract C2 security rule: is this hwnd in the live eligible set?
 /// Consulted by `apply_layout` / `focus_window` (Task 11).
 pub fn is_tracked(hwnd: isize) -> bool {
@@ -235,15 +245,21 @@ pub(crate) fn live_set_test_lock() -> &'static Mutex<()> {
 
 /// Contract §C2: `list_windows() -> WindowInfo[]`. Takes a fresh snapshot so
 /// callers always see the current desktop (and the live set is resynced).
+/// Callers: brain host + settings (security review: least privilege).
 #[tauri::command]
-pub fn list_windows() -> Vec<WindowInfo> {
+pub fn list_windows(window: tauri::Window) -> Vec<WindowInfo> {
+    if crate::guard::authorize("list_windows", window.label()).is_err() {
+        return Vec::new();
+    }
     snapshot()
 }
 
 #[cfg(windows)]
-pub use win::{is_eligible, resync, snapshot, start_tracker};
+pub use win::{is_eligible, resync, snapshot, start_tracker, verify_for_actuation};
 #[cfg(windows)]
 pub(crate) use win::extended_frame_bounds;
+#[cfg(all(test, windows))]
+pub(crate) use win::process_exe;
 
 #[cfg(not(windows))]
 pub fn snapshot() -> Vec<WindowInfo> {
@@ -255,6 +271,11 @@ pub fn start_tracker(_app: tauri::AppHandle) {}
 
 #[cfg(not(windows))]
 pub fn resync() {}
+
+#[cfg(not(windows))]
+pub fn verify_for_actuation(_hwnd: isize) -> bool {
+    false
+}
 
 #[cfg(windows)]
 mod win {
@@ -298,7 +319,7 @@ mod win {
 
     /// Lowercase exe basename for a pid, or `None` if the process cannot be
     /// queried (elevated beyond us, protected, or already gone).
-    pub(super) fn process_exe(pid: u32) -> Option<String> {
+    pub(crate) fn process_exe(pid: u32) -> Option<String> {
         if pid == 0 {
             return None;
         }
@@ -362,6 +383,35 @@ mod win {
             return false;
         };
         is_eligible_probe(&probe, unsafe { GetCurrentProcessId() }, &exclusions())
+    }
+
+    /// Security review ("handle reuse"): re-verify a tracked hwnd immediately
+    /// before the actuator moves or focuses it. `true` only when the handle
+    /// is still alive, its owning exe matches the tracked `WindowInfo`
+    /// ([`probe_matches_tracked`](super::probe_matches_tracked)) and it still
+    /// passes the structural eligibility bits (visible, top-level,
+    /// uncloaked, not a tool window, captioned, not excluded). This closes
+    /// both the destroy-vs-hook race (the DESTROY WinEvent is asynchronous)
+    /// and the recycled-handle case.
+    ///
+    /// The own-pid rule is applied with a sentinel pid rather than the real
+    /// one: our own windows can never enter the tracked set (the snapshot
+    /// and hook paths use the real pid, and our overlay windows also carry
+    /// `WS_EX_TOOLWINDOW`), the exe-identity match rejects a handle recycled
+    /// to one of our windows anyway, and the sentinel keeps this check
+    /// exercisable from in-process `CreateWindowExW` test windows.
+    pub fn verify_for_actuation(key: isize) -> bool {
+        /// No real Windows pid is ever `u32::MAX` (pids are multiples of 4).
+        const SENTINEL_OWN_PID: u32 = u32::MAX;
+        let Some(tracked) = super::tracked_window(key) else {
+            return false;
+        };
+        let hwnd = HWND(key as *mut c_void);
+        let Some(probe) = probe_window(hwnd) else {
+            return false;
+        };
+        is_eligible_probe(&probe, SENTINEL_OWN_PID, &exclusions())
+            && super::probe_matches_tracked(&tracked, &probe)
     }
 
     // -- WindowInfo construction --------------------------------------------
@@ -482,15 +532,21 @@ mod win {
     }
 
     unsafe extern "system" fn enum_windows_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        // Raw-pointer work stays outside the guard closure; the closure body
+        // is pure safe Rust whose panics must not unwind into EnumWindows
+        // (security review: FFI panic safety).
         let out = &mut *(lparam.0 as *mut Vec<WindowInfo>);
-        if let Some(probe) = probe_window(hwnd) {
-            if is_eligible_probe(&probe, GetCurrentProcessId(), &exclusions()) {
-                if let Some(info) = window_info(hwnd, &probe) {
-                    out.push(info);
+        let own_pid = GetCurrentProcessId();
+        crate::ffi_guard::guard("EnumWindows callback", BOOL(1), move || {
+            if let Some(probe) = probe_window(hwnd) {
+                if is_eligible_probe(&probe, own_pid, &exclusions()) {
+                    if let Some(info) = window_info(hwnd, &probe) {
+                        out.push(info);
+                    }
                 }
             }
-        }
-        BOOL(1) // keep enumerating
+            BOOL(1) // keep enumerating
+        })
     }
 
     // -- event pump ---------------------------------------------------------
@@ -578,7 +634,10 @@ mod win {
         if hwnd.is_invalid() || id_object != OBJID_WINDOW.0 || id_child != 0 {
             return;
         }
-        match event {
+        // The handlers call into allocating/third-party code (tauri emit);
+        // a panic there must not unwind into the WinEvent dispatcher
+        // (security review: FFI panic safety).
+        crate::ffi_guard::guard("WinEvent callback", (), || match event {
             EVENT_OBJECT_CREATE | EVENT_OBJECT_SHOW | EVENT_OBJECT_UNCLOAKED => {
                 on_appear_candidate(hwnd)
             }
@@ -588,7 +647,7 @@ mod win {
             EVENT_SYSTEM_MOVESIZESTART => on_movesize_start(hwnd),
             EVENT_SYSTEM_MOVESIZEEND => on_movesize_end(hwnd),
             _ => {}
-        }
+        })
     }
 
     fn emit<T: serde::Serialize + Clone>(event: &str, payload: T) {
@@ -860,10 +919,29 @@ mod tests {
         assert!(eligible(&probe(APP_STYLE | 0x2000_0000, 0)));
     }
 
+    // -- actuation-time identity (security review: handle reuse) --------------
+
+    #[test]
+    fn probe_matches_tracked_requires_the_same_exe() {
+        let tracked = fake_info(10); // exe "t.exe"
+        let mut p = probe(APP_STYLE, 0);
+        p.exe = Some("t.exe".into());
+        assert!(probe_matches_tracked(&tracked, &p));
+        p.exe = Some("notepad.exe".into());
+        assert!(!probe_matches_tracked(&tracked, &p), "different exe = different window");
+        p.exe = None;
+        assert!(!probe_matches_tracked(&tracked, &p), "unqueryable exe never matches");
+    }
+
     // -- exclusion-list state ------------------------------------------------
 
     #[test]
     fn set_exclusions_normalizes_to_lowercase_and_reports_changes() {
+        // The exclusion list is process-global and consulted by the
+        // actuation-time re-check; serialize with the tests that rely on it.
+        let _guard = live_set_test_lock()
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         assert!(set_exclusions(vec!["Slack.EXE".into(), "FIGMA.exe".into()]));
         assert_eq!(exclusions(), vec!["slack.exe", "figma.exe"]);
         // Same normalized content (case differences only) is not a change.
@@ -1046,6 +1124,33 @@ mod win_tests {
     #[test]
     fn process_exe_of_pid_zero_is_none() {
         assert!(process_exe(0).is_none());
+    }
+
+    /// Security review ("handle reuse"): the actuation-time re-check accepts
+    /// a live handle whose identity matches the tracked info and rejects
+    /// untracked or dead handles.
+    #[test]
+    fn verify_for_actuation_full_lifecycle() {
+        let _guard = live_set_test_lock()
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        let hwnd = create_test_window(WS_OVERLAPPEDWINDOW | WS_VISIBLE, Default::default());
+        let key = hwnd.0 as isize;
+
+        assert!(!verify_for_actuation(key), "untracked handle never verifies");
+
+        crate::test_windows::track_test_window(hwnd, "Griddle tracker test window");
+        assert!(verify_for_actuation(key), "live handle with matching exe verifies");
+
+        // Excluding the owning exe revokes actuation too (re-checked live).
+        let own_exe = process_exe(std::process::id()).unwrap();
+        assert!(set_exclusions(vec![own_exe]));
+        assert!(!verify_for_actuation(key), "excluded exe fails the re-check");
+        assert!(set_exclusions(Vec::new()));
+
+        unsafe { DestroyWindow(hwnd).expect("DestroyWindow") };
+        assert!(!verify_for_actuation(key), "dead handle never verifies");
+        let _ = untrack(key);
     }
 
     /// Snapshot against the live desktop: sane shapes, and the live set is

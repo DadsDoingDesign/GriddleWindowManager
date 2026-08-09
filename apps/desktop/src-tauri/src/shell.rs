@@ -85,9 +85,14 @@ pub fn set_paused_state(app: &AppHandle, paused: bool) {
     });
 }
 
-/// Contract §C2: `set_paused(paused: bool)`.
+/// Contract §C2: `set_paused(paused: bool)`. Callers: brain host + settings
+/// (security review: least privilege — an overlay webview must not be able
+/// to silently unpause/pause management).
 #[tauri::command]
-pub fn set_paused(app: AppHandle, paused: bool) {
+pub fn set_paused(app: AppHandle, window: tauri::Window, paused: bool) {
+    if crate::guard::authorize("set_paused", window.label()).is_err() {
+        return;
+    }
     set_paused_state(&app, paused);
 }
 
@@ -114,9 +119,11 @@ pub fn open_settings(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Contract §C2 (Task 13 extension): `show_settings()`.
+/// Contract §C2 (Task 13 extension): `show_settings()`. Callers: brain host
+/// + settings (security review: least privilege).
 #[tauri::command]
-pub fn show_settings(app: AppHandle) -> Result<(), String> {
+pub fn show_settings(app: AppHandle, window: tauri::Window) -> Result<(), String> {
+    crate::guard::authorize("show_settings", window.label())?;
     open_settings(&app).map_err(|e| e.to_string())
 }
 
@@ -318,9 +325,13 @@ fn sync_tray(app: &AppHandle, enabled_monitor_ids: &[String]) {
 
 /// Contract §C2 (Task 18 extension): `update_tray(enabledMonitorIds)` — the
 /// brain host calls this on every state snapshot so the tray reflects live
-/// grid state.
+/// grid state. Brain-host only (security review: least privilege — other
+/// webviews must not be able to spoof tray check state).
 #[tauri::command]
-pub fn update_tray(app: AppHandle, enabled_monitor_ids: Vec<String>) {
+pub fn update_tray(app: AppHandle, window: tauri::Window, enabled_monitor_ids: Vec<String>) {
+    if crate::guard::authorize("update_tray", window.label()).is_err() {
+        return;
+    }
     sync_tray(&app, &enabled_monitor_ids);
 }
 

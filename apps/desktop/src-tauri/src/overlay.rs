@@ -189,17 +189,29 @@ fn ensure_overlay(app: &AppHandle, monitor_id: &str) -> Result<WebviewWindow, St
 
 /// Contract §C2: `show_overlay(monitor_id)`. Async on purpose: creating a
 /// webview window inside a synchronous command deadlocks on Windows.
+/// Brain-host only (security review: least privilege).
 #[tauri::command]
-pub async fn show_overlay(app: AppHandle, monitor_id: String) -> Result<(), String> {
+pub async fn show_overlay(
+    app: AppHandle,
+    window: tauri::Window,
+    monitor_id: String,
+) -> Result<(), String> {
+    crate::guard::authorize("show_overlay", window.label())?;
     let win = ensure_overlay(&app, &monitor_id)?;
     win.show()
         .map_err(|e| format!("overlay show failed: {e}"))
 }
 
 /// Contract §C2: `hide_overlay(monitor_id)`. Creates the window hidden if it
-/// does not exist yet (pre-warm; see module docs).
+/// does not exist yet (pre-warm; see module docs). Brain-host only (security
+/// review: least privilege).
 #[tauri::command]
-pub async fn hide_overlay(app: AppHandle, monitor_id: String) -> Result<(), String> {
+pub async fn hide_overlay(
+    app: AppHandle,
+    window: tauri::Window,
+    monitor_id: String,
+) -> Result<(), String> {
+    crate::guard::authorize("hide_overlay", window.label())?;
     let win = ensure_overlay(&app, &monitor_id)?;
     win.hide()
         .map_err(|e| format!("overlay hide failed: {e}"))

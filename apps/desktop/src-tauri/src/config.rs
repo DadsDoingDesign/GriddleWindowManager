@@ -99,12 +99,32 @@ pub fn write_config_to(dir: &Path, config: &AppConfig) -> io::Result<()> {
     }
 }
 
+/// Security hardening (docs/security-review.md, "event spoofing between
+/// webviews"): re-stamp config fields whose authority lives in Rust before
+/// anything is persisted. Tauri events carry no source identity, so a forged
+/// `paused-changed` event could poison the brain's in-memory copy of
+/// `paused`; the live flag (`shell::is_paused`, flipped only by the
+/// `set_paused` command / tray) is the truth, and it is what reaches disk —
+/// so the next launch can never seed a pause state the user never chose.
+pub(crate) fn enforce_authoritative_fields(config: &mut AppConfig) {
+    let live = crate::shell::is_paused();
+    if config.paused != live {
+        log::warn!(
+            "write_config: overriding submitted paused={} with authoritative paused={live}",
+            config.paused
+        );
+        config.paused = live;
+    }
+}
+
 /// Contract §C2: `read_config() -> AppConfig | null`. Also pushes the loaded
 /// exclusion list into the tracker so eligibility matches the config from the
 /// first snapshot on, and converges shell state (initial pause seed, hotkey,
 /// autostart — plan Task 18) onto the loaded config.
+/// Callers: brain host + settings (security review: least privilege).
 #[tauri::command]
-pub fn read_config(app: tauri::AppHandle) -> Option<AppConfig> {
+pub fn read_config(app: tauri::AppHandle, window: tauri::Window) -> Option<AppConfig> {
+    crate::guard::authorize("read_config", window.label()).ok()?;
     let dir = config_dir()?;
     let cfg = read_config_from(&dir)?;
     // Task 19: an exclusion-list change re-sweeps the desktop so the live
@@ -119,9 +139,18 @@ pub fn read_config(app: tauri::AppHandle) -> Option<AppConfig> {
 
 /// Contract §C2: `write_config(config: AppConfig)`. Keeps the tracker's
 /// exclusion list and the shell's hotkey/autostart registrations in sync
-/// with what is being persisted.
+/// with what is being persisted. Only the brain host may persist (security
+/// review: least privilege), and Rust-owned fields are re-stamped from their
+/// live authority first ([`enforce_authoritative_fields`]).
 #[tauri::command]
-pub fn write_config(app: tauri::AppHandle, config: AppConfig) -> Result<(), String> {
+pub fn write_config(
+    app: tauri::AppHandle,
+    window: tauri::Window,
+    config: AppConfig,
+) -> Result<(), String> {
+    crate::guard::authorize("write_config", window.label())?;
+    let mut config = config;
+    enforce_authoritative_fields(&mut config);
     // Task 19: see read_config — exclusion edits take effect live.
     if crate::tracker::set_exclusions(config.exclusions.clone()) {
         crate::tracker::resync();
@@ -321,6 +350,40 @@ mod tests {
             "layout snapshot must round-trip untouched"
         );
         assert_eq!(read, cfg, "whole config survives death intact");
+    }
+
+    /// Security review regression: the persisted `paused` bit must come from
+    /// the live shell flag, not from whatever the webview submitted — a
+    /// forged `paused-changed` event can poison the brain's copy, but it
+    /// must never reach disk.
+    #[test]
+    fn write_persists_the_authoritative_pause_flag_not_the_submitted_one() {
+        // PAUSED is process-global; the live-set lock serializes every test
+        // touching it (see shell.rs / actuator.rs tests).
+        let _guard = crate::tracker::live_set_test_lock()
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+
+        // Poisoned webview copy says paused, authority says running.
+        crate::shell::set_paused_flag(false);
+        let mut cfg = sample_config();
+        cfg.paused = true;
+        enforce_authoritative_fields(&mut cfg);
+        assert!(!cfg.paused, "submitted paused=true must be overridden");
+
+        // And the other direction: authority paused, submitted running.
+        crate::shell::set_paused_flag(true);
+        let mut cfg = sample_config();
+        cfg.paused = false;
+        enforce_authoritative_fields(&mut cfg);
+        assert!(cfg.paused, "authoritative paused=true must be persisted");
+
+        // Nothing else is touched.
+        crate::shell::set_paused_flag(false);
+        let mut cfg = sample_config();
+        let pristine = cfg.clone();
+        enforce_authoritative_fields(&mut cfg);
+        assert_eq!(cfg, pristine, "matching pause flag leaves config intact");
     }
 
     #[test]

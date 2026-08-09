@@ -25,9 +25,13 @@ pub fn monitor_id(device: &str, x: i32, y: i32) -> String {
     format!("{device}@{x},{y}")
 }
 
-/// Contract §C2: `list_monitors() -> MonitorInfo[]`.
+/// Contract §C2: `list_monitors() -> MonitorInfo[]`. Callers: brain host,
+/// settings and overlay webviews (security review: least privilege).
 #[tauri::command]
-pub fn list_monitors() -> Vec<MonitorInfo> {
+pub fn list_monitors(window: tauri::Window) -> Vec<MonitorInfo> {
+    if crate::guard::authorize("list_monitors", window.label()).is_err() {
+        return Vec::new();
+    }
     enumerate()
 }
 
@@ -89,18 +93,31 @@ mod win {
         _clip: *mut RECT,
         lparam: LPARAM,
     ) -> BOOL {
+        // Raw-pointer work stays outside the guard closure; a panic in the
+        // body must not unwind into EnumDisplayMonitors (security review:
+        // FFI panic safety).
         let monitors = &mut *(lparam.0 as *mut Vec<MonitorInfo>);
+        crate::ffi_guard::guard("EnumDisplayMonitors callback", BOOL(1), move || {
+            push_monitor(hmonitor, monitors);
+            BOOL(1) // keep enumerating
+        })
+    }
 
+    /// Query one monitor and append its `MonitorInfo`; failures skip the
+    /// monitor. Safe wrapper so the FFI callback body is panic-guarded.
+    fn push_monitor(hmonitor: HMONITOR, monitors: &mut Vec<MonitorInfo>) {
         let mut info = MONITORINFOEXW::default();
         info.monitorInfo.cbSize = size_of::<MONITORINFOEXW>() as u32;
         // MONITORINFO is the first field of MONITORINFOEXW; passing the
         // outer struct with cbSize = sizeof(MONITORINFOEXW) makes the API
         // fill szDevice too.
-        if !GetMonitorInfoW(hmonitor, &mut info as *mut MONITORINFOEXW as *mut MONITORINFO)
-            .as_bool()
+        if !unsafe {
+            GetMonitorInfoW(hmonitor, &mut info as *mut MONITORINFOEXW as *mut MONITORINFO)
+        }
+        .as_bool()
         {
             log::warn!("GetMonitorInfoW failed for a monitor; skipping it");
-            return BOOL(1); // keep enumerating
+            return;
         }
 
         let device_len = info
@@ -112,7 +129,9 @@ mod win {
 
         // Effective DPI (scale-adjusted). Fall back to 96 if the call fails.
         let (mut dpi_x, mut dpi_y) = (96u32, 96u32);
-        if let Err(e) = GetDpiForMonitor(hmonitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y) {
+        if let Err(e) =
+            unsafe { GetDpiForMonitor(hmonitor, MDT_EFFECTIVE_DPI, &mut dpi_x, &mut dpi_y) }
+        {
             log::warn!("GetDpiForMonitor failed for {device}: {e}; assuming 96");
             dpi_x = 96;
         }
@@ -132,7 +151,6 @@ mod win {
             dpi: dpi_x,
             primary: info.monitorInfo.dwFlags & MONITORINFOF_PRIMARY != 0,
         });
-        BOOL(1)
     }
 
     /// Spawn the display-change watcher thread. Idempotent: a second call is
@@ -174,13 +192,15 @@ mod win {
     ) -> LRESULT {
         match msg {
             WM_DISPLAYCHANGE => {
-                emit_monitors_changed();
+                // Panic-guarded: emit calls into tauri internals and must not
+                // unwind into the message dispatcher (security review).
+                crate::ffi_guard::guard("watcher WM_DISPLAYCHANGE", (), emit_monitors_changed);
                 LRESULT(0)
             }
             // Taskbar work-area changes arrive as WM_SETTINGCHANGE with
             // wParam = SPI_SETWORKAREA and no WM_DISPLAYCHANGE.
             WM_SETTINGCHANGE if wparam.0 as u32 == SPI_SETWORKAREA.0 => {
-                emit_monitors_changed();
+                crate::ffi_guard::guard("watcher WM_SETTINGCHANGE", (), emit_monitors_changed);
                 LRESULT(0)
             }
             _ => DefWindowProcW(hwnd, msg, wparam, lparam),

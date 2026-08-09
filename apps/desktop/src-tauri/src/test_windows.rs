@@ -91,6 +91,11 @@ pub(crate) fn create_styled_test_window(
 
 /// Seed the tracker's live eligible set for a test window so the contract C2
 /// security rule admits it. Returns the hwnd key.
+///
+/// The seeded exe is the *real* basename of the test process: the actuator's
+/// actuation-time re-verification (security review, "handle reuse") compares
+/// the tracked exe against a fresh probe of the handle, and test windows are
+/// created in-process.
 pub(crate) fn track_test_window(hwnd: HWND, title: &str) -> isize {
     let key = hwnd.0 as isize;
     let raw = raw_rect(hwnd);
@@ -99,7 +104,8 @@ pub(crate) fn track_test_window(hwnd: HWND, title: &str) -> isize {
         crate::ipc::WindowInfo {
             hwnd: key.to_string(),
             title: title.into(),
-            exe: "griddle-test.exe".into(),
+            exe: crate::tracker::process_exe(std::process::id())
+                .expect("own process exe must be queryable"),
             x: raw.x,
             y: raw.y,
             width: raw.width,

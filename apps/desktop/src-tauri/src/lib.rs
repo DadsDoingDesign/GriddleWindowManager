@@ -1,6 +1,8 @@
 pub mod actuator;
 pub mod config;
 pub mod drag_pump;
+pub mod ffi_guard;
+pub mod guard;
 pub mod ipc;
 pub mod monitors;
 pub mod overlay;

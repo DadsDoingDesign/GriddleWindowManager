@@ -165,9 +165,13 @@ pub(crate) fn apply_validated(layout: &ApplyLayout, on_destroyed: &mut dyn FnMut
     apply_moves(&targets, on_destroyed)
 }
 
-/// Contract §C2: `apply_layout(layout: ApplyLayout)`.
+/// Contract §C2: `apply_layout(layout: ApplyLayout)`. Only the brain host
+/// (window label `main`) may actuate (security review: least privilege).
 #[tauri::command]
-pub fn apply_layout(app: tauri::AppHandle, layout: ApplyLayout) {
+pub fn apply_layout(app: tauri::AppHandle, window: tauri::Window, layout: ApplyLayout) {
+    if crate::guard::authorize("apply_layout", window.label()).is_err() {
+        return;
+    }
     let requested = layout.moves.len();
     let mut gone: Vec<isize> = Vec::new();
     let applied = apply_validated(&layout, &mut |key| gone.push(key));
@@ -182,9 +186,19 @@ pub fn apply_layout(app: tauri::AppHandle, layout: ApplyLayout) {
     log::debug!("apply_layout: applied {applied}/{requested} move(s)");
 }
 
-/// Contract §C2: `focus_window(hwnd)`. Same security rule as `apply_layout`.
+/// Contract §C2: `focus_window(hwnd)`. Same security rules as `apply_layout`
+/// (caller label + live-set + actuation-time identity re-verification).
 #[tauri::command]
-pub fn focus_window(hwnd: Hwnd) {
+pub fn focus_window(window: tauri::Window, hwnd: Hwnd) {
+    if crate::guard::authorize("focus_window", window.label()).is_err() {
+        return;
+    }
+    focus_validated(&hwnd);
+}
+
+/// Validation + focus, factored out of the command so tests can drive it
+/// without a live `tauri::Window`.
+pub(crate) fn focus_validated(hwnd: &str) {
     let Ok(key) = hwnd.parse::<isize>() else {
         log::warn!("focus_window: malformed hwnd {hwnd:?}, skipping");
         return;
@@ -194,7 +208,16 @@ pub fn focus_window(hwnd: Hwnd) {
         return;
     }
     #[cfg(windows)]
-    win::focus(key);
+    {
+        // Security review (handle reuse): re-verify right before acting so a
+        // recycled HWND can never focus a window we did not vet.
+        if !crate::tracker::verify_for_actuation(key) {
+            log::info!("focus_window: hwnd {key} is gone or no longer the tracked window, untracking");
+            let _ = crate::tracker::untrack(key);
+            return;
+        }
+        win::focus(key);
+    }
 }
 
 #[cfg(windows)]
@@ -260,6 +283,14 @@ mod win {
 
     /// Move every (already validated) target in one `DeferWindowPos` batch;
     /// dead handles are untracked and reported through `on_destroyed`.
+    ///
+    /// Security review (handle reuse): being in the live set is necessary but
+    /// not sufficient — Windows recycles HWND values quickly, and the
+    /// `EVENT_OBJECT_DESTROY` hook is asynchronous, so a stale entry can
+    /// briefly denote a *different* window. Each target is therefore
+    /// re-probed here ([`crate::tracker::verify_for_actuation`]: same owning
+    /// exe as the tracked `WindowInfo`, still structurally eligible) and
+    /// mismatches take the dead-handle path instead of being moved.
     pub(super) fn apply_moves(
         targets: &[(isize, Rect)],
         on_destroyed: &mut dyn FnMut(isize),
@@ -267,10 +298,12 @@ mod win {
         let mut prepared: Vec<PreparedMove> = Vec::with_capacity(targets.len());
         for &(key, target) in targets {
             let hwnd = HWND(key as *mut c_void);
-            let live = unsafe { IsWindow(Some(hwnd)) }.as_bool();
-            let rects = if live { window_and_frame_rects(hwnd) } else { None };
+            let verified = crate::tracker::verify_for_actuation(key);
+            let rects = if verified { window_and_frame_rects(hwnd) } else { None };
             let Some((raw_now, frame_now)) = rects else {
-                log::info!("apply_layout: hwnd {key} is gone, untracking");
+                log::info!(
+                    "apply_layout: hwnd {key} is gone or no longer the tracked window, untracking"
+                );
                 let _ = crate::tracker::untrack(key);
                 on_destroyed(key);
                 continue;
@@ -845,16 +878,140 @@ mod win_tests {
         let hwnd = create_test_window();
         let key = hwnd.0 as isize;
 
-        // Untracked: the command is a validated no-op (must not panic).
-        focus_window(key.to_string());
-        focus_window("garbage".to_string());
+        // Untracked: the command core is a validated no-op (must not panic).
+        focus_validated(&key.to_string());
+        focus_validated("garbage");
 
         // Tracked: exercises the Win32 path; SetForegroundWindow may be
         // declined by the OS in a test session, which the actuator tolerates.
         track(hwnd);
-        focus_window(key.to_string());
+        focus_validated(&key.to_string());
+        assert!(
+            crate::tracker::is_tracked(key),
+            "focusing a genuine tracked window must not untrack it"
+        );
 
         let _ = crate::tracker::untrack(key);
+        unsafe { DestroyWindow(hwnd).expect("DestroyWindow") };
+    }
+
+    /// Security review regression ("handle reuse"): a live-set entry whose
+    /// tracked identity no longer matches the window behind the handle —
+    /// exactly what an HWND recycled to another process looks like — must
+    /// not be moved; it takes the dead-handle path (untrack + destroyed).
+    #[test]
+    fn recycled_handle_with_foreign_identity_is_not_moved() {
+        let _guard = crate::tracker::live_set_test_lock()
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        let hwnd = create_test_window();
+        let key = hwnd.0 as isize;
+        // Track under a *different* exe than the one owning the handle now,
+        // simulating: original window died, entry is stale, handle recycled.
+        crate::tracker::track_for_test(
+            key,
+            crate::ipc::WindowInfo {
+                hwnd: key.to_string(),
+                title: "long-gone window".into(),
+                exe: "someoneelse.exe".into(),
+                x: 0,
+                y: 0,
+                width: 400,
+                height: 300,
+                monitor_id: "m".into(),
+                minimized: false,
+                resizable: true,
+            },
+        );
+
+        let before = raw_rect(hwnd);
+        let target = Rect {
+            x: 500,
+            y: 400,
+            width: 320,
+            height: 240,
+        };
+        let mut destroyed = Vec::new();
+        let applied = apply_validated(&one_move(key, target), &mut |k| destroyed.push(k));
+
+        assert_eq!(applied, 0, "identity mismatch: nothing may move");
+        assert_eq!(destroyed, vec![key], "reported destroyed like a dead handle");
+        assert!(!crate::tracker::is_tracked(key), "stale entry removed");
+        assert_eq!(raw_rect(hwnd), before, "the recycled window must not move");
+
+        unsafe { DestroyWindow(hwnd).expect("DestroyWindow") };
+    }
+
+    /// Security review regression ("handle reuse"): the structural
+    /// eligibility bits are re-checked at actuation time too — a handle
+    /// recycled to a window the filter would reject (here: a tool window)
+    /// is refused even when the owning exe matches.
+    #[test]
+    fn recycled_handle_now_a_tool_window_is_not_moved() {
+        use windows::Win32::UI::WindowsAndMessaging::{
+            WS_EX_TOOLWINDOW, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+        };
+        let _guard = crate::tracker::live_set_test_lock()
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        let hwnd = crate::test_windows::create_styled_test_window(
+            "Griddle actuator tool window",
+            WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+            WS_EX_TOOLWINDOW,
+            400,
+            300,
+        );
+        // track() seeds the real exe, so only the style check can reject.
+        let key = track(hwnd);
+
+        let before = raw_rect(hwnd);
+        let target = Rect {
+            x: 500,
+            y: 400,
+            width: 320,
+            height: 240,
+        };
+        let mut destroyed = Vec::new();
+        let applied = apply_validated(&one_move(key, target), &mut |k| destroyed.push(k));
+
+        assert_eq!(applied, 0, "ineligible style: nothing may move");
+        assert_eq!(destroyed, vec![key]);
+        assert!(!crate::tracker::is_tracked(key));
+        assert_eq!(raw_rect(hwnd), before, "the tool window must not move");
+
+        unsafe { DestroyWindow(hwnd).expect("DestroyWindow") };
+    }
+
+    /// Same defense on the focus path: a stale identity is never focused.
+    #[test]
+    fn focus_refuses_a_recycled_handle_and_untracks_it() {
+        let _guard = crate::tracker::live_set_test_lock()
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        let hwnd = create_test_window();
+        let key = hwnd.0 as isize;
+        crate::tracker::track_for_test(
+            key,
+            crate::ipc::WindowInfo {
+                hwnd: key.to_string(),
+                title: "long-gone window".into(),
+                exe: "someoneelse.exe".into(),
+                x: 0,
+                y: 0,
+                width: 400,
+                height: 300,
+                monitor_id: "m".into(),
+                minimized: false,
+                resizable: true,
+            },
+        );
+
+        focus_validated(&key.to_string());
+        assert!(
+            !crate::tracker::is_tracked(key),
+            "identity mismatch must untrack the stale entry"
+        );
+
         unsafe { DestroyWindow(hwnd).expect("DestroyWindow") };
     }
 }

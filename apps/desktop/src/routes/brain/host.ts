@@ -269,9 +269,32 @@ export async function startBrainHost(): Promise<BrainHost> {
   // Native events → brain, plus settings-window inputs (contract §C2).
   // Listeners registered after the initial snapshot seeding so an event can
   // never race the constructor.
+  /**
+   * Security hardening (docs/security-review.md, "event spoofing between
+   * webviews"): Tauri events carry no sender identity, so any webview in the
+   * process could forge a `window-destroyed` for a live managed hwnd and
+   * make the brain drop its tile. Destroys are rare, so before acting we
+   * confirm against a fresh Rust-side sweep (`list_windows` re-seeds the
+   * tracker's live set from the actual desktop). If the sweep itself fails,
+   * the event is trusted: leaking a dead tile is worse than dropping one
+   * that the window's next appearance re-adds.
+   */
+  const confirmedWindowDestroyed = async (hwnd: string) => {
+    try {
+      const live = await listWindows();
+      if (live.some((w) => w.hwnd === hwnd)) {
+        console.warn(`ignoring window-destroyed for live hwnd ${hwnd} (forged or stale)`);
+        return;
+      }
+    } catch (e) {
+      console.error('window-destroyed confirmation sweep failed:', e);
+    }
+    brain.windowDestroyed(hwnd);
+  };
+
   const unlisteners: UnlistenFn[] = await Promise.all([
     onWindowAppeared((w) => brain.windowAppeared(w)),
-    onWindowDestroyed((p) => brain.windowDestroyed(p.hwnd)),
+    onWindowDestroyed((p) => void confirmedWindowDestroyed(p.hwnd)),
     onWindowMinimized((p) => brain.windowMinimized(p.hwnd)),
     onWindowRestored((w) => brain.windowRestored(w)),
     onMoveSizeStart((p) => brain.moveSizeStart(p.hwnd)),
