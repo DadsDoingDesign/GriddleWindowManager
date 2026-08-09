@@ -152,6 +152,20 @@ pub fn tracked_windows() -> Vec<WindowInfo> {
         .collect()
 }
 
+/// Remove a window from the live eligible set. Used by the actuator when it
+/// discovers a dead handle mid-apply (spec §6: skip + `window-destroyed`);
+/// the actuator emits the event, this keeps the security-rule set truthful.
+pub fn untrack(hwnd: isize) -> Option<WindowInfo> {
+    remove_tracked(hwnd)
+}
+
+/// Test-only: seed the live eligible set directly so actuator tests can
+/// exercise the contract C2 security rule against real test windows.
+#[cfg(test)]
+pub(crate) fn track_for_test(hwnd: isize, info: WindowInfo) {
+    insert_tracked(hwnd, info);
+}
+
 fn insert_tracked(hwnd: isize, info: WindowInfo) {
     tracked_map()
         .lock()
