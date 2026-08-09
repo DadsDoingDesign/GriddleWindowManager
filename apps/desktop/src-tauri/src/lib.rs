@@ -51,6 +51,10 @@ pub fn run() {
             monitors::start_display_watcher(app.handle().clone());
             drag_pump::init(app.handle().clone());
             tracker::start_tracker(app.handle().clone());
+            // Heartbeat watchdog: covers the brain deaths the Destroyed
+            // watchdog below cannot see (renderer crash with a live window
+            // object, boot failure, wedged JS event loop).
+            shell::start_brain_heartbeat(app.handle().clone());
             shell::init_tray(app.handle())?;
             // Register the default hotkey now; read_config re-registers the
             // user's binding as soon as the brain host loads the config.
@@ -94,6 +98,7 @@ pub fn run() {
             shell::set_paused,
             shell::show_settings,
             shell::update_tray,
+            shell::brain_alive,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

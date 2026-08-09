@@ -18,6 +18,7 @@ import {
 import type { UnlistenFn } from '@tauri-apps/api/event';
 import {
   applyLayout,
+  brainAlive,
   emitPreviewState,
   emitStateSnapshot,
   hideOverlay,
@@ -55,6 +56,16 @@ import {
 
 /** How long after the last state change the config is persisted. */
 const SAVE_DEBOUNCE_MS = 500;
+
+/**
+ * Heartbeat cadence (critique round 2): a healthy brain page invokes
+ * `brain_alive` this often; Rust's watchdog respawns the window after
+ * missing beats for `HEARTBEAT_TIMEOUT` (15 s). Only started once the host
+ * booted successfully — a page whose boot threw sends no beats, so the
+ * watchdog rebuilds it (with a give-up cap against a boot that always
+ * fails).
+ */
+const HEARTBEAT_MS = 3000;
 
 /**
  * Delay between the brain hiding a preview and the native overlay window
@@ -410,6 +421,14 @@ export async function startBrainHost(): Promise<BrainHost> {
     ),
   ]);
 
+  // Heartbeat: the host is fully wired — start telling Rust we're alive.
+  // The first beat also clears the watchdog's respawn counter after a
+  // successful respawn.
+  const beatTimer = setInterval(() => {
+    brainAlive().catch((e) => console.error('brain_alive failed:', e));
+  }, HEARTBEAT_MS);
+  brainAlive().catch((e) => console.error('brain_alive failed:', e));
+
   const host: BrainHost = {
     brain,
     get lastSnapshot() {
@@ -427,6 +446,7 @@ export async function startBrainHost(): Promise<BrainHost> {
     },
     destroy() {
       destroyed = true;
+      clearInterval(beatTimer);
       if (saveTimer !== null) clearTimeout(saveTimer);
       for (const t of overlayHideTimers.values()) clearTimeout(t);
       overlayHideTimers.clear();

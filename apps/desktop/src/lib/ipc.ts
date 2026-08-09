@@ -156,6 +156,17 @@ export function windowIsTracked(hwnd: Hwnd): Promise<boolean> {
   return invoke<boolean>('window_is_tracked', { hwnd });
 }
 
+/**
+ * Contract extension (critique round 2, brain-death coverage): the brain
+ * host's heartbeat. Invoked every few seconds by a healthy brain page; a
+ * Rust watchdog that misses enough beats destroys and respawns the brain
+ * window (covering renderer crashes, boot failures and wedged event loops —
+ * the deaths the `Destroyed` watchdog cannot see).
+ */
+export function brainAlive(): Promise<void> {
+  return invoke('brain_alive');
+}
+
 export function readConfig(): Promise<AppConfig | null> {
   return invoke<AppConfig | null>('read_config');
 }

@@ -43,7 +43,7 @@ pub fn caller_allowed(command: &str, label: &str) -> bool {
         // overlay lifecycle and event vetting (host.ts is their sole
         // legitimate caller).
         "apply_layout" | "focus_window" | "write_config" | "update_tray" | "show_overlay"
-        | "hide_overlay" | "window_is_tracked" => main,
+        | "hide_overlay" | "window_is_tracked" | "brain_alive" => main,
         // Brain host + settings UI.
         "read_config" | "set_paused" | "show_settings" | "list_windows" => main || settings,
         // Overlays additionally need the monitor list to draw their grid.
@@ -69,7 +69,7 @@ pub fn authorize(command: &str, label: &str) -> Result<(), String> {
 mod tests {
     use super::*;
 
-    const ALL_COMMANDS: [&str; 12] = [
+    const ALL_COMMANDS: [&str; 13] = [
         "list_windows",
         "list_monitors",
         "apply_layout",
@@ -82,6 +82,7 @@ mod tests {
         "show_settings",
         "update_tray",
         "window_is_tracked",
+        "brain_alive",
     ];
 
     #[test]
@@ -105,6 +106,7 @@ mod tests {
             "show_overlay",
             "hide_overlay",
             "window_is_tracked",
+            "brain_alive",
         ] {
             assert!(!caller_allowed(cmd, SETTINGS_LABEL), "{cmd} must be denied for settings");
             assert!(authorize(cmd, SETTINGS_LABEL).is_err());

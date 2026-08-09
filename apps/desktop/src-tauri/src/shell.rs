@@ -26,8 +26,9 @@
 //!    the config, so the toggle drives the registration).
 
 use crate::ipc::{events, AppConfig, MonitorInfo, TrayToggleGrid};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{TrayIcon, TrayIconBuilder};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder, Wry};
@@ -98,6 +99,136 @@ pub fn respawn_brain_host(app: &AppHandle) {
     {
         Ok(_) => log::info!("brain host respawned; rehydrating from config"),
         Err(e) => log::error!("failed to respawn brain host: {e}"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Brain-host heartbeat (critique round 2: webview deaths the `Destroyed`
+// watchdog cannot see)
+// ---------------------------------------------------------------------------
+//
+// The `WindowEvent::Destroyed` watchdog only covers one of the ways the
+// brain can die. A WebView2 renderer/browser-process crash leaves the Tauri
+// window object alive with a blank page; a `startBrainHost()` boot failure
+// renders an error into a permanently hidden window; a wedged JS event loop
+// stops processing events. All three leave every grid silently dead while
+// the tray looks healthy. One mechanism covers them all: the brain host
+// invokes the trivial `brain_alive` command every few seconds, and a Rust
+// timer that misses enough beats destroys the window — which triggers the
+// existing `Destroyed` → `respawn_brain_host` → rehydration path.
+
+/// How long without a beat before the brain host is declared dead. The page
+/// beats every ~3 s, so this tolerates several missed beats plus a slow boot
+/// (config read + full window sweep) before pulling the trigger.
+pub const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(15);
+/// How often the watchdog thread checks the beat clock.
+const HEARTBEAT_CHECK_INTERVAL: Duration = Duration::from_secs(3);
+/// Consecutive beat-less respawns before giving up — a page that never
+/// manages a single beat (e.g. a boot that always throws) must not be
+/// rebuilt in an infinite loop.
+pub const HEARTBEAT_MAX_RESPAWNS: u32 = 5;
+
+/// Respawns attempted since the last successful beat.
+static RESPAWNS_WITHOUT_BEAT: AtomicU32 = AtomicU32::new(0);
+
+fn beat_lock() -> &'static Mutex<Instant> {
+    static BEAT: OnceLock<Mutex<Instant>> = OnceLock::new();
+    BEAT.get_or_init(|| Mutex::new(Instant::now()))
+}
+
+/// A live beat from the brain page: reset the clock and the give-up counter.
+fn record_brain_beat() {
+    *beat_lock().lock().unwrap_or_else(|p| p.into_inner()) = Instant::now();
+    RESPAWNS_WITHOUT_BEAT.store(0, Ordering::SeqCst);
+}
+
+/// Reset only the clock (boot / post-respawn grace) — the give-up counter
+/// keeps counting until a real beat arrives.
+fn reset_beat_clock() {
+    *beat_lock().lock().unwrap_or_else(|p| p.into_inner()) = Instant::now();
+}
+
+/// Pure watchdog policy: should `elapsed` since the last beat (or respawn)
+/// with `respawns_without_beat` prior beat-less respawns force a respawn?
+/// Never during a deliberate quit, never past the give-up cap.
+pub fn heartbeat_wants_respawn(
+    elapsed: Duration,
+    respawns_without_beat: u32,
+    exiting: bool,
+) -> bool {
+    !exiting && respawns_without_beat < HEARTBEAT_MAX_RESPAWNS && elapsed >= HEARTBEAT_TIMEOUT
+}
+
+/// Contract §C2 extension: `brain_alive()` — the brain host's heartbeat.
+/// Brain-host only (a settings/overlay page must not be able to mask a dead
+/// brain by beating on its behalf).
+#[tauri::command]
+pub fn brain_alive(window: tauri::Window) {
+    if crate::guard::authorize("brain_alive", window.label()).is_err() {
+        return;
+    }
+    record_brain_beat();
+}
+
+/// Start the heartbeat watchdog thread. Idempotent enough for one call from
+/// setup; the thread runs for the process lifetime.
+pub fn start_brain_heartbeat(app: AppHandle) {
+    reset_beat_clock(); // boot grace: the first page gets a full timeout
+    if let Err(e) = std::thread::Builder::new()
+        .name("brain-heartbeat".into())
+        .spawn(move || heartbeat_loop(&app))
+    {
+        log::error!("failed to spawn brain-heartbeat thread: {e}");
+    }
+}
+
+fn heartbeat_loop(app: &AppHandle) {
+    loop {
+        std::thread::sleep(HEARTBEAT_CHECK_INTERVAL);
+        if is_exiting() {
+            return;
+        }
+        let elapsed = beat_lock()
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .elapsed();
+        let respawns = RESPAWNS_WITHOUT_BEAT.load(Ordering::SeqCst);
+        if !heartbeat_wants_respawn(elapsed, respawns, false) {
+            continue;
+        }
+        let attempt = respawns + 1;
+        RESPAWNS_WITHOUT_BEAT.store(attempt, Ordering::SeqCst);
+        reset_beat_clock(); // the fresh page gets a full timeout too
+        log::error!(
+            "brain host sent no heartbeat for {elapsed:?}; forcing respawn \
+             (attempt {attempt}/{HEARTBEAT_MAX_RESPAWNS})"
+        );
+        if attempt == HEARTBEAT_MAX_RESPAWNS {
+            log::error!(
+                "final automatic respawn attempt — if the brain stays silent, \
+                 window management is down until Griddle WM is restarted"
+            );
+        }
+        let app2 = app.clone();
+        if let Err(e) = app.run_on_main_thread(move || force_brain_respawn(&app2)) {
+            log::error!("heartbeat: run_on_main_thread failed: {e}");
+        }
+    }
+}
+
+/// Tear down the (possibly wedged) brain window and rebuild it. Destroying
+/// the window fires `WindowEvent::Destroyed`, whose watchdog performs the
+/// actual respawn — one respawn path for every death mode. A window that is
+/// already gone is respawned directly.
+fn force_brain_respawn(app: &AppHandle) {
+    match app.get_webview_window(crate::guard::MAIN_LABEL) {
+        Some(win) => {
+            if let Err(e) = win.destroy() {
+                log::error!("heartbeat: failed to destroy brain window: {e}; respawning anyway");
+                respawn_brain_host(app);
+            }
+        }
+        None => respawn_brain_host(app),
     }
 }
 
@@ -568,6 +699,42 @@ mod tests {
         assert!(!should_respawn_brain("settings", false), "settings closes freely");
         assert!(!should_respawn_brain("overlay-0", false), "overlays close freely");
         assert!(!should_respawn_brain("", false));
+    }
+
+    // -- brain-host heartbeat policy ------------------------------------------
+
+    #[test]
+    fn heartbeat_respawns_only_after_timeout_and_under_the_give_up_cap() {
+        let t = HEARTBEAT_TIMEOUT;
+        assert!(!heartbeat_wants_respawn(Duration::ZERO, 0, false));
+        assert!(
+            !heartbeat_wants_respawn(t - Duration::from_millis(1), 0, false),
+            "no respawn before the timeout"
+        );
+        assert!(heartbeat_wants_respawn(t, 0, false), "respawn at the timeout");
+        assert!(
+            heartbeat_wants_respawn(t * 3, HEARTBEAT_MAX_RESPAWNS - 1, false),
+            "keeps retrying under the cap"
+        );
+        assert!(
+            !heartbeat_wants_respawn(t * 3, HEARTBEAT_MAX_RESPAWNS, false),
+            "gives up at the cap (no infinite respawn loop)"
+        );
+        assert!(
+            !heartbeat_wants_respawn(t * 3, 0, true),
+            "never respawns during a deliberate quit"
+        );
+    }
+
+    #[test]
+    fn heartbeat_beat_resets_the_give_up_counter() {
+        RESPAWNS_WITHOUT_BEAT.store(3, Ordering::SeqCst);
+        record_brain_beat();
+        assert_eq!(RESPAWNS_WITHOUT_BEAT.load(Ordering::SeqCst), 0);
+        RESPAWNS_WITHOUT_BEAT.store(2, Ordering::SeqCst);
+        reset_beat_clock(); // grace reset must NOT clear the counter
+        assert_eq!(RESPAWNS_WITHOUT_BEAT.load(Ordering::SeqCst), 2);
+        RESPAWNS_WITHOUT_BEAT.store(0, Ordering::SeqCst);
     }
 
     // -- tray menu id scheme -------------------------------------------------
