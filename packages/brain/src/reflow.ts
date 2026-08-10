@@ -30,6 +30,14 @@
 // The search is bounded by a node cap and never throws: an unsolvable board
 // (or one that outruns the cap) comes back as `{ok: false}` so the caller can
 // fall back to the existing push behaviour.
+//
+// The cap is honest. Past O(n log n + cols*rows) of unavoidable setup — copying
+// and id-sorting the tiles, painting the occupancy grid — *every* remaining
+// unit of work is charged against `maxNodes`, including the enumeration of a
+// tile's legal homes. Those lists are built lazily, only for tiles the search
+// actually lifts (typically one to four per drop), and each build charges its
+// own length. So a 64x64 board of 4095 tiles costs microseconds of search, not
+// the seconds an eager precompute over every tile would.
 
 import type { Slot } from './types';
 
@@ -51,10 +59,11 @@ export interface ReflowMove {
 
 export interface ReflowOptions {
   /**
-   * Hard ceiling on candidate positions examined across the whole solve.
-   * Reaching it ends the search: the best arrangement found so far is
-   * returned, or `{ok: false}` if there was none. Defaults to
-   * `REFLOW_DEFAULT_MAX_NODES`.
+   * Hard ceiling on candidate positions enumerated across the whole solve —
+   * both the positions the search tries and the positions counted while
+   * building a lifted tile's list of legal homes. Reaching it ends the search:
+   * the best arrangement found so far is returned, or `{ok: false}` if there
+   * was none. Defaults to `REFLOW_DEFAULT_MAX_NODES`.
    */
   maxNodes?: number;
   /**
@@ -73,7 +82,10 @@ export interface ReflowResult {
   movedCount: number;
   /** Total Manhattan distance the displaced tiles travel. */
   distance: number;
-  /** Candidate positions examined. Diagnostic; bounded by `maxNodes`. */
+  /**
+   * Candidate positions enumerated — tried by the search, or counted while
+   * building a lifted tile's candidate list. Diagnostic; bounded by `maxNodes`.
+   */
   nodes: number;
 }
 
@@ -227,57 +239,96 @@ export function solveMinimalMoves(
   const everLifted = new Uint8Array(n);
   const pending: number[] = [];
 
-  // Every legal home for every tile, precomputed once and ordered cheapest
-  // first. The ordering never changes during the search — only which entries
-  // are currently usable does — so the hot loop is a scan, with no per-node
-  // allocation and no per-node sort.
-  const candC: Int32Array[] = [];
-  const candR: Int32Array[] = [];
-  const candD: Int32Array[] = [];
-  for (let i = 0; i < n; i++) {
+  // Every legal home for one tile, ordered cheapest first. The ordering never
+  // changes during the search — only which entries are currently usable does —
+  // so the hot loop is a scan, with no per-node allocation and no per-node
+  // sort.
+  //
+  // Built LAZILY. Enumerating every legal position for every tile up front is
+  // O(n * cols * rows) work that no node cap could bound, and it is wasted:
+  // a drop lifts a handful of tiles, so a 4095-tile board would pay for 4095
+  // lists to use three. Each list is built on the first descent into its tile
+  // and memoised for the rest of the solve (it depends only on the tile's
+  // original slot and size, which never change), and its length is charged
+  // against the node budget — so `maxNodes` really does bound the work.
+  const candC = new Array<Int32Array | undefined>(n).fill(undefined);
+  const candR = new Array<Int32Array | undefined>(n).fill(undefined);
+  const candD = new Array<Int32Array | undefined>(n).fill(undefined);
+  // Scratch for the counting sort below, reused across builds.
+  const bucket = new Int32Array(cols + rows - 1);
+
+  let nodes = 0;
+  let capped = false;
+
+  /**
+   * Fill `cand*[i]`, or set `capped` and return false if the budget cannot pay
+   * for it. Positions come out ordered by Manhattan distance, then column, then
+   * row — a counting sort on distance, which is O(positions) rather than the
+   * O(p log p) a comparison sort would cost, so the charge is exact.
+   */
+  function buildCandidates(i: number): boolean {
     const t = others[i]!;
     const oc = t.col;
     const orow = t.row;
-    const slots: number[] = [];
-    for (let r = 0; r + t.h <= rows; r++) {
-      for (let c = 0; c + t.w <= cols; c++) {
-        if (c === oc && r === orow) continue; // a queued tile has to actually move
-        slots.push(r * cols + c);
+    const wSpan = cols - t.w + 1;
+    const hSpan = rows - t.h + 1;
+    const total = wSpan * hSpan - 1; // its own slot never counts: it must move
+    if (nodes + total > maxNodes) {
+      capped = true;
+      return false;
+    }
+    nodes += total;
+
+    bucket.fill(0);
+    for (let c = 0; c < wSpan; c++) {
+      const dc = c > oc ? c - oc : oc - c;
+      for (let r = 0; r < hSpan; r++) {
+        if (c === oc && r === orow) continue;
+        bucket[dc + (r > orow ? r - orow : orow - r)]!++;
       }
     }
-    const dist = (enc: number): number => {
-      const c = enc % cols;
-      return Math.abs(c - oc) + Math.abs((enc - c) / cols - orow);
-    };
-    slots.sort((a, b) => dist(a) - dist(b) || (a % cols) - (b % cols) || a - b);
-    const cc = new Int32Array(slots.length);
-    const rr = new Int32Array(slots.length);
-    const dd = new Int32Array(slots.length);
-    for (let p = 0; p < slots.length; p++) {
-      const enc = slots[p]!;
-      const c = enc % cols;
-      cc[p] = c;
-      rr[p] = (enc - c) / cols;
-      dd[p] = dist(enc);
+    for (let d = 0, acc = 0; d < bucket.length; d++) {
+      const held = bucket[d]!;
+      bucket[d] = acc;
+      acc += held;
     }
-    candC.push(cc);
-    candR.push(rr);
-    candD.push(dd);
+
+    const cc = new Int32Array(total);
+    const rr = new Int32Array(total);
+    const dd = new Int32Array(total);
+    // Column-major, both axes ascending: within one distance bucket that lands
+    // entries in (col asc, row asc) order, which is the tie-break the whole
+    // solver's determinism rests on.
+    for (let c = 0; c < wSpan; c++) {
+      const dc = c > oc ? c - oc : oc - c;
+      for (let r = 0; r < hSpan; r++) {
+        if (c === oc && r === orow) continue;
+        const d = dc + (r > orow ? r - orow : orow - r);
+        const at = bucket[d]!++;
+        cc[at] = c;
+        rr[at] = r;
+        dd[at] = d;
+      }
+    }
+    candC[i] = cc;
+    candR[i] = rr;
+    candD[i] = dd;
+    return true;
   }
 
-  // Scratch for the blockers of the candidate under consideration, one slice
-  // per search depth. A placement can lift at most as many tiles as it has
-  // cells, and never more than exist.
+  // Scratch for the blockers of the candidate under consideration, one row per
+  // search depth. A placement can lift at most as many tiles as it has cells,
+  // and never more than exist. Rows are allocated on demand: a board with one
+  // huge tile and two thousand small ones would otherwise reserve megabytes for
+  // depths the search never reaches.
   let maxArea = 1;
   for (let i = 0; i < n; i++) {
     const a = others[i]!.w * others[i]!.h;
     if (a > maxArea) maxArea = a;
   }
   const blockStride = Math.min(n, maxArea);
-  const blockBuf = new Int32Array(n * blockStride);
+  const blockRows = new Array<Int32Array | undefined>(n).fill(undefined);
 
-  let nodes = 0;
-  let capped = false;
   let bestDist = -1;
   let bestMoved: number[] = [];
   let bestCol = new Int32Array(n);
@@ -302,11 +353,16 @@ export function solveMinimalMoves(
       return;
     }
     const i = pending[head]!;
+    if (candC[i] === undefined && !buildCandidates(i)) return; // out of budget
     const t = others[i]!;
     const cc = candC[i]!;
     const rr = candR[i]!;
     const dd = candD[i]!;
-    const bOff = head * blockStride;
+    let blk = blockRows[head];
+    if (blk === undefined) {
+      blk = new Int32Array(blockStride);
+      blockRows[head] = blk;
+    }
 
     for (let p = 0; p < cc.length; p++) {
       const dist = dd[p]!;
@@ -339,7 +395,7 @@ export function solveMinimalMoves(
           }
           let seen = false;
           for (let q = 0; q < nb; q++) {
-            if (blockBuf[bOff + q] === v) {
+            if (blk[q] === v) {
               seen = true;
               break;
             }
@@ -349,13 +405,13 @@ export function solveMinimalMoves(
             usable = false;
             break;
           }
-          blockBuf[bOff + nb++] = v;
+          blk[nb++] = v;
         }
       }
       if (!usable) continue;
 
       for (let q = 0; q < nb; q++) {
-        const b = blockBuf[bOff + q]!;
+        const b = blk[q]!;
         stamp(b, posCol[b]!, posRow[b]!, FREE);
         everLifted[b] = 1;
         pending.push(b);
@@ -368,7 +424,7 @@ export function solveMinimalMoves(
 
       stamp(i, col, row, FREE);
       for (let q = nb - 1; q >= 0; q--) {
-        const b = blockBuf[bOff + q]!;
+        const b = blk[q]!;
         pending.pop();
         everLifted[b] = 0;
         // Only never-lifted tiles can block, so a blocker is always back at

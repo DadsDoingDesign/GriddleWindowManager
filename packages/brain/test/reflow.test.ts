@@ -488,6 +488,82 @@ describe('solveMinimalMoves — performance', () => {
 });
 
 // ---------------------------------------------------------------------------
+// the node cap has to bound the *whole* solve, not just the search
+// ---------------------------------------------------------------------------
+
+describe('solveMinimalMoves — the node cap bounds every phase', () => {
+  /** `n` 1x1 tiles filling a cols x rows grid in reading order. */
+  function singles(cols: number, rows: number, n: number): ReflowTile[] {
+    const out: ReflowTile[] = [];
+    for (let r = 0; r < rows && out.length < n; r++) {
+      for (let c = 0; c < cols && out.length < n; c++) out.push(t(`s${c}-${r}`, c, r));
+    }
+    return out;
+  }
+
+  it('charges candidate enumeration against the cap instead of doing it for free', () => {
+    // A 1x1 tile on a 64x64 grid has 4095 legal homes. Enumerating them is
+    // real work, so a budget of 100 must not be able to buy it: the solver
+    // gives up rather than quietly spending 4095 positions off the books.
+    const res = solveMinimalMoves([t('a', 0, 0)], t('T', 0, 0), { cols: 64, rows: 64 }, {
+      maxNodes: 100,
+    });
+    expect(res).not.toBeNull();
+    expect(res!.ok).toBe(false);
+    expect(res!.nodes).toBeLessThanOrEqual(100);
+  });
+
+  it('never reports more nodes than the cap it was given', () => {
+    const dims: ReflowDims = { cols: 12, rows: 6 };
+    const tiles = singles(12, 6, 60);
+    for (const maxNodes of [1, 7, 64, 500, 5_000, 50_000]) {
+      const res = solveMinimalMoves(tiles, t('T', 3, 2, 3, 2), dims, { maxNodes });
+      expect(res, `cap ${maxNodes}`).not.toBeNull();
+      expect(res!.nodes, `cap ${maxNodes}`).toBeLessThanOrEqual(maxNodes);
+    }
+  });
+
+  it('does not pay for candidate lists the search never uses', () => {
+    // The worst input the contract accepts: 4095 tiles on a 64x64 grid, one
+    // free cell, one blocker to relocate. Building every tile's candidate list
+    // up front costs seconds here; building them on demand costs milliseconds,
+    // and only one tile is ever lifted.
+    const dims: ReflowDims = { cols: 64, rows: 64 };
+    const tiles = singles(64, 64, 4095);
+    expect(tiles).toHaveLength(4095);
+    const target = t('T', 0, 0);
+
+    solveMinimalMoves(tiles, target, dims); // warm the JIT, then measure
+    const t0 = performance.now();
+    const res = solveMinimalMoves(tiles, target, dims);
+    const elapsed = performance.now() - t0;
+
+    expect(res).not.toBeNull();
+    assertSolutionValid(tiles, target, dims, res!);
+    // (63,63) is the only free cell, so the answer is forced.
+    expect(res!.moves).toEqual([{ id: 's0-0', col: 63, row: 63 }]);
+    if (elapsed >= 250) console.error(`4095-tile solve took ${elapsed.toFixed(1)}ms`);
+    // Measured ~5ms. The eager precompute this guards against took ~3300ms;
+    // the threshold is loose enough to survive a loaded CI box and still catch
+    // any return to per-tile setup.
+    expect(elapsed).toBeLessThan(250);
+  });
+
+  it('gives up in milliseconds on a huge board it cannot search', () => {
+    const dims: ReflowDims = { cols: 64, rows: 64 };
+    const tiles = singles(64, 64, 4095);
+    const t0 = performance.now();
+    const res = solveMinimalMoves(tiles, t('T', 0, 0), dims, { maxNodes: 1 });
+    const elapsed = performance.now() - t0;
+    expect(res).not.toBeNull();
+    expect(res!.ok).toBe(false);
+    expect(res!.nodes).toBeLessThanOrEqual(1);
+    // nodes<=1 means the search did nothing; the wall clock has to agree.
+    expect(elapsed).toBeLessThan(250);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // fuzz gate — 300 seeded boards
 // ---------------------------------------------------------------------------
 
