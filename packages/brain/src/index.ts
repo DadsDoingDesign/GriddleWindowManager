@@ -7,4 +7,5 @@ export * from './brain';
 export * from './spanning';
 export * from './templates';
 export * from './persist';
+export * from './reflow';
 export * from './updates';
