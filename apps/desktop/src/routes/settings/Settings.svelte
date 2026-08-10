@@ -1230,8 +1230,8 @@
         <p class="hint">Select at least two monitors to span.</p>
       {/if}
       <p class="hint">
-        Spanning is the newest feature and has had the least real-world
-        testing — please report anything odd.
+        Spanning has had the least real-world testing of anything here —
+        please report anything odd.
       </p>
     </section>
   {/if}

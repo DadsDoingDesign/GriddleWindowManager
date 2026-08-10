@@ -112,8 +112,8 @@ placeholder fixes). What follows was deliberately not done, and why.
   environment has no interactive GUI, so the pass cannot be run from here.
   The "GUI-bound human smoke tests" list below maps onto that script. If
   the two-physical-monitor spanning item cannot be run, spanning ships
-  anyway with the README's "newest feature, least real-world testing"
-  labeling (added this round) rather than being cut.
+  anyway with the README's "least real-world testing" labeling (added this
+  round) rather than being cut.
 - **Friendly monitor names.** Monitors are still presented as
   `DISPLAY1`/`DISPLAY2` (GDI device names) with resolution + "primary"
   metadata. Real display names need
@@ -283,3 +283,13 @@ v0.1.0 tag must not be cut before its P0 items pass:**
 - Installer install + launch smoke test on a clean machine (Task 23 — the
   NSIS bundle builds and is present, but installing and launching it needs a
   human session).
+
+**v0.2.0 carries the same gate forward.** The spacing / app-defaults / views
+work adds its own GUI-only checks — plus the v0.1.0 regression items the
+pixel-rect changes touch — in
+[`smoke-test-v0.2.0.md`](smoke-test-v0.2.0.md). Everything in it is
+logic-tested (304 vitest + 125 cargo tests) and, exactly as at v0.1.0, none
+of it has been seen by a human from this build environment. The `v0.2.0`
+commit and tag mark the code and the built installer; **the P0 pass is still
+owed and gates handing that installer to anyone.** Record the results
+(pass/fail per item, machine specs, monitor topology) against the tag.

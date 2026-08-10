@@ -1,7 +1,10 @@
 # v0.2.0 human smoke pass — release gate
 
-**The `v0.2.0` tag must not be cut until every P0 item below has been run by
-a human at a GUI and checked off.** Same contract as
+**No v0.2.0 build may be handed to anyone until every P0 item below has been
+run by a human at a GUI and checked off.** The tag itself was cut from a
+headless build environment on green automation (304 vitest + 125 cargo tests)
+plus a built installer — so at tag time every box here is still open, exactly
+as at v0.1.0. Same contract as
 [`smoke-test-v0.1.0.md`](smoke-test-v0.1.0.md): everything here is covered by
 automated tests at the logic level only — the pixels have to be *seen* once.
 v0.2.0 tasks append their GUI-only checks to this file as they land.

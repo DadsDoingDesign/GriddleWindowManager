@@ -12,9 +12,14 @@ as the single source of truth, while Rust tracks native windows with
 No network access, no telemetry, no cloud — your window titles never leave
 your machine. MIT licensed.
 
+**New in 0.2.0:** [gap and padding](#spacing) so tiled windows get some
+breathing room, [per-app default spots](#app-defaults) you save by
+right-clicking a tile, and [views](#views) — named snapshots of your whole
+desktop that can be restored at startup.
+
 ## Install
 
-1. Download `Griddle WM_0.1.0_x64-setup.exe` from this repository's
+1. Download `Griddle WM_0.2.0_x64-setup.exe` from this repository's
    [releases page](../../releases) (or build it from source, below).
 2. Run the installer. It installs **per-user** — no administrator rights needed.
 3. Launch **Griddle WM** from the Start menu. A first-run page opens where you
@@ -22,8 +27,8 @@ your machine. MIT licensed.
 
 ### About the SmartScreen warning
 
-The v0.1.0 binaries are **not code-signed** (certificates cost money and this
-is an early release), so Windows SmartScreen will show *"Windows protected
+The binaries are **not code-signed** (certificates cost money and this is
+still an early release), so Windows SmartScreen will show *"Windows protected
 your PC"* the first time you run the installer. If you choose to proceed:
 click **More info → Run anyway**. That warning is Windows telling you the
 publisher is unknown — it is not a malware verdict, but you should only
@@ -60,6 +65,23 @@ Each grid runs in one of two modes (segmented control in Settings):
 Non-resizable windows (fixed-size dialogs and the like) are always treated as
 stack-style tiles and never push neighbors.
 
+### Spacing
+
+Each grid has a **Gap** and a **Padding** stepper (0–64 px, both default 0):
+
+- **Gap** spaces neighboring windows apart — it is the gutter between
+  adjacent cells, so two windows side by side end up exactly that far apart
+  no matter how many cells each of them covers.
+- **Padding** insets the whole grid from the monitor's edges by the same
+  margin on all four sides.
+
+Changing either re-spaces the real windows in one batch; cell assignments
+never change, so nothing jumps to a different spot. The grid editor
+miniature and the drag overlay draw the same gutters and margin you get on
+the desktop. If a gap would squeeze cells below 16 px on a narrow grid it is
+capped instead, and the stepper says so — it reads `64px → 41px` with a hint
+explaining the cap.
+
 ### Templates
 
 The settings window has a template gallery per grid:
@@ -76,6 +98,40 @@ The settings window has a template gallery per grid:
   happen.
 - User templates can be deleted; built-ins cannot.
 
+### App defaults
+
+Right-click any window tile in the grid editor to save where new windows of
+that program should land: **Save for this grid** or **Save for all grids**
+(a grid-specific default beats an all-grids one). The menu also opens on a
+focused tile with Shift+F10, and gains **Remove** entries once a default
+exists.
+
+Defaults are listed in Settings → **App defaults** with a miniature of the
+saved spot, the program, the scope and the cells, and a × to delete. A
+default fires when a *new* window of that program appears — in Tile mode it
+displaces whatever is sitting on those cells. Saving or removing a default
+never moves the windows already on screen.
+
+### Views
+
+A template saves a slot arrangement for one grid. A **view** saves your whole
+desktop: every enabled grid with its dimensions and spacing, plus which
+program sits where.
+
+- **Capture view**: name the current arrangement in Settings → Views. Views
+  store executable names, not window handles, so they survive reboots.
+- **Apply now**: rebuilds the view's grids and puts each program's windows
+  back on their saved cells. It never launches anything — programs that are
+  already running, or that start within the next two minutes, land on their
+  saved spots; during that window a view outranks app defaults. Extra
+  windows are auto-placed as usual.
+- **Load at startup**: pick a view (or None) and Griddle WM applies it on
+  launch. With autostart on, that covers the apps Windows relaunches after a
+  reboot — they claim their cells as they appear, even though every window
+  handle is new.
+- Views can be renamed and deleted; deleting the startup view resets the
+  choice to None.
+
 ### Spanning grids
 
 "Span monitors" in Settings creates one grid across the combined work area of
@@ -84,8 +140,8 @@ windows cannot be placed or dropped there and snap to the nearest usable
 cells. Enabling a spanning grid replaces the per-monitor grids it covers, and
 re-enabling a per-monitor grid tears down a covering span.
 
-Spanning grids are the newest feature in 0.1.0 and have had the least
-real-world testing — please report anything odd.
+Spanning grids have had the least real-world testing of anything in Griddle
+WM — please report anything odd.
 
 ### Hotkey, tray, pause
 
@@ -108,9 +164,10 @@ windows in place; removing an exclusion manages them again without a restart.
 
 Configuration lives in `%APPDATA%\griddle-wm\config.json` — plain local JSON,
 written atomically, safe to back up. (In the file, the Tile/Stack modes are
-stored as `"collision"`/`"overlay"`.)
+stored as `"collision"`/`"overlay"`.) v0.2.0 upgrades a v0.1.0 config in
+place the first time it runs — nothing to do by hand.
 
-## Limitations (v0.1.0)
+## Limitations (v0.2.0)
 
 - **Elevated (admin) windows cannot be managed.** Windows does not allow a
   non-elevated process to move elevated windows, and Griddle WM deliberately
@@ -120,7 +177,7 @@ stored as `"collision"`/`"overlay"`.)
 - Some apps draw their own window frames or override move/size behavior and
   may not land pixel-perfectly on cells.
 - No keyboard-driven tiling commands yet — arrangement is via mouse drags,
-  the grid editor, and templates.
+  the grid editor, templates and views.
 - No virtual-desktop integration; grids apply to whatever desktop is visible.
 - Binaries are unsigned (see SmartScreen note above); no auto-update — check
   the [releases page](../../releases) for new versions.
@@ -153,7 +210,7 @@ npx tauri dev    # run from apps/desktop
 # release build + NSIS installer
 cd apps/desktop
 npx tauri build
-# → src-tauri/target/release/bundle/nsis/Griddle WM_0.1.0_x64-setup.exe
+# → src-tauri/target/release/bundle/nsis/Griddle WM_0.2.0_x64-setup.exe
 ```
 
 The app icon set is generated from the original artwork in
@@ -172,5 +229,6 @@ docs/                    design spec, plan, security review, deferred items
 
 MIT licensed — see [`LICENSE`](LICENSE). No network access anywhere in the
 app: no HTTP client, no telemetry, no remote assets, strict CSP. A security
-review of the v0.1.0 IPC surface is in
+review of the IPC surface — written for v0.1.0 and re-checked against the
+v0.2.0 additions — is in
 [`docs/security-review.md`](docs/security-review.md).
