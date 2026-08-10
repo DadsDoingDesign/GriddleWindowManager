@@ -10,20 +10,27 @@
   import {
     DEFAULT_HOTKEY,
     MAX_SPACING_PX,
+    canCheckNow,
+    downloadFraction,
     effectiveSpacing,
+    initialUpdateState,
     unionWorkArea,
     type AppRule,
     type GridSettings,
     type MonitorInfo,
     type Slot,
     type StateSnapshot,
+    type UpdateState,
     type View,
     type WindowInfo,
   } from '@griddle-wm/brain';
   import {
     emitSettingsApplyView,
     emitSettingsCaptureView,
+    emitSettingsCheckUpdates,
     emitSettingsDeleteView,
+    emitSettingsDismissUpdate,
+    emitSettingsInstallUpdate,
     emitSettingsDisableGrid,
     emitSettingsEnableGrid,
     emitSettingsEnableSpan,
@@ -40,6 +47,7 @@
     listWindows,
     onMonitorsChanged,
     onStateSnapshot,
+    onUpdateState,
     readConfig,
     setPaused,
   } from '../../lib/ipc';
@@ -144,6 +152,13 @@
   let hotkeyError: string | null = $state(null);
   let appVersion = $state('');
 
+  // Updates card (spec §7). The toggle is seeded from the persisted config
+  // like autostart — this window is its only writer. The rest of the state
+  // is broadcast by the brain host, which owns the whole update flow; this
+  // page never talks to the updater itself.
+  let autoCheckUpdates = $state(false);
+  let update: UpdateState = $state(initialUpdateState());
+
   // Exclusions editor (plan Task 19). The snapshot is the truth; the config
   // read at mount only bridges the gap until the first snapshot arrives.
   let seedExclusions: string[] = $state([]);
@@ -179,6 +194,7 @@
         if (s.grids.some((g) => g.enabled)) firstRun = false;
       }),
       onMonitorsChanged((m) => (monitors = m)),
+      onUpdateState((s) => (update = s)),
     ]);
     monitors = await listMonitors();
     firstRunPick =
@@ -189,6 +205,7 @@
       hotkeyDraft = toDisplayHotkey(cfg.hotkey);
       savedHotkey = toDisplayHotkey(cfg.hotkey);
       seedExclusions = cfg.exclusions;
+      autoCheckUpdates = cfg.autoCheckUpdates;
     } else if (!snapshot?.grids.some((g) => g.enabled)) {
       firstRun = true;
     }
@@ -363,6 +380,44 @@
     autostart = enabled;
     void emitSettingsSetPrefs({ autostart: enabled });
   }
+
+  // ── updates (spec §7) ────────────────────────────────────────────────────
+  // Same shape as the autostart toggle: local state for the checkbox, one
+  // pref event to the brain, which persists it and re-reads it before every
+  // automatic check.
+
+  function toggleAutoCheckUpdates(enabled: boolean): void {
+    autoCheckUpdates = enabled;
+    void emitSettingsSetPrefs({ autoCheckUpdates: enabled });
+  }
+
+  /** Relative "last checked" phrasing; the truth is "not this session yet". */
+  function lastCheckedLabel(at: number | null): string {
+    if (at === null) return 'Not checked yet';
+    const mins = Math.floor((Date.now() - at) / 60000);
+    if (mins < 1) return 'Checked just now';
+    if (mins < 60) return `Checked ${mins} minute${mins === 1 ? '' : 's'} ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `Checked ${hours} hour${hours === 1 ? '' : 's'} ago`;
+    const days = Math.floor(hours / 24);
+    return `Checked ${days} day${days === 1 ? '' : 's'} ago`;
+  }
+
+  function formatMB(bytes: number): string {
+    return `${(bytes / 1_048_576).toFixed(1)} MB`;
+  }
+
+  /** Honest progress line: exact when the server told us the size, vague when not. */
+  const downloadLabel = $derived.by(() => {
+    if (update.installing) return 'Installing — Griddle WM will restart';
+    const fraction = downloadFraction(update);
+    if (fraction === null) return `Downloading — ${formatMB(update.downloaded)} so far`;
+    return `Downloading — ${formatMB(update.downloaded)} of ${formatMB(
+      update.total ?? 0,
+    )} (${Math.round(fraction * 100)}%)`;
+  });
+
+  const updateBusy = $derived(!canCheckNow(update));
 
   const hotkeyDirty = $derived(
     hotkeyDraft.trim() !== '' && hotkeyDraft.trim() !== savedHotkey,
@@ -772,6 +827,93 @@
       </label>
     </div>
   </header>
+
+  <!-- Update banner (spec §7). Nothing here happens on its own: the release
+       is named, its notes are shown in full, and the install only starts when
+       the user presses the button. -->
+  {#if update.phase === 'available' && update.version}
+    <section class="card update-banner">
+      <div class="card-head">
+        <div class="mon-info">
+          <h2>Griddle WM {update.version} is available</h2>
+          <p class="meta">
+            You are on {appVersion || 'this release'}{#if update.date} ·
+              released {update.date}{/if}
+          </p>
+        </div>
+      </div>
+      {#if update.notes}
+        <div class="release-notes">{update.notes}</div>
+      {:else}
+        <p class="hint">
+          This release ships no notes — the version number above is all the
+          feed carries.
+        </p>
+      {/if}
+      <div class="controls">
+        <button class="primary" onclick={() => void emitSettingsInstallUpdate()}>
+          Download and install
+        </button>
+        <button class="quiet" onclick={() => void emitSettingsDismissUpdate()}>
+          Not now
+        </button>
+      </div>
+      <p class="hint">
+        Griddle WM downloads the installer from GitHub, checks its signature,
+        pauses window management, saves your settings, and restarts. Your
+        grids come back exactly as they are now.
+      </p>
+    </section>
+  {:else if update.phase === 'downloading'}
+    {@const fraction = downloadFraction(update)}
+    <section class="card update-banner">
+      <div class="card-head">
+        <div class="mon-info">
+          <h2>Getting Griddle WM {update.version}</h2>
+          <p class="meta">{downloadLabel}</p>
+        </div>
+      </div>
+      <div
+        class="progress"
+        class:indeterminate={fraction === null}
+        role="progressbar"
+        aria-label="Update download"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={fraction === null ? undefined : Math.round(fraction * 100)}
+      >
+        <span class="bar" style={fraction === null ? '' : `width: ${fraction * 100}%`}
+        ></span>
+      </div>
+      <p class="hint">
+        Window management is released the moment the installer takes over —
+        your windows stay where they are until Griddle WM comes back.
+      </p>
+    </section>
+  {:else if update.phase === 'error'}
+    <section class="card update-banner failed">
+      <div class="card-head">
+        <div class="mon-info">
+          <h2>The update didn't go through</h2>
+          <p class="meta">{update.error}</p>
+        </div>
+      </div>
+      <div class="controls">
+        <button
+          class="primary"
+          disabled={updateBusy}
+          onclick={() => void emitSettingsCheckUpdates()}>Try again</button
+        >
+        <button class="quiet" onclick={() => void emitSettingsDismissUpdate()}>
+          Dismiss
+        </button>
+      </div>
+      <p class="hint">
+        Nothing was changed. You can also download the installer yourself from
+        the releases page.
+      </p>
+    </section>
+  {/if}
 
   {#if sortedMonitors.length === 0}
     <p class="empty">Looking for monitors…</p>
@@ -1496,6 +1638,69 @@
     </p>
   </section>
 
+  <!-- Updates (spec §7). This is the only card in the app that can cause
+       network traffic, so it says so plainly and starts switched off. -->
+  <section class="card">
+    <div class="card-head">
+      <div class="mon-info">
+        <h2>Updates</h2>
+        <p class="meta">
+          You are running {appVersion || 'this release'}{#if autoCheckUpdates}
+            · {lastCheckedLabel(update.lastCheckedAt)}{/if}
+        </p>
+      </div>
+    </div>
+    <div class="controls">
+      <label class="switch">
+        <input
+          type="checkbox"
+          checked={autoCheckUpdates}
+          onchange={(e) => toggleAutoCheckUpdates(e.currentTarget.checked)}
+        />
+        <span class="track"><span class="thumb"></span></span>
+        <span class="switch-label wide">Check for updates automatically</span>
+      </label>
+    </div>
+    <div class="controls">
+      <button
+        class="primary"
+        disabled={updateBusy}
+        onclick={() => void emitSettingsCheckUpdates()}
+      >
+        {update.phase === 'checking' ? 'Checking…' : 'Check now'}
+      </button>
+      <span class="hint">
+        {#if update.phase === 'checking'}
+          Asking GitHub what the latest release is.
+        {:else if update.upToDate}
+          {lastCheckedLabel(update.lastCheckedAt)} — you're on the latest
+          release.
+        {:else if autoCheckUpdates}
+          {lastCheckedLabel(update.lastCheckedAt)}. Griddle WM checks again
+          once a day while it's running.
+        {:else}
+          Automatic checks are off. This button still works — one check, right
+          now, because you asked for it.
+        {/if}
+      </span>
+    </div>
+    <!-- The privacy trade is the whole reason this setting exists. Say what
+         actually leaves the machine, and what does not. -->
+    <p class="hint">
+      Griddle WM has no telemetry and nothing else in it talks to the network.
+      A check is a plain request to GitHub for this project's public
+      <code>latest.json</code>; the comparison with your version happens on your
+      machine. GitHub can see your IP address and the time of the request, the
+      way it can for anyone loading a page from it. Nothing about your windows,
+      your apps or your configuration is ever sent.
+    </p>
+    <p class="hint">
+      Updates are never installed on their own: Griddle WM tells you a release
+      exists, shows you what changed, and waits. Every download is checked
+      against the project's signing key before it is allowed to run.
+    </p>
+  </section>
+
   <section class="card">
     <div class="card-head">
       <div class="mon-info">
@@ -1631,6 +1836,73 @@
   }
   .hint.error {
     color: #f66a6a;
+  }
+
+  /* Update banner (spec §7): the one card allowed to raise its voice, and
+     only while something is actually on offer. */
+  .update-banner {
+    border-color: rgba(139, 124, 246, 0.55);
+    background: linear-gradient(
+      180deg,
+      rgba(139, 124, 246, 0.1),
+      var(--card) 70%
+    );
+  }
+  .update-banner.failed {
+    border-color: rgba(246, 106, 106, 0.5);
+    background: linear-gradient(180deg, rgba(246, 106, 106, 0.09), var(--card) 70%);
+  }
+  .release-notes {
+    max-height: 220px;
+    overflow-y: auto;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--well);
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    /* Release notes are the one place the user needs to read carefully. */
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  .progress {
+    height: 8px;
+    border-radius: 999px;
+    background: var(--well);
+    border: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .progress .bar {
+    display: block;
+    height: 100%;
+    width: 0;
+    background: var(--accent);
+    transition: width 0.2s ease;
+  }
+  /* No content length from the server → no fake percentage; a sliding sliver
+     says "working" without claiming to know how far along it is. */
+  .progress.indeterminate .bar {
+    width: 32%;
+    transition: none;
+    animation: slide 1.3s ease-in-out infinite;
+  }
+  @keyframes slide {
+    0% {
+      transform: translateX(-110%);
+    }
+    100% {
+      transform: translateX(340%);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .progress.indeterminate .bar {
+      animation: none;
+      width: 100%;
+      opacity: 0.5;
+    }
   }
 
   .empty {

@@ -25,12 +25,24 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'"
+      "csp": "default-src 'self'; connect-src 'self' https://github.com https://objects.githubusercontent.com"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/dadsdoingdesign/griddle-wm/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEIzMTNCQkZBNkU1MkU5MApSV1NRTHVXbXZ6c3hDNElpcm55WEFUSWFubGcvTUNodVROcFJtWXpFbm81cjhkOGZBU0ZxQUQrcAo=",
+      "windows": {
+        "installMode": "passive"
+      }
     }
   },
   "bundle": {
     "active": true,
     "targets": ["nsis"],
+    "createUpdaterArtifacts": true,
     "publisher": "Griddle WM contributors",
     "copyright": "© 2026 Griddle WM contributors",
     "shortDescription": "Grid-based window manager for Windows 11",

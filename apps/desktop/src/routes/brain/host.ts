@@ -41,7 +41,10 @@ import {
   windowIsTracked,
   onSettingsApplyView,
   onSettingsCaptureView,
+  onSettingsCheckUpdates,
   onSettingsDeleteView,
+  onSettingsDismissUpdate,
+  onSettingsInstallUpdate,
   onSettingsRemoveAppRule,
   onSettingsRenameView,
   onSettingsSetAppRule,
@@ -61,6 +64,7 @@ import {
   updateTray,
   writeConfig,
 } from '../../lib/ipc';
+import { startUpdater } from './updates';
 
 /** How long after the last state change the config is persisted. */
 const SAVE_DEBOUNCE_MS = 500;
@@ -267,6 +271,26 @@ export async function startBrainHost(): Promise<BrainHost> {
   // enabled (no snapshot fired above → stale checks would linger otherwise).
   pushTrayState();
 
+  /** Flush any pending debounced save immediately. */
+  const flushSave = async () => {
+    markUserAction(); // an explicit flush always writes
+    if (saveTimer !== null) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
+    await save();
+  };
+
+  // Opt-in update checks (spec §7). Creating the driver performs the launch
+  // check — which the pure policy refuses outright while `autoCheckUpdates`
+  // is false, so a default install still never touches the network. The
+  // driver gets `flushSave` because the installer handoff has to persist the
+  // config *before* the shell freezes and the process restarts.
+  const updater = startUpdater({
+    autoCheckEnabled: () => brain.exportConfig().autoCheckUpdates,
+    persistNow: flushSave,
+  });
+
   /** Enable a collision grid on a monitor against a fresh window sweep. */
   const enableOnMonitor = async (monitorId?: string, cols = 12, rows = 6) => {
     markUserAction();
@@ -432,6 +456,9 @@ export async function startBrainHost(): Promise<BrainHost> {
           console.error('state-snapshot re-emit failed:', e),
         );
       }
+      // A settings window opened by the tray's update entry must find the
+      // offer already on screen, so the update state is re-emitted too.
+      updater.broadcast();
     }),
     // Overlay webview → brain (plan Task 15): same re-emit, so a freshly
     // created overlay learns its grid's dims without waiting for a change.
@@ -555,7 +582,21 @@ export async function startBrainHost(): Promise<BrainHost> {
     onSettingsSetPrefs((p) => {
       markUserAction();
       brain.setShellPrefs(p);
+      // Opting in should answer the question the user just asked, not wait
+      // for the next poll. Opting out needs nothing: the policy refuses.
+      if (p.autoCheckUpdates === true) updater.maybeAutoCheck();
     }),
+    // Update checks (spec §7). The settings window decides nothing on its
+    // own — it sends intents and the driver applies the same pure policy to
+    // all three. "Check now" is honoured whatever the toggle says (the click
+    // is the consent); install only ever proceeds against a live offer.
+    onSettingsCheckUpdates(() => {
+      void updater.checkNow();
+    }),
+    onSettingsInstallUpdate(() => {
+      void updater.installNow();
+    }),
+    onSettingsDismissUpdate(() => updater.dismiss()),
     onTrayToggleGrid((p) =>
       toggleFromTray(p.monitorId).catch((e) => {
         console.error('tray-toggle-grid failed:', e);
@@ -582,15 +623,11 @@ export async function startBrainHost(): Promise<BrainHost> {
       await enableOnMonitor(monitorId, cols, rows);
     },
     async saveNow() {
-      markUserAction(); // explicit flush always writes
-      if (saveTimer !== null) {
-        clearTimeout(saveTimer);
-        saveTimer = null;
-      }
-      await save();
+      await flushSave();
     },
     destroy() {
       destroyed = true;
+      updater.destroy();
       clearInterval(beatTimer);
       if (monitorsDebounce !== null) clearTimeout(monitorsDebounce);
       if (saveTimer !== null) clearTimeout(saveTimer);

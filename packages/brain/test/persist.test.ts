@@ -113,7 +113,7 @@ describe('serializeConfig / parseConfig', () => {
 
   it('round-trips a populated config', () => {
     const cfg: AppConfig = {
-      version: 2,
+      version: 3,
       grids: [makeGridSettings(), makeGridSettings({ id: 'grid:other', enabled: false })],
       templates: [
         {
@@ -151,6 +151,7 @@ describe('serializeConfig / parseConfig', () => {
         },
       ],
       startupViewId: 'view:1',
+      autoCheckUpdates: true,
     };
     expect(parseConfig(serializeConfig(cfg))).toEqual(cfg);
   });
@@ -160,7 +161,7 @@ describe('serializeConfig / parseConfig', () => {
     expect(parseConfig('null')).toBeNull();
     expect(parseConfig('42')).toBeNull();
     expect(parseConfig('[]')).toBeNull();
-    expect(parseConfig('{"version":3}')).toBeNull();
+    expect(parseConfig('{"version":4}')).toBeNull();
     expect(parseConfig('{}')).toBeNull();
   });
 
@@ -308,7 +309,7 @@ describe('exportConfig / constructor round-trip', () => {
     const slotsA = tileSlots(last(a.snapshots));
 
     const cfg = a.brain.exportConfig();
-    expect(cfg.version).toBe(2);
+    expect(cfg.version).toBe(3);
     expect(cfg.grids).toEqual([makeGridSettings()]);
     expect(cfg.exclusions).toEqual(['excluded.exe']);
     expect(cfg.templates.filter((t) => !t.builtin).map((t) => t.name)).toEqual([

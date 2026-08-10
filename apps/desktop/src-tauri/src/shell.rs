@@ -46,6 +46,7 @@ const TRAY_ID: &str = "griddle-tray";
 const MENU_ID_PAUSE: &str = "pause";
 const MENU_ID_SETTINGS: &str = "settings";
 const MENU_ID_QUIT: &str = "quit";
+const MENU_ID_UPDATE: &str = "update";
 const MENU_ID_TOGGLE_PREFIX: &str = "toggle:";
 
 // ---------------------------------------------------------------------------
@@ -67,9 +68,17 @@ pub fn is_exiting() -> bool {
     EXITING.load(Ordering::SeqCst)
 }
 
-/// Mark the app as deliberately quitting (tray Quit).
+/// Mark the app as deliberately quitting (tray Quit, update handoff).
 pub fn mark_exiting() {
     EXITING.store(true, Ordering::SeqCst);
+}
+
+/// Undo [`mark_exiting`]. Only the update handoff uses this — an install
+/// that failed after arming must leave a live, self-healing app behind, not
+/// one whose brain watchdog has been switched off (`set_update_handoff`).
+/// Tray Quit never disarms: that exit really is happening.
+pub(crate) fn clear_exiting() {
+    EXITING.store(false, Ordering::SeqCst);
 }
 
 /// Pure watchdog policy: should a destroyed window with `label` trigger a
@@ -408,6 +417,11 @@ struct TrayState {
     pause_item: CheckMenuItem<Wry>,
     /// `(monitorId, item)` in menu order.
     monitor_items: Vec<(String, CheckMenuItem<Wry>)>,
+    /// Last enabled-monitor set the brain pushed. Kept so a menu *rebuild*
+    /// triggered by something other than a snapshot — the update entry
+    /// appearing or going away — can reproduce the current check states
+    /// instead of clearing them.
+    enabled_monitor_ids: Vec<String>,
 }
 
 fn tray_state() -> &'static Mutex<Option<TrayState>> {
@@ -430,6 +444,19 @@ fn build_menu(
     enabled_monitor_ids: &[String],
 ) -> tauri::Result<(Menu<Wry>, Vec<(String, CheckMenuItem<Wry>)>, CheckMenuItem<Wry>)> {
     let menu = Menu::new(app)?;
+    // Spec §7 "Update checks": when the driver found a release, the tray
+    // says so at the very top — it is the only surface a user who never
+    // opens Settings will see. It opens Settings; nothing installs from here.
+    if let Some(version) = offered_update_version() {
+        menu.append(&MenuItem::with_id(
+            app,
+            MENU_ID_UPDATE,
+            update_menu_label(&version).as_str(),
+            true,
+            None::<&str>,
+        )?)?;
+        menu.append(&PredefinedMenuItem::separator(app)?)?;
+    }
     let mut monitor_items = Vec::with_capacity(monitors.len());
     for m in monitors {
         let checked = enabled_monitor_ids.iter().any(|id| id == &m.id);
@@ -497,6 +524,7 @@ pub fn init_tray(app: &AppHandle) -> tauri::Result<()> {
         tray,
         pause_item,
         monitor_items,
+        enabled_monitor_ids: Vec::new(),
     });
     log::info!("tray icon created with {} monitor item(s)", monitors.len());
     Ok(())
@@ -514,6 +542,14 @@ fn on_menu_event(app: &AppHandle, menu_id: &str) {
             log::info!("tray: quit requested");
             mark_exiting(); // the brain-host watchdog must not respawn now
             app.exit(0);
+        }
+        // Spec §7: the tray never installs anything. It opens Settings,
+        // where the banner shows the version and release notes and the user
+        // decides.
+        MENU_ID_UPDATE => {
+            if let Err(e) = open_settings(app) {
+                log::error!("tray: failed to open settings for the update offer: {e}");
+            }
         }
         other => {
             if let Some(monitor_id) = monitor_id_from_menu_id(other) {
@@ -544,6 +580,7 @@ fn sync_tray(app: &AppHandle, enabled_monitor_ids: &[String], floating: usize) {
     let Some(state) = guard.as_mut() else {
         return; // tray never came up (init_tray failed); nothing to sync
     };
+    state.enabled_monitor_ids = enabled_monitor_ids.to_vec();
     if let Err(e) = state.tray.set_tooltip(Some(tray_tooltip(floating))) {
         log::error!("failed to set tray tooltip: {e}");
     }
@@ -596,6 +633,136 @@ pub fn update_tray(
         return;
     }
     sync_tray(&app, &enabled_monitor_ids, floating_count.unwrap_or(0));
+}
+
+// ---------------------------------------------------------------------------
+// Update offer + installer handoff (spec §7 "Update checks")
+// ---------------------------------------------------------------------------
+//
+// Everything about *deciding* to update lives in the brain host (it holds the
+// config, the 24 h clock and the updater plugin's handles). Rust owns the two
+// pieces the webview cannot reach: the tray entry that announces an offer to
+// a user who never opens Settings, and the shell freeze that must happen
+// before the NSIS installer takes over.
+
+/// Version currently being offered, or `None` when there is no offer.
+fn update_offer_lock() -> &'static Mutex<Option<String>> {
+    static OFFER: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+    OFFER.get_or_init(|| Mutex::new(None))
+}
+
+fn offered_update_version() -> Option<String> {
+    update_offer_lock()
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone()
+}
+
+/// Label of the tray's update entry. The ellipsis is the promise that
+/// clicking it opens something rather than starting an install.
+pub fn update_menu_label(version: &str) -> String {
+    format!("Update to {version}\u{2026}")
+}
+
+/// Pure policy behind `set_update_status`: what the tray should be showing
+/// for a given `(available, version)` claim. An "available" claim carrying no
+/// usable version is not something the menu could honestly label, so it reads
+/// as no offer rather than as a nameless "an update exists".
+pub fn offer_from_status(available: bool, version: Option<&str>) -> Option<String> {
+    if !available {
+        return None;
+    }
+    let trimmed = version?.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(trimmed.to_string())
+}
+
+/// Rebuild the tray menu in place, preserving the check states the last
+/// `update_tray` established. Used when the menu's *shape* changed for a
+/// reason the snapshot path knows nothing about (the update entry).
+fn rebuild_tray_menu(app: &AppHandle) {
+    let monitors = cached_monitors();
+    let mut guard = tray_state().lock().unwrap_or_else(|p| p.into_inner());
+    let Some(state) = guard.as_mut() else {
+        return;
+    };
+    let enabled = state.enabled_monitor_ids.clone();
+    match build_menu(app, &monitors, &enabled) {
+        Ok((menu, monitor_items, pause_item)) => {
+            if let Err(e) = state.tray.set_menu(Some(menu)) {
+                log::error!("failed to replace tray menu: {e}");
+                return;
+            }
+            state.monitor_items = monitor_items;
+            state.pause_item = pause_item;
+        }
+        Err(e) => log::error!("failed to rebuild tray menu: {e}"),
+    }
+}
+
+/// Contract §C2 extension (spec §7): `set_update_status(available, version)`
+/// — the brain host's updater driver tells the tray whether an offer is on
+/// the table. Brain-host only: no other webview may put an update entry in
+/// front of the user. Nothing here checks, downloads or installs anything;
+/// the entry only opens Settings.
+#[tauri::command]
+pub fn set_update_status(app: AppHandle, window: tauri::Window, available: bool, version: Option<String>) {
+    if crate::guard::authorize("set_update_status", window.label()).is_err() {
+        return;
+    }
+    let wanted = offer_from_status(available, version.as_deref());
+    {
+        let mut current = update_offer_lock().lock().unwrap_or_else(|p| p.into_inner());
+        if *current == wanted {
+            return; // menu already says exactly this
+        }
+        log::info!(
+            "update offer: {}",
+            wanted.as_deref().unwrap_or("none (cleared)")
+        );
+        *current = wanted;
+    }
+    rebuild_tray_menu(&app);
+}
+
+/// Contract §C2 extension (spec §7): `set_update_handoff(active)` — the shell
+/// state the brain host arms immediately before handing a downloaded package
+/// to the NSIS installer (which restarts the app), and disarms if the install
+/// never happens.
+///
+/// Two shell facts have to be true across that handoff:
+///
+/// * **Nothing may move a window any more.** This reuses the pause flag the
+///   tray's panic button owns — the tracker and actuator already consult it
+///   before every event and every apply. It deliberately calls the *raw*
+///   [`set_paused_flag`] instead of [`set_paused_state`]: the latter emits
+///   `paused-changed`, which the brain mirrors into its config and would
+///   persist, so the user would come back from the update into a paused
+///   window manager they never asked for. The brain host flushes the config
+///   to disk (`saveNow`) immediately before arming, so what survives the
+///   restart is the real, unpaused state.
+/// * **The brain window must be allowed to die.** The installer tears the
+///   process down; without [`mark_exiting`] the respawn watchdog would fight
+///   it, rebuilding the brain webview mid-teardown.
+///
+/// Both are reversible on purpose: if the install fails after arming, the
+/// host disarms and the user is left with a working window manager and an
+/// error message rather than a silently frozen one.
+#[tauri::command]
+pub fn set_update_handoff(window: tauri::Window, active: bool) -> Result<(), String> {
+    crate::guard::authorize("set_update_handoff", window.label())?;
+    if active {
+        log::info!("update: freezing window management and handing off to the installer");
+        set_paused_flag(true);
+        mark_exiting();
+    } else {
+        log::warn!("update: install did not happen; unfreezing window management");
+        clear_exiting();
+        set_paused_flag(false);
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -813,6 +980,39 @@ mod tests {
         assert_eq!(monitor_id_from_menu_id(MENU_ID_PAUSE), None);
         assert_eq!(monitor_id_from_menu_id(MENU_ID_SETTINGS), None);
         assert_eq!(monitor_id_from_menu_id(MENU_ID_QUIT), None);
+        assert_eq!(monitor_id_from_menu_id(MENU_ID_UPDATE), None);
+    }
+
+    // -- update offer (spec §7) ----------------------------------------------
+
+    #[test]
+    fn update_menu_label_names_the_version_and_promises_a_dialog() {
+        assert_eq!(update_menu_label("0.3.0"), "Update to 0.3.0\u{2026}");
+        assert!(
+            update_menu_label("1.0.0").ends_with('\u{2026}'),
+            "the ellipsis says 'opens something', not 'installs now'"
+        );
+    }
+
+    /// The tray entry exists only while a *labelable* offer does: an
+    /// "available" claim carrying no version can never become an honest menu
+    /// item, so it must read as no offer at all rather than as a nameless
+    /// "something is available".
+    #[test]
+    fn update_offer_needs_both_a_yes_and_a_version() {
+        assert_eq!(offer_from_status(true, Some("0.3.0")), Some("0.3.0".into()));
+        assert_eq!(offer_from_status(true, Some("  0.3.0  ")), Some("0.3.0".into()));
+        assert_eq!(offer_from_status(true, None), None, "no version, nothing to label");
+        assert_eq!(offer_from_status(true, Some("   ")), None);
+        assert_eq!(offer_from_status(false, Some("0.3.0")), None, "cleared wins");
+        assert_eq!(offer_from_status(false, None), None);
+    }
+
+    /// Nothing offers an update until the driver says so — a tray built at
+    /// startup carries no update entry.
+    #[test]
+    fn no_update_is_offered_before_a_check_runs() {
+        assert_eq!(offered_update_version(), None);
     }
 
     // -- monitor labels ------------------------------------------------------

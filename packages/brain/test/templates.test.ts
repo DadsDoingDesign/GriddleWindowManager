@@ -102,7 +102,7 @@ const TPL_8X6: Template = {
 
 function makeConfig(templates: Template[]): AppConfig {
   return {
-    version: 2,
+    version: 3,
     grids: [],
     templates,
     exclusions: [],
@@ -113,6 +113,7 @@ function makeConfig(templates: Template[]): AppConfig {
     appRules: [],
     views: [],
     startupViewId: null,
+    autoCheckUpdates: false,
   };
 }
 

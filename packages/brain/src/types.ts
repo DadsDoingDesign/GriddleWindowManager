@@ -180,10 +180,12 @@ export interface StateSnapshot {
 export interface AppConfig {
   // schema for %APPDATA%/griddle-wm/config.json
   // v2 (spec v0.2 §4): adds `appRules`, `views`, `startupViewId`;
-  // `GridSettings` gained `gap`/`padding`. The loaders (persist.ts and the
-  // Rust mirror's serde defaults) migrate v1 configs in place — defaults
-  // `appRules: [], views: [], startupViewId: null`, spacing absent-means-0.
-  version: 2;
+  // `GridSettings` gained `gap`/`padding`.
+  // v3 (spec §7 "Update checks"): adds `autoCheckUpdates`, default false.
+  // The loaders (persist.ts and the Rust mirror's serde defaults) migrate
+  // older configs in place — defaults `appRules: [], views: [],
+  // startupViewId: null, autoCheckUpdates: false`, spacing absent-means-0.
+  version: 3;
   grids: GridSettings[];
   templates: Template[];
   exclusions: string[]; // lowercase exe names
@@ -197,4 +199,11 @@ export interface AppConfig {
   views: View[];
   /** View applied on app launch, or null for none (spec v0.2 §3). */
   startupViewId: string | null;
+  /**
+   * Check GitHub Releases for a newer Griddle WM (spec §7 "Update checks").
+   * **Default false** — this is the only setting in the whole config that
+   * can cause an outbound request, so it stays off until the user turns it
+   * on. Absent in every v1/v2 config, which reads as `false`.
+   */
+  autoCheckUpdates: boolean;
 }

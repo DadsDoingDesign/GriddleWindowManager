@@ -42,8 +42,12 @@ pub fn caller_allowed(command: &str, label: &str) -> bool {
         // Brain-host only: window actuation, config persistence, tray state,
         // overlay lifecycle and event vetting (host.ts is their sole
         // legitimate caller).
+        // (`set_update_status` drives the tray's update entry and
+        // `set_update_handoff` freezes the shell for the installer handoff —
+        // both belong to the update driver, which lives in the brain host.)
         "apply_layout" | "focus_window" | "write_config" | "update_tray" | "show_overlay"
-        | "hide_overlay" | "window_is_tracked" | "brain_alive" => main,
+        | "hide_overlay" | "window_is_tracked" | "brain_alive" | "set_update_status"
+        | "set_update_handoff" => main,
         // Brain host + settings UI.
         "read_config" | "set_paused" | "show_settings" | "list_windows" => main || settings,
         // Overlays additionally need the monitor list to draw their grid.
@@ -69,7 +73,7 @@ pub fn authorize(command: &str, label: &str) -> Result<(), String> {
 mod tests {
     use super::*;
 
-    const ALL_COMMANDS: [&str; 13] = [
+    const ALL_COMMANDS: [&str; 15] = [
         "list_windows",
         "list_monitors",
         "apply_layout",
@@ -83,6 +87,8 @@ mod tests {
         "update_tray",
         "window_is_tracked",
         "brain_alive",
+        "set_update_status",
+        "set_update_handoff",
     ];
 
     #[test]
@@ -107,6 +113,11 @@ mod tests {
             "hide_overlay",
             "window_is_tracked",
             "brain_alive",
+            // The settings window asks for updates by *event* (the brain host
+            // owns the driver); it must not be able to fake a tray offer or
+            // freeze the shell for an installer that is not coming.
+            "set_update_status",
+            "set_update_handoff",
         ] {
             assert!(!caller_allowed(cmd, SETTINGS_LABEL), "{cmd} must be denied for settings");
             assert!(authorize(cmd, SETTINGS_LABEL).is_err());

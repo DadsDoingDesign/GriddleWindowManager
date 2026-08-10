@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "updater",
+  "description": "Opt-in update checks (spec §7). Only the brain host may check, download and install: it is the window that owns the config toggle, the 24h clock and the pause+persist handoff. The settings window asks for a check by event and never touches the updater plugin itself, so a compromised settings page cannot start a download; overlay webviews are excluded entirely. `process:allow-restart` (not `process:default`) — the app is relaunched after an install, never asked to exit.",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "updater:default",
+    "process:allow-restart"
+  ]
+}

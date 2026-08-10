@@ -40,6 +40,13 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        // Opt-in update checks (spec §7). Registering the plugin costs
+        // nothing at runtime: it only exposes commands, and the sole caller
+        // is the brain host's driver, which never runs unless the user
+        // switched the toggle on or pressed "Check now". `process` supplies
+        // the relaunch after the installer has done its work.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -99,6 +106,8 @@ pub fn run() {
             shell::show_settings,
             shell::update_tray,
             shell::brain_alive,
+            shell::set_update_status,
+            shell::set_update_handoff,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

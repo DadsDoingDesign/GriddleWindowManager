@@ -14,6 +14,7 @@ import type {
   MonitorInfo,
   PreviewState,
   StateSnapshot,
+  UpdateState,
   WindowInfo,
 } from '@griddle-wm/brain';
 
@@ -184,14 +185,16 @@ export interface SettingsSetStartupViewPayload {
 
 /**
  * Payload of `settings-set-prefs` (settings → brain, plan Task 18): the
- * General-card toggles. Routed to `setShellPrefs`; the persisted config then
- * drives Rust's autostart registration and hotkey re-bind. Pause is absent
- * here on purpose — its authority is the `set_paused` command, echoed back
- * via `paused-changed`.
+ * General-card toggles, plus the Updates card's opt-in (spec §7). Routed to
+ * `setShellPrefs`; the persisted config then drives Rust's autostart
+ * registration and hotkey re-bind, and the brain host's updater driver reads
+ * `autoCheckUpdates` back out of it. Pause is absent here on purpose — its
+ * authority is the `set_paused` command, echoed back via `paused-changed`.
  */
 export interface SettingsSetPrefsPayload {
   hotkey?: string;
   autostart?: boolean;
+  autoCheckUpdates?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -271,6 +274,31 @@ export function updateTray(
   floatingCount = 0,
 ): Promise<void> {
   return invoke('update_tray', { enabledMonitorIds, floatingCount });
+}
+
+/**
+ * Contract extension (spec §7 "Update checks"): tell the tray whether an
+ * update offer is on the table, so a user who never opens Settings still
+ * learns about it. Brain-host only; the tray entry opens Settings and
+ * installs nothing.
+ */
+export function setUpdateStatus(
+  available: boolean,
+  version: string | null,
+): Promise<void> {
+  return invoke('set_update_status', { available, version });
+}
+
+/**
+ * Contract extension (spec §7): arm (or disarm) the installer handoff.
+ * Armed, it freezes window management — the same flag the tray's Pause owns,
+ * set without persisting it — and stops the brain-host watchdog from
+ * fighting the teardown, so the NSIS installer can restart the app cleanly.
+ * The caller flushes the config to disk *before* arming, and disarms if the
+ * install fails, so a failure leaves a working window manager behind.
+ */
+export function setUpdateHandoff(active: boolean): Promise<void> {
+  return invoke('set_update_handoff', { active });
 }
 
 // ---------------------------------------------------------------------------
@@ -567,4 +595,57 @@ export function onSettingsSetPrefs(
   cb: (p: SettingsSetPrefsPayload) => void,
 ): Promise<UnlistenFn> {
   return on('settings-set-prefs', cb);
+}
+
+// ---------------------------------------------------------------------------
+// Update checks (spec §7) — brain host ⇄ settings
+// ---------------------------------------------------------------------------
+//
+// The brain host owns the whole update flow: it is the only always-running
+// window, it holds the config toggle and the 24 h clock, and it is the only
+// window the `updater` capability is granted to. Settings renders the state
+// it broadcasts and asks for the three things a user can decide.
+
+/** Brain → settings: the full update state, on every change. */
+export function emitUpdateState(s: UpdateState): Promise<void> {
+  return emit('update-state', s);
+}
+
+export function onUpdateState(cb: (s: UpdateState) => void): Promise<UnlistenFn> {
+  return on('update-state', cb);
+}
+
+/**
+ * Settings → brain: the Updates card's "Check now". An explicit click is
+ * consent for one request, so the brain honours it whether or not the
+ * automatic toggle is on.
+ */
+export function emitSettingsCheckUpdates(): Promise<void> {
+  return emit('settings-check-updates', {});
+}
+
+export function onSettingsCheckUpdates(cb: () => void): Promise<UnlistenFn> {
+  return on('settings-check-updates', () => cb());
+}
+
+/**
+ * Settings → brain: the banner's confirm button. Only ever sent while an
+ * offer is on the table; the brain re-checks that before downloading, so a
+ * forged event cannot install anything out of nowhere.
+ */
+export function emitSettingsInstallUpdate(): Promise<void> {
+  return emit('settings-install-update', {});
+}
+
+export function onSettingsInstallUpdate(cb: () => void): Promise<UnlistenFn> {
+  return on('settings-install-update', () => cb());
+}
+
+/** Settings → brain: the banner's "Not now" (and the way out of an error). */
+export function emitSettingsDismissUpdate(): Promise<void> {
+  return emit('settings-dismiss-update', {});
+}
+
+export function onSettingsDismissUpdate(cb: () => void): Promise<UnlistenFn> {
+  return on('settings-dismiss-update', () => cb());
 }

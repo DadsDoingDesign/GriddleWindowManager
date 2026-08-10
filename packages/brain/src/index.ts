@@ -7,3 +7,4 @@ export * from './brain';
 export * from './spanning';
 export * from './templates';
 export * from './persist';
+export * from './updates';

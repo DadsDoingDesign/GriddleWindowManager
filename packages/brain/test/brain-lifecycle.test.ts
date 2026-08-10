@@ -164,7 +164,7 @@ describe('enableGrid', () => {
 
   it('skips windows whose exe is in the config exclusion list', () => {
     const cfg: AppConfig = {
-      version: 2,
+      version: 3,
       grids: [],
       templates: [],
       exclusions: ['excluded.exe'],
@@ -175,6 +175,7 @@ describe('enableGrid', () => {
       appRules: [],
       views: [],
       startupViewId: null,
+      autoCheckUpdates: false,
     };
     const { brain, applies, snapshots } = harness(cfg);
     brain.enableGrid(makeGridSettings(), [

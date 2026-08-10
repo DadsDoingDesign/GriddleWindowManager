@@ -26,6 +26,12 @@ tauri-plugin-log = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-autostart = "2"
+# Opt-in auto-update (v0.3 groundwork, default OFF — see the "Update checks"
+# section of docs/security-review.md). The updater performs its HTTP from
+# Rust; `tauri-plugin-process` supplies the relaunch the installer handoff
+# needs.
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = [

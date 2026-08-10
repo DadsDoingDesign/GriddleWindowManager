@@ -27,6 +27,8 @@
     "@griddle-wm/brain": "^0.2.0",
     "@griddle/core": "^0.1.11",
     "@griddle/svelte": "^0.1.10",
-    "@tauri-apps/api": "^2.11.1"
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-updater": "^2.10.1"
   }
 }

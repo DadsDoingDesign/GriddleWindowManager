@@ -24,7 +24,7 @@ export const DEFAULT_HOTKEY = 'Ctrl+Super+G';
 
 export function defaultConfig(): AppConfig {
   return {
-    version: 2,
+    version: 3,
     grids: [],
     templates: [],
     exclusions: [],
@@ -35,6 +35,8 @@ export function defaultConfig(): AppConfig {
     appRules: [],
     views: [],
     startupViewId: null,
+    // Opt-in, always (spec §7): a fresh install never reaches the network.
+    autoCheckUpdates: false,
   };
 }
 
@@ -202,14 +204,15 @@ function sanitizeView(raw: unknown): View | null {
  * otherwise returns a config with every invalid grid/template/exclusion
  * entry dropped and missing scalars defaulted. Never throws.
  *
- * Versions (spec v0.2 §4): v2 is current; a v1 config (written by v0.1.0)
- * migrates in place — `appRules: [], views: [], startupViewId: null`,
- * spacing fields absent (absent means 0). Unknown future versions return
- * `null`, which the host treats as corrupt (`.bak` + fresh start).
+ * Versions: v3 is current (spec §7 "Update checks"). A v1 config (written by
+ * v0.1.0) or a v2 one (v0.2.0) migrates in place — `appRules: [], views: [],
+ * startupViewId: null, autoCheckUpdates: false`, spacing fields absent
+ * (absent means 0). Unknown future versions return `null`, which the host
+ * treats as corrupt (`.bak` + fresh start).
  */
 export function sanitizeConfig(raw: unknown): AppConfig | null {
   if (!isRecord(raw)) return null;
-  if (raw.version !== 1 && raw.version !== 2) return null;
+  if (raw.version !== 1 && raw.version !== 2 && raw.version !== 3) return null;
 
   const grids: GridSettings[] = [];
   const gridIds = new Set<string>();
@@ -278,7 +281,7 @@ export function sanitizeConfig(raw: unknown): AppConfig | null {
       : null;
 
   return {
-    version: 2,
+    version: 3,
     grids,
     templates,
     exclusions,
@@ -291,6 +294,9 @@ export function sanitizeConfig(raw: unknown): AppConfig | null {
     appRules,
     views,
     startupViewId,
+    // Anything other than a literal `true` — including the field being
+    // absent, as in every v1/v2 config — reads as opted out (spec §7).
+    autoCheckUpdates: raw.autoCheckUpdates === true,
   };
 }
 

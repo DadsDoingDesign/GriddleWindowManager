@@ -219,9 +219,10 @@ pub struct StateSnapshot {
     pub paused: bool,
 }
 
-/// Schema for `%APPDATA%/griddle-wm/config.json`. Version 2 (spec v0.2 §4):
-/// adds `app_rules`, `views` and `startup_view_id` over v1; the loader in
-/// `config.rs` migrates v1 files in place via the serde defaults below.
+/// Schema for `%APPDATA%/griddle-wm/config.json`. Version 3 (spec §7 "Update
+/// checks"): adds `auto_check_updates` over v2, which itself added
+/// `app_rules`, `views` and `startup_view_id` over v1. The loader in
+/// `config.rs` migrates older files in place via the serde defaults below.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
@@ -247,6 +248,13 @@ pub struct AppConfig {
     /// View applied on app launch (spec v0.2 §3); absent/`null` = none.
     #[serde(default)]
     pub startup_view_id: Option<String>,
+    /// Check GitHub Releases for a newer Griddle WM (spec §7 "Update
+    /// checks"). The only field in this file that can cause an outbound
+    /// request, so it defaults to **false** and stays false for every v1/v2
+    /// config, which never carried it (same migration pattern as
+    /// `app_rules`/`views`).
+    #[serde(default)]
+    pub auto_check_updates: bool,
 }
 
 /// Payload of the hwnd-only events (`window-destroyed`, `window-minimized`,

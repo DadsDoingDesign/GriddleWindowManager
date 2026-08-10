@@ -16,11 +16,12 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-/// Current config schema version (contract C1, spec v0.2 §4). Version 1
-/// files (written by v0.1.0) still load: the fields v2 added all carry
-/// `#[serde(default)]`, so a v1 file deserializes with empty defaults and is
-/// re-stamped as v2 on read — only *future* versions are quarantined.
-const CONFIG_VERSION: u32 = 2;
+/// Current config schema version (contract C1). Older files still load: every
+/// field a later version added carries `#[serde(default)]`, so a v1 (v0.1.0)
+/// or v2 (v0.2.0) file deserializes with those defaults — empty rule/view
+/// lists, `auto_check_updates: false` — and is re-stamped to the current
+/// version on read. Only *future* versions are quarantined.
+const CONFIG_VERSION: u32 = 3;
 /// Oldest schema version the migration path accepts.
 const MIN_CONFIG_VERSION: u32 = 1;
 
@@ -40,9 +41,9 @@ pub fn config_dir() -> Option<PathBuf> {
 
 /// Read + validate the config under `dir`. Missing file → `None`. Corrupt or
 /// unknown-future-version file → quarantined to `config.json.bak`, then
-/// `None`. A supported older version (v1) migrates in place: the serde
+/// `None`. A supported older version (v1, v2) migrates in place: the serde
 /// defaults fill the fields it lacked and the version is re-stamped, so the
-/// next write persists a v2 file (spec v0.2 §4).
+/// next write persists a current-version file.
 pub fn read_config_from(dir: &Path) -> Option<AppConfig> {
     let path = dir.join(CONFIG_FILE);
     let bytes = match fs::read(&path) {
@@ -264,7 +265,7 @@ mod tests {
     fn sample_config() -> AppConfig {
         use crate::ipc::{AppRule, GridMode, GridSettings, Slot, Template};
         AppConfig {
-            version: 2,
+            version: 3,
             grids: vec![GridSettings {
                 id: "grid:\\\\.\\DISPLAY1@0,0".into(),
                 monitor_ids: vec!["\\\\.\\DISPLAY1@0,0".into()],
@@ -334,6 +335,7 @@ mod tests {
                 }],
             }],
             startup_view_id: Some("view:1".into()),
+            auto_check_updates: false,
         }
     }
 
@@ -495,11 +497,11 @@ mod tests {
     }
 
     /// Spec v0.2 §4: a complete v1 config (as written by v0.1.0 — no
-    /// `appRules`, `views`, `startupViewId`, no spacing fields) migrates in
-    /// place: version re-stamped to 2, the new fields empty-defaulted,
-    /// everything it did carry intact, and no `.bak` quarantine.
+    /// `appRules`, `views`, `startupViewId`, `autoCheckUpdates`, no spacing
+    /// fields) migrates in place: version re-stamped, the new fields
+    /// defaulted, everything it did carry intact, no `.bak` quarantine.
     #[test]
-    fn v1_config_migrates_to_v2_with_defaults() {
+    fn v1_config_migrates_to_current_with_defaults() {
         let dir = ScratchDir::new();
         fs::create_dir_all(dir.path()).unwrap();
         let mut json = serde_json::to_value(sample_config()).unwrap();
@@ -508,6 +510,7 @@ mod tests {
         obj.remove("appRules");
         obj.remove("views");
         obj.remove("startupViewId");
+        obj.remove("autoCheckUpdates");
         let grid = json["grids"][0].as_object_mut().unwrap();
         grid.remove("gap");
         grid.remove("padding");
@@ -518,10 +521,11 @@ mod tests {
         .unwrap();
 
         let read = read_config_from(dir.path()).expect("v1 config must stay readable");
-        assert_eq!(read.version, CONFIG_VERSION, "re-stamped to v2");
+        assert_eq!(read.version, CONFIG_VERSION, "re-stamped to the current version");
         assert!(read.app_rules.is_empty());
         assert!(read.views.is_empty());
         assert_eq!(read.startup_view_id, None);
+        assert!(!read.auto_check_updates);
         assert_eq!(read.grids[0].gap, 0);
         assert_eq!(read.grids[0].padding, 0);
         // The v1 payload survives.
@@ -532,9 +536,78 @@ mod tests {
             "a v1 config is migrated, not quarantined"
         );
 
-        // Round-trip: the next write persists v2, which reads back intact.
+        // Round-trip: the next write persists v3, which reads back intact.
         write_config_to(dir.path(), &read).expect("persist migrated config");
         assert_eq!(read_config_from(dir.path()), Some(read));
+    }
+
+    /// Spec §7 "Update checks": a **real** v2 config — everything v0.2.0
+    /// wrote, spacing/rules/views and all, but no `autoCheckUpdates` —
+    /// migrates to v3 without losing a single field, and lands opted **out**.
+    /// This is the upgrade every shipped v0.2.0 install performs on first
+    /// launch, so it must not so much as reorder a slot.
+    #[test]
+    fn v2_config_migrates_to_v3_without_loss_and_opted_out() {
+        let dir = ScratchDir::new();
+        fs::create_dir_all(dir.path()).unwrap();
+        let expected = sample_config(); // the shape v0.2.0 persisted, minus the new field
+        let mut json = serde_json::to_value(&expected).unwrap();
+        let obj = json.as_object_mut().unwrap();
+        obj.insert("version".into(), serde_json::json!(2));
+        obj.remove("autoCheckUpdates");
+        assert!(
+            !json.to_string().contains("autoCheckUpdates"),
+            "the v2 file on disk genuinely lacks the field"
+        );
+        fs::write(
+            dir.path().join(CONFIG_FILE),
+            serde_json::to_vec(&json).unwrap(),
+        )
+        .unwrap();
+
+        let read = read_config_from(dir.path()).expect("v2 config must stay readable");
+        assert_eq!(read.version, 3, "re-stamped to v3");
+        assert!(
+            !read.auto_check_updates,
+            "upgrading must never opt a user into network access"
+        );
+        // Nothing else moved: compare against the whole v2 payload at once.
+        assert_eq!(
+            AppConfig {
+                version: 2,
+                auto_check_updates: false,
+                ..read.clone()
+            },
+            AppConfig {
+                version: 2,
+                ..expected
+            },
+            "every v2 field survives the migration untouched"
+        );
+        assert!(
+            !dir.path().join(BAK_FILE).exists(),
+            "a v2 config is migrated, not quarantined"
+        );
+
+        // Round-trip: the next write persists v3, which reads back intact.
+        write_config_to(dir.path(), &read).expect("persist migrated config");
+        assert_eq!(read_config_from(dir.path()), Some(read));
+    }
+
+    /// The camelCase wire shape of the update toggle is part of contract C1,
+    /// and an opted-in config must survive a restart as opted in.
+    #[test]
+    fn auto_check_updates_round_trips_with_camel_case() {
+        let dir = ScratchDir::new();
+        let mut cfg = sample_config();
+        cfg.auto_check_updates = true;
+        write_config_to(dir.path(), &cfg).expect("write");
+        let raw = fs::read_to_string(dir.path().join(CONFIG_FILE)).unwrap();
+        assert!(
+            raw.contains("\"autoCheckUpdates\": true"),
+            "camelCase field name on disk: {raw}"
+        );
+        assert_eq!(read_config_from(dir.path()), Some(cfg));
     }
 
     /// The camelCase wire shape of the view fields is part of contract C1:

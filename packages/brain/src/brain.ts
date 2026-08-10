@@ -288,6 +288,13 @@ export class WindowManagerBrain {
   private hotkey: string;
   private autostart: boolean;
   private paused: boolean;
+  /**
+   * Opt-in update checks (spec §7). The brain only *stores* it — the host's
+   * updater driver reads it back through `exportConfig()` to decide whether
+   * the periodic check is allowed to run at all. Anything but a literal
+   * `true` from the loader is opted out.
+   */
+  private autoCheckUpdates: boolean;
 
   constructor(cb: BrainCallbacks, cfg?: AppConfig, opts?: { now?: () => number }) {
     this.cb = cb;
@@ -298,6 +305,7 @@ export class WindowManagerBrain {
     this.hotkey = cfg?.hotkey ?? DEFAULT_HOTKEY;
     this.autostart = cfg?.autostart ?? false;
     this.paused = cfg?.paused ?? false;
+    this.autoCheckUpdates = cfg?.autoCheckUpdates === true;
     // A pause that survived a restart (config `paused: true`) is already
     // running when the constructor returns — start its clock here so the
     // startup view's claim window is not eaten by it.
@@ -1169,7 +1177,7 @@ export class WindowManagerBrain {
     const layouts: Record<string, unknown> = { ...this.storedLayouts };
     for (const [id, mg] of this.grids) layouts[id] = mg.grid.toJSON();
     return {
-      version: 2,
+      version: 3,
       grids: [...this.gridSettings.values()].map((g) => ({ ...g })),
       templates: [...this.templates],
       exclusions: [...this.exclusions],
@@ -1180,6 +1188,7 @@ export class WindowManagerBrain {
       appRules: this.appRuleList(),
       views: this.views.map((v) => copyView(v)),
       startupViewId: this.startupViewId,
+      autoCheckUpdates: this.autoCheckUpdates,
     };
   }
 
@@ -1194,8 +1203,10 @@ export class WindowManagerBrain {
    * the state persists and the settings UI updates via the snapshot);
    * `autostart` and `hotkey` are the settings-window General toggles, which
    * Rust reads back out of the persisted config (autostart registration,
-   * hotkey re-bind). Only actual changes re-emit a snapshot; an empty hotkey
-   * is ignored (the accelerator must stay non-empty per contract C1).
+   * hotkey re-bind); `autoCheckUpdates` is the Updates card's toggle, which
+   * the host's updater driver reads back through `exportConfig()`. Only
+   * actual changes re-emit a snapshot; an empty hotkey is ignored (the
+   * accelerator must stay non-empty per contract C1).
    *
    * Pause also freezes the view-claim window (spec v0.2 §3): the 120 s
    * deadline is wall-clock, but pause suppresses every `window-appeared` at
@@ -1204,7 +1215,12 @@ export class WindowManagerBrain {
    * boot is exactly that case. Resuming pushes the deadline out by the
    * paused span instead.
    */
-  setShellPrefs(prefs: { paused?: boolean; autostart?: boolean; hotkey?: string }): void {
+  setShellPrefs(prefs: {
+    paused?: boolean;
+    autostart?: boolean;
+    hotkey?: string;
+    autoCheckUpdates?: boolean;
+  }): void {
     let changed = false;
     if (prefs.paused !== undefined && prefs.paused !== this.paused) {
       this.paused = prefs.paused;
@@ -1228,6 +1244,13 @@ export class WindowManagerBrain {
     }
     if (prefs.autostart !== undefined && prefs.autostart !== this.autostart) {
       this.autostart = prefs.autostart;
+      changed = true;
+    }
+    if (
+      prefs.autoCheckUpdates !== undefined &&
+      prefs.autoCheckUpdates !== this.autoCheckUpdates
+    ) {
+      this.autoCheckUpdates = prefs.autoCheckUpdates;
       changed = true;
     }
     if (

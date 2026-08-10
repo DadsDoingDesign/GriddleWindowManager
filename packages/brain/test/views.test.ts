@@ -460,7 +460,7 @@ describe('renameView / deleteView / setStartupView', () => {
 });
 
 describe('AppConfig v2 migration (spec v0.2 §4)', () => {
-  it('migrates a v1 config: version 2, empty appRules/views, null startupViewId', () => {
+  it('migrates a v1 config: empty appRules/views, null startupViewId', () => {
     const cfg = sanitizeConfig({
       version: 1,
       grids: [makeGridSettings()],
@@ -472,7 +472,7 @@ describe('AppConfig v2 migration (spec v0.2 §4)', () => {
       paused: false,
     });
     expect(cfg).not.toBeNull();
-    expect(cfg!.version).toBe(2);
+    expect(cfg!.version).toBe(3);
     expect(cfg!.appRules).toEqual([]);
     expect(cfg!.views).toEqual([]);
     expect(cfg!.startupViewId).toBeNull();
@@ -485,12 +485,12 @@ describe('AppConfig v2 migration (spec v0.2 §4)', () => {
   });
 
   it('rejects unknown future versions (host quarantines as .bak)', () => {
-    expect(sanitizeConfig({ ...defaultConfig(), version: 3 })).toBeNull();
+    expect(sanitizeConfig({ ...defaultConfig(), version: 4 })).toBeNull();
   });
 
-  it('defaultConfig is v2 and round-trips', () => {
+  it('defaultConfig is v3 and round-trips', () => {
     const cfg = defaultConfig();
-    expect(cfg.version).toBe(2);
+    expect(cfg.version).toBe(3);
     expect(cfg.views).toEqual([]);
     expect(cfg.startupViewId).toBeNull();
     expect(parseConfig(serializeConfig(cfg))).toEqual(cfg);

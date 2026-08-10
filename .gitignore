@@ -3,3 +3,22 @@ dist/
 target/
 *.local
 .claude/scheduled_tasks.lock
+
+# Signing keys — the updater's private key lives outside the repo
+# (~/.griddle-wm-keys/). These patterns are a second line of defence:
+# a leaked private key means anyone can sign a malicious update.
+*.key
+*.pem
+.griddle-wm-keys/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# OS / editor cruft
+Thumbs.db
+Desktop.ini
+.DS_Store
+.idea/
+*.swp
