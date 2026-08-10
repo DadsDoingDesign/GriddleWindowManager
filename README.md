@@ -1,262 +1,292 @@
 # Griddle Window Manager
 
-A grid-based window manager for **Windows 11**. Griddle Window Manager snaps
-real application windows onto user-configurable per-monitor (or
-monitor-spanning) grids, shows a live overlay preview while you drag, and
-gives you a settings window with a drag-and-drop grid editor that rearranges
-your actual desktop.
+**Snap your real Windows 11 windows onto a grid you design yourself.**
 
-Under the hood it is a Tauri 2 app with a "TS brain, Rust hands" split: a
-hidden webview runs the layout engine ([`@griddle/core`](https://www.npmjs.com/package/@griddle/core))
-as the single source of truth, while Rust tracks native windows with
-`SetWinEventHook` and applies layouts in batched `DeferWindowPos` calls.
-No network access, no telemetry, no cloud — your window titles never leave
-your machine. MIT licensed.
+[![License: MIT](https://img.shields.io/github/license/DadsDoingDesign/GriddleWindowManager?color=blue)](LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/DadsDoingDesign/GriddleWindowManager/ci.yml?branch=master&label=CI)](https://github.com/DadsDoingDesign/GriddleWindowManager/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/DadsDoingDesign/GriddleWindowManager?label=release)](https://github.com/DadsDoingDesign/GriddleWindowManager/releases)
+[![Platform: Windows 11](https://img.shields.io/badge/platform-Windows%2011-0078d4)](#install)
 
-**New in 0.2.0:** [gap and padding](#spacing) so tiled windows get some
-breathing room, [per-app default spots](#app-defaults) you save by
-right-clicking a tile, and [views](#views) — named snapshots of your whole
-desktop that can be restored at startup.
+Windows' built-in snapping gives you halves and quarters. Griddle Window
+Manager gives you a grid — say 12 columns by 6 rows — and lets every window
+claim whatever rectangle of cells you want, per monitor or spanning several.
+Drag a window and a translucent overlay shows exactly where it will land and
+which neighbors it will push; release to snap. Save arrangements as templates,
+pin apps to their usual spot, and restore your whole desktop at startup.
+
+Everything runs locally. There is no telemetry, no account, and no cloud —
+your window titles never leave your machine.
+
+<!-- Demo GIF goes here once one is recorded. Drop the file at
+     docs/media/demo.gif and replace this comment with:
+     ![Dragging a window onto a 12x6 grid](docs/media/demo.gif)
+     Suggested capture: 1280x720, under 15 seconds, under 8 MB. -->
+
+*There is no demo recording yet.* Until there is, the [quick start](#quick-start)
+below is the fastest way to see what the app actually does — it takes about a
+minute.
 
 ## Install
 
-1. Download `Griddle Window Manager_0.2.0_x64-setup.exe` from this
-   repository's [releases page](../../releases) (or build it from source,
-   below).
+**Requirements:** Windows 11, x64. Windows 10 is untested and there is no macOS
+or Linux build — the window-tracking half of the app is Win32-specific.
+
+1. Download `Griddle Window Manager_0.2.0_x64-setup.exe` from the
+   [releases page](https://github.com/DadsDoingDesign/GriddleWindowManager/releases)
+   (or [build it from source](#building-from-source)).
 2. Run the installer. It installs **per-user** — no administrator rights needed.
-3. Launch **Griddle Window Manager** from the Start menu. A first-run page
-   opens where you pick a monitor and enable your first grid (default 12×6).
+3. Launch **Griddle Window Manager** from the Start menu.
 
-### About the SmartScreen warning
+### The SmartScreen warning
 
-The binaries are **not code-signed** (certificates cost money and this is
-still an early release), so Windows SmartScreen will show *"Windows protected
-your PC"* the first time you run the installer. If you choose to proceed:
-click **More info → Run anyway**. That warning is Windows telling you the
-publisher is unknown — it is not a malware verdict, but you should only
-proceed if you trust where you got the file (build it from source if in
-doubt; the build is fully reproducible from this repo).
+The binaries are **not code-signed** — a certificate costs money this project
+does not have yet. Windows SmartScreen will show *"Windows protected your PC"*
+the first time you run the installer. To proceed: click **More info → Run
+anyway**.
 
-## Usage
+That warning means Windows does not recognize the publisher. It is not a
+malware verdict, but it is also not nothing: only proceed if you trust where
+you got the file. If you would rather not extend that trust to a stranger's
+binary, build from source — the whole app is in this repository and the build
+is three commands.
 
-### Grids
+## Quick start
 
-- Open **Settings** (tray icon → Settings, or press the hotkey) and enable a
-  grid on any monitor. Pick the number of **columns and rows**; the monitor's
-  work area is divided into that many cells.
-- When a grid is enabled, every eligible window on that monitor is swept into
-  the grid in one batch. Disabling a grid leaves windows where they are.
-- Drag any managed window: a translucent overlay shows the grid, the cell
-  footprint where the window will land, and (in Tile mode) ghost
-  outlines of neighbors that will be pushed. Release to snap. Resizing works
-  the same way — the window snaps to whole cells.
-- Dropping a window on a monitor with no grid un-manages it (it stays where
-  you dropped it). Dropping it on another gridded monitor transfers it to
-  that grid.
+The 60-second path from installed to useful:
 
-### Modes
+1. **Pick a monitor.** The first-run page opens automatically. Choose a
+   monitor and enable a grid on it. The default is 12 columns × 6 rows, which
+   divides cleanly into halves, thirds, quarters and sixths.
+2. **Watch everything snap.** Every eligible window on that monitor is swept
+   into the grid in one batch. This is the moment where you find out whether
+   you like this — nothing is destroyed, and disabling the grid leaves windows
+   exactly where they are.
+3. **Drag a window.** A translucent overlay fades in showing the grid, the
+   cells your window will occupy, and ghost outlines of the neighbors that
+   will be pushed aside. Release to snap. Resizing works the same way — edges
+   land on cell boundaries.
+4. **Give it some air.** In Settings, nudge **Gap** to 8 px. Every tiled
+   window now has a gutter around it, and nothing changes cells.
+5. **Save the arrangement.** Once the screen looks right, hit **Capture view**
+   in Settings → Views, and set it as your startup view. Your desktop comes
+   back this way after a reboot.
 
-Each grid runs in one of two modes (segmented control in Settings):
+Press **Ctrl+Win+G** any time to reopen Settings. If it all goes wrong, hit
+**Pause** in the tray menu — every window is instantly yours again.
 
-- **Tile** (default): windows are tiles that cannot overlap. Dropping a
-  window on an occupied cell pushes neighbors out of the way; equal-size
-  tiles swap.
-- **Stack**: windows snap to cells but may overlap freely, like a
-  loosely-aligned stack. Most recently touched stays on top.
+## Features
 
-Non-resizable windows (fixed-size dialogs and the like) are always treated as
-stack-style tiles and never push neighbors.
+**Grids per monitor, or spanning several.** Enable a grid on any monitor and
+choose its columns and rows. Or turn on **Span monitors** for one grid across
+the combined work area of two or more displays; if that union is L-shaped, the
+dead space is excluded and windows snap to the nearest usable cells.
 
-### Spacing
+**Two placement modes per grid.** **Tile** (the default) treats windows as
+tiles that cannot overlap — dropping one on an occupied cell pushes neighbors
+out of the way, and equal-size tiles swap. **Stack** lets windows snap to
+cells but overlap freely, with the most recently touched on top. Non-resizable
+windows (fixed-size dialogs) always behave as stack tiles and never push
+anyone. In `config.json` these two modes are stored under their internal names,
+`collision` and `overlay`.
 
-Each grid has a **Gap** and a **Padding** stepper (0–64 px, both default 0):
+**Templates.** A gallery per grid, with built-ins for two columns, three
+columns, 2×2 quarters, main + side column, and two rows. Capture the current
+arrangement as a named template — slots only, no window identities are stored.
+Applying one maps your current windows to its slots by recency and auto-places
+the extras. If a template's dimensions differ from the grid's, the button says
+so up front: *"Apply (re-grids to 8×6)"*.
 
-- **Gap** spaces neighboring windows apart — it is the gutter between
-  adjacent cells, so two windows side by side end up exactly that far apart
-  no matter how many cells each of them covers.
-- **Padding** insets the whole grid from the monitor's edges by the same
-  margin on all four sides.
+**Gap and padding.** **Gap** is the gutter between adjacent windows — two
+windows side by side end up exactly that far apart, however many cells each
+covers. **Padding** insets the whole grid from the monitor's edges. Both are
+0–64 px and default to 0. Changing either re-spaces real windows in one batch
+without ever reassigning cells, so nothing jumps somewhere new. On a narrow
+grid where a gap would squeeze cells below 16 px it is capped, and the stepper
+tells you: `64px → 41px`.
 
-Changing either re-spaces the real windows in one batch; cell assignments
-never change, so nothing jumps to a different spot. The grid editor
-miniature and the drag overlay draw the same gutters and margin you get on
-the desktop. If a gap would squeeze cells below 16 px on a narrow grid it is
-capped instead, and the stepper says so — it reads `64px → 41px` with a hint
-explaining the cap.
+**Per-app defaults.** Right-click any tile in the grid editor to save where new
+windows of that program should land — **Save for this grid** or **Save for all
+grids** (grid-specific wins). Defaults fire when a *new* window of that program
+appears; saving or removing one never disturbs the windows already on screen.
+They are listed and deletable in Settings → App defaults.
 
-### Templates
+**Views.** Where a template saves one grid's slots, a view saves your whole
+desktop: every enabled grid with its dimensions and spacing, plus which program
+sits where. Views store executable names rather than window handles, so they
+survive reboots. **Apply now** rebuilds the grids and puts running programs back
+on their cells — it never launches anything, but programs that start within the
+next two minutes claim their saved spots as they appear. Set one as **Load at
+startup** and, with autostart enabled, your desktop reassembles itself after a
+reboot even though every window handle is new.
 
-The settings window has a template gallery per grid:
+**Tray, hotkey, and pause.** **Ctrl+Win+G** opens Settings (rebindable). The
+tray menu carries per-monitor grid toggles, Settings, Quit, and **Pause** — the
+panic button, which stops all tracking and window actuation instantly and
+survives restarts. **Start with Windows** is offered on the first-run page and
+lives in Settings → General.
 
-- **Built-ins**: two columns, three columns, 2×2 quarters, main + side
-  column, and two rows — all authored on the default 12×6 grid, so applying
-  one never changes your grid's dimensions.
-- **Capture** the current arrangement as a named template (slots only — no
-  window identities are stored).
-- **Apply** a template: current windows are mapped to its slots by recency
-  (most recent window gets the first slot), extras are auto-placed. Applying
-  a template whose dimensions differ from the grid's re-dimensions the grid —
-  the Apply button says so ("Apply (re-grids to 8×6)") whenever that would
-  happen.
-- User templates can be deleted; built-ins cannot.
-
-### App defaults
-
-Right-click any window tile in the grid editor to save where new windows of
-that program should land: **Save for this grid** or **Save for all grids**
-(a grid-specific default beats an all-grids one). The menu also opens on a
-focused tile with Shift+F10, and gains **Remove** entries once a default
-exists.
-
-Defaults are listed in Settings → **App defaults** with a miniature of the
-saved spot, the program, the scope and the cells, and a × to delete. A
-default fires when a *new* window of that program appears — in Tile mode it
-displaces whatever is sitting on those cells. Saving or removing a default
-never moves the windows already on screen.
-
-### Views
-
-A template saves a slot arrangement for one grid. A **view** saves your whole
-desktop: every enabled grid with its dimensions and spacing, plus which
-program sits where.
-
-- **Capture view**: name the current arrangement in Settings → Views. Views
-  store executable names, not window handles, so they survive reboots.
-- **Apply now**: rebuilds the view's grids and puts each program's windows
-  back on their saved cells. It never launches anything — programs that are
-  already running, or that start within the next two minutes, land on their
-  saved spots; during that window a view outranks app defaults. Extra
-  windows are auto-placed as usual.
-- **Load at startup**: pick a view (or None) and Griddle Window Manager
-  applies it on launch. With autostart on, that covers the apps Windows
-  relaunches after a reboot — they claim their cells as they appear, even
-  though every window handle is new.
-- Views can be renamed and deleted; deleting the startup view resets the
-  choice to None.
-
-### Spanning grids
-
-"Span monitors" in Settings creates one grid across the combined work area of
-two or more monitors. If the union is L-shaped, the dead space is excluded:
-windows cannot be placed or dropped there and snap to the nearest usable
-cells. Enabling a spanning grid replaces the per-monitor grids it covers, and
-re-enabling a per-monitor grid tears down a covering span.
-
-Spanning grids have had the least real-world testing of anything in Griddle
-Window Manager — please report anything odd.
-
-### Hotkey, tray, pause
-
-- **Ctrl+Win+G** opens the settings window (rebindable in Settings →
-  General; the rebind field accepts "Win" or "Super" for the Windows key).
-- The **tray icon** menu has per-monitor grid toggles (checked = grid
-  enabled), **Pause**, **Settings**, and **Quit**.
-- **Pause** is the panic button: all tracking and window actuation stop
-  instantly, and every window is yours again until you unpause. The pause
-  state survives restarts.
-- **Start with Windows** (autostart) is offered (pre-checked) on the
-  first-run page and lives as a toggle in Settings → General.
-
-### Exclusions
-
-Settings → Excluded apps keeps a list of executable names (e.g. `slack.exe`)
-that Griddle Window Manager never manages. Add one by typing the exe name or
-by picking from a list of currently open windows. Excluding a running app
-releases its windows in place; removing an exclusion manages them again
-without a restart.
+**Exclusions.** Settings → Excluded apps holds executable names (`slack.exe`)
+that the app never manages. Excluding a running app releases its windows in
+place; removing the exclusion picks them up again, no restart needed.
 
 Configuration lives in `%APPDATA%\griddle-wm\config.json` — plain local JSON,
-written atomically, safe to back up. (In the file, the Tile/Stack modes are
-stored as `"collision"`/`"overlay"`.) v0.2.0 upgrades a v0.1.0 config in
-place the first time it runs — nothing to do by hand.
+written atomically, safe to back up. A v0.1.0 config is upgraded in place on
+first run.
 
-## Limitations (v0.2.0)
+### Known limitations
 
-- **Elevated (admin) windows cannot be managed.** Windows does not allow a
-  non-elevated process to move elevated windows, and Griddle Window Manager
-  deliberately runs unelevated. Elevated windows are simply left alone.
-- Windows without a normal caption (splash screens, some tool popups) float
+Worth knowing before you install:
+
+- **Spanning grids are the newest and least field-tested feature here.** They
+  work in our testing, but they have had the least real-world mileage of
+  anything in the app. Please report anything odd.
+- **Elevated (admin) windows cannot be managed.** Windows does not let an
+  unelevated process move elevated windows, and this app deliberately runs
+  unelevated. Those windows are left alone.
+- Windows without a normal caption — splash screens, some tool popups — float
   free by design.
-- Some apps draw their own window frames or override move/size behavior and
-  may not land pixel-perfectly on cells.
-- No keyboard-driven tiling commands yet — arrangement is via mouse drags,
-  the grid editor, templates and views.
+- Some apps draw their own frames or override move/size behavior and may not
+  land pixel-perfectly on cells.
+- No keyboard-driven tiling commands yet. Arrangement is by mouse drag, the
+  grid editor, templates and views.
 - No virtual-desktop integration; grids apply to whatever desktop is visible.
-- Binaries are unsigned (see SmartScreen note above); no auto-update — check
-  the [releases page](../../releases) for new versions.
+- The binaries are unsigned (see [above](#the-smartscreen-warning)).
 
-See [`docs/deferred.md`](docs/deferred.md) for the full list of known
-deferrals and planned follow-ups.
+[`docs/deferred.md`](docs/deferred.md) has the full list of known deferrals and
+planned follow-ups.
 
-## Build from source
+## How it works
+
+The app is a Tauri 2 program split along an unusual line: **TypeScript brain,
+Rust hands.**
+
+- **The brain** (`packages/brain`) is pure TypeScript, running in a hidden
+  webview. It owns every layout decision and is the single source of truth for
+  where windows belong. It imports no Tauri APIs and touches no DOM, which is
+  why it can be tested exhaustively — 330 tests, no GUI, no Win32.
+- **The hands** (`apps/desktop/src-tauri`) are Rust. They track native windows
+  with `SetWinEventHook`, and apply layouts in batched `DeferWindowPos` calls
+  so a whole grid moves in one flicker-free pass. Exactly one module,
+  `actuator.rs`, is allowed to move a window.
+- **The layout math** comes from [`@griddle/core`](https://www.npmjs.com/package/@griddle/core)
+  and [`@griddle/svelte`](https://www.npmjs.com/package/@griddle/svelte) — a
+  third-party MIT-licensed grid library by Trustybits
+  ([Trustybits/griddle](https://github.com/Trustybits/griddle)). This app is a
+  consumer of that library, not its author; bugs in grid semantics themselves
+  usually belong upstream.
+
+The payoff of that split is that the hard part — reflow rules, collision,
+displacement, spacing, view restoration — is ordinary testable TypeScript
+rather than logic tangled up in Win32 callbacks. The cost is an IPC contract
+that has to be kept honest on both sides.
+
+The full reasoning is in the design spec:
+[`docs/superpowers/specs/2026-08-08-griddle-window-manager-design.md`](docs/superpowers/specs/2026-08-08-griddle-window-manager-design.md),
+with the v0.2.0 additions in
+[`2026-08-09-spacing-rules-views-design.md`](docs/superpowers/specs/2026-08-09-spacing-rules-views-design.md).
+A security review of the IPC surface is in
+[`docs/security-review.md`](docs/security-review.md).
+
+### How this was built
+
+Griddle Window Manager was built with substantial AI assistance — the design
+specs were written collaboratively and most of the implementation was
+AI-authored under human direction and review.
+
+This is stated plainly because it is checkable rather than embarrassing: the
+design documents that drove the build are in `docs/`, the complete commit
+history is in this repository, and the test suites are the real safety net.
+Judge the code on the code.
+
+## Building from source
 
 Prerequisites:
 
 - Windows 11
-- [Node.js](https://nodejs.org/) ≥ 22 (npm workspaces; no pnpm needed)
+- [Node.js](https://nodejs.org/) ≥ 22 (npm workspaces; no pnpm or yarn)
 - [Rust](https://rustup.rs/) stable ≥ 1.81 with the MSVC toolchain
+- Visual Studio 2022 Build Tools with the **Desktop development with C++**
+  workload
 - WebView2 runtime (preinstalled on Windows 11)
-
-Clone this repository, then from the checkout root:
 
 ```powershell
 git clone https://github.com/DadsDoingDesign/GriddleWindowManager.git
 cd GriddleWindowManager
 npm install
 
-# run the test suites
-npm run test -w packages/brain          # layout brain (vitest)
-cd apps/desktop/src-tauri; cargo test; cd ../../..   # Rust shell
+# the three commands CI runs
+npm run test -w packages/brain                        # layout brain (vitest)
+cd apps/desktop/src-tauri; cargo test; cd ../../..    # Rust shell
+npm run build -w apps/desktop                         # webview bundles
 
-# dev build with devtools
-npx tauri dev    # run from apps/desktop
+# dev build with devtools (from apps/desktop)
+cd apps/desktop
+npx tauri dev
 
 # release build + NSIS installer
-cd apps/desktop
 npx tauri build
 # → src-tauri/target/release/bundle/nsis/Griddle Window Manager_0.2.0_x64-setup.exe
 ```
 
-The app icon set is generated from the original artwork in
-`apps/desktop/app-icon.svg` via `npx tauri icon app-icon.svg`.
-
-## Repository layout
+Repository layout:
 
 ```
 packages/brain/          pure-TS layout brain (no Tauri/DOM imports; vitest)
 apps/desktop/            Svelte 5 + Vite webviews (brain host, overlay, settings)
 apps/desktop/src-tauri/  Rust shell: tracker, actuator, monitors, overlays, tray
-docs/                    design spec, plan, security review, deferred items
+docs/                    design specs, security review, deferred items
 ```
+
+The app icon set is generated from `apps/desktop/app-icon.svg` via
+`npx tauri icon app-icon.svg`.
 
 ## Contributing
 
 Bug reports and pull requests are welcome.
-[`CONTRIBUTING.md`](CONTRIBUTING.md) has the prerequisites, the three commands
-CI runs, and the architecture rules a change has to respect (the brain stays
-pure TypeScript, only `actuator.rs` moves windows, IPC changes land on both
-sides of the contract). GUI-affecting changes need a pass through
+[`CONTRIBUTING.md`](CONTRIBUTING.md) covers the prerequisites, the three
+commands CI runs, and the architecture rules a change has to respect: the brain
+stays pure TypeScript, only `actuator.rs` moves windows, and IPC changes land
+on both sides of the contract at once.
+
+GUI-affecting changes need a pass through
 [`docs/smoke-test-v0.2.0.md`](docs/smoke-test-v0.2.0.md) — the automated suites
 cover logic, not pixels.
 
 Participation is under the [Code of Conduct](CODE_OF_CONDUCT.md). Security
-issues go through the private channel in [`SECURITY.md`](SECURITY.md), never a
-public issue. Release mechanics are in [`docs/RELEASING.md`](docs/RELEASING.md).
+issues go through the private channel described in
+[`SECURITY.md`](SECURITY.md), never a public issue. Release mechanics are in
+[`docs/RELEASING.md`](docs/RELEASING.md).
 
-The grid movement and reflow logic comes from
-[`@griddle/core`](https://www.npmjs.com/package/@griddle/core) and
-[`@griddle/svelte`](https://www.npmjs.com/package/@griddle/svelte), a
-third-party MIT-licensed library by Trustybits
-([Trustybits/griddle](https://github.com/Trustybits/griddle)). Griddle Window
-Manager is a consumer of that library — bugs in the grid semantics themselves
-generally belong upstream.
+## License, notices, privacy and updates
 
-## License & privacy
+**License.** MIT — see [`LICENSE`](LICENSE). Third-party components
+redistributed in the installer are listed with their full license texts in
+[`THIRD-PARTY-LICENSES.md`](THIRD-PARTY-LICENSES.md). Both files are installed
+alongside the app.
 
-MIT licensed — see [`LICENSE`](LICENSE). Third-party components redistributed
-in the installer are listed with their license texts in
-[`THIRD-PARTY-LICENSES.md`](THIRD-PARTY-LICENSES.md); both files are also
-installed alongside the app. No network access anywhere in the app: no HTTP
-client, no telemetry, no remote assets, strict CSP. A security review of the
-IPC surface — written for v0.1.0 and re-checked against the v0.2.0 additions —
-is in [`docs/security-review.md`](docs/security-review.md).
+**Privacy.** There is no telemetry, no analytics, and no remote content. The
+app loads nothing from the network at runtime, and its content-security policy
+permits outbound connections only to GitHub, only for the update check
+described below. Your configuration — grids, templates, views, app defaults —
+stays in `%APPDATA%\griddle-wm\config.json` on your machine. Nothing about your
+windows, your applications, or your settings is ever transmitted anywhere.
+
+**Updates are opt-in and off by default.** With the toggle off, the app makes
+no network requests at all; that guarantee is a pure function in the layout
+brain with tests pinning it down, not a condition buried in an async driver.
+Turn on **Check for updates automatically** in Settings → Updates and it checks
+once a day while running. The **Check now** button works regardless of the
+toggle — clicking it is the consent.
+
+A check is a single HTTPS GET for this project's public `latest.json` on the
+releases page. The URL is fixed: it carries no version, no machine identifier,
+and nothing about your configuration. What GitHub can see is what it sees for
+anyone fetching a public file — your **IP address**, the time of the request,
+and a generic `tauri-plugin-updater/2.10.1` user agent that identifies the
+software but not you. Your installed version is compared against the feed
+**locally**, on your machine. If you then choose to install an update, the
+download request necessarily reveals the platform build you asked for.
+
+Nothing installs on its own: the app tells you a release exists, shows you what
+changed, and waits for you. Every download is verified against the project's
+signing key before it is allowed to run.
