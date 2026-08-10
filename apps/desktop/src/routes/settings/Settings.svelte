@@ -409,7 +409,8 @@
 
   /** Honest progress line: exact when the server told us the size, vague when not. */
   const downloadLabel = $derived.by(() => {
-    if (update.installing) return 'Installing — Griddle WM will restart';
+    if (update.installing)
+      return 'Installing — Griddle Window Manager will restart';
     const fraction = downloadFraction(update);
     if (fraction === null) return `Downloading — ${formatMB(update.downloaded)} so far`;
     return `Downloading — ${formatMB(update.downloaded)} of ${formatMB(
@@ -732,7 +733,7 @@
   {#if firstRun}
     <header>
       <div>
-        <h1>Griddle WM</h1>
+        <h1>Griddle Window Manager</h1>
         <p class="tagline">
           Window grids for your desktop{#if appVersion}
             <span class="version">{appVersion}</span>{/if}
@@ -797,14 +798,14 @@
         </button>
       </div>
       <p class="hint">
-        Griddle WM lives in the system tray — closing this window keeps your
-        grids running.
+        Griddle Window Manager lives in the system tray — closing this window
+        keeps your grids running.
       </p>
     </section>
   {:else}
   <header>
     <div>
-      <h1>Griddle WM</h1>
+      <h1>Griddle Window Manager</h1>
       <p class="tagline">
         Window grids for your desktop{#if appVersion}
           <span class="version">{appVersion}</span>{/if}
@@ -835,7 +836,7 @@
     <section class="card update-banner">
       <div class="card-head">
         <div class="mon-info">
-          <h2>Griddle WM {update.version} is available</h2>
+          <h2>Griddle Window Manager {update.version} is available</h2>
           <p class="meta">
             You are on {appVersion || 'this release'}{#if update.date} ·
               released {update.date}{/if}
@@ -859,9 +860,9 @@
         </button>
       </div>
       <p class="hint">
-        Griddle WM downloads the installer from GitHub, checks its signature,
-        pauses window management, saves your settings, and restarts. Your
-        grids come back exactly as they are now.
+        Griddle Window Manager downloads the installer from GitHub, checks its
+        signature, pauses window management, saves your settings, and restarts.
+        Your grids come back exactly as they are now.
       </p>
     </section>
   {:else if update.phase === 'downloading'}
@@ -869,7 +870,7 @@
     <section class="card update-banner">
       <div class="card-head">
         <div class="mon-info">
-          <h2>Getting Griddle WM {update.version}</h2>
+          <h2>Getting Griddle Window Manager {update.version}</h2>
           <p class="meta">{downloadLabel}</p>
         </div>
       </div>
@@ -887,7 +888,8 @@
       </div>
       <p class="hint">
         Window management is released the moment the installer takes over —
-        your windows stay where they are until Griddle WM comes back.
+        your windows stay where they are until Griddle Window Manager comes
+        back.
       </p>
     </section>
   {:else if update.phase === 'error'}
@@ -1388,7 +1390,7 @@
     </div>
     {#if sortedAppRules.length > 0}
       <ul class="rule-list">
-        {#each sortedAppRules as rule (`${rule.exe} ${rule.gridId ?? ''}`)}
+        {#each sortedAppRules as rule (`${rule.exe}\0${rule.gridId ?? ''}`)}
           {@const dims = ruleDims(rule)}
           <li class="rule-row">
             <!-- Coordinates alone make people map "column 4, row 1" onto
@@ -1676,8 +1678,8 @@
           {lastCheckedLabel(update.lastCheckedAt)} — you're on the latest
           release.
         {:else if autoCheckUpdates}
-          {lastCheckedLabel(update.lastCheckedAt)}. Griddle WM checks again
-          once a day while it's running.
+          {lastCheckedLabel(update.lastCheckedAt)}. Griddle Window Manager
+          checks again once a day while it's running.
         {:else}
           Automatic checks are off. This button still works — one check, right
           now, because you asked for it.
@@ -1687,7 +1689,8 @@
     <!-- The privacy trade is the whole reason this setting exists. Say what
          actually leaves the machine, and what does not. -->
     <p class="hint">
-      Griddle WM has no telemetry and nothing else in it talks to the network.
+      Griddle Window Manager has no telemetry and nothing else in it talks to
+      the network.
       A check is a plain request to GitHub for this project's public
       <code>latest.json</code>; the comparison with your version happens on your
       machine. GitHub can see your IP address and the time of the request, the
@@ -1695,9 +1698,9 @@
       your apps or your configuration is ever sent.
     </p>
     <p class="hint">
-      Updates are never installed on their own: Griddle WM tells you a release
-      exists, shows you what changed, and waits. Every download is checked
-      against the project's signing key before it is allowed to run.
+      Updates are never installed on their own: Griddle Window Manager tells you
+      a release exists, shows you what changed, and waits. Every download is
+      checked against the project's signing key before it is allowed to run.
     </p>
   </section>
 

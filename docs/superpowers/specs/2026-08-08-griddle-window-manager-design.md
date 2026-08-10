@@ -8,7 +8,7 @@
 
 A Windows 11 desktop window manager that snaps real application windows (Figma, Slack, browsers — anything) onto a user-configurable grid. The user manipulates how windows fit the grid and how the grid itself is structured: drag a window and a faint grid overlay fades in with a live preview of where it lands and how neighbors reflow; open a live grid editor to restructure the grid (2 columns → 3 columns), capture layouts as reusable templates, and apply grids per-monitor or spanning all monitors.
 
-Dogfoods the user's own `@griddle/*` library: `@griddle/core` (headless layout engine) + `@griddle/svelte` (editor UI).
+Built on the third-party `@griddle/*` library by Trustybits: `@griddle/core` (headless layout engine) + `@griddle/svelte` (editor UI). This app is a *consumer* of that library, not its author.
 
 ## 2. Product decisions (locked)
 

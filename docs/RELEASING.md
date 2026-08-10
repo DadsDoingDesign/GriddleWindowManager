@@ -72,6 +72,14 @@ will look fine and do nothing.
 
 ## Cutting a release
 
+> **Cut the first release before making the repository public.** The README's
+> install step names an installer on the releases page and its "Latest release"
+> badge reads the same endpoint; both are broken until a `v*` tag has been
+> pushed and `release.yml` has published a non-draft release. Push `v0.2.0`,
+> let the workflow finish, verify the release page and `latest.json` (steps 5
+> and 6), *then* flip the repository to public. Every other step below is
+> unaffected by the repo's visibility.
+
 ### 1. Land everything on `master` with CI green
 
 `npm run test -w packages/brain`, `cargo test` (from `apps/desktop/src-tauri`)
@@ -121,6 +129,11 @@ npx tauri build
 # → src-tauri/target/release/bundle/nsis/Griddle Window Manager_<version>_x64-setup.exe
 ```
 
+Without `TAURI_SIGNING_PRIVATE_KEY` set locally this command still writes a
+complete installer and *then* exits 1 with "A public key has been found, but no
+private key." That is expected for a local smoke build — the installer is fine
+to test with; only the signed update payload is missing, and CI produces that.
+
 Every **P0** item must be checked off by a human at a real GUI. The automated
 suites cover logic only; the pixels have to be seen once.
 
@@ -163,9 +176,9 @@ Sanity check that nothing was missed:
 Select-String -Path package.json,packages\brain\package.json,apps\desktop\package.json,apps\desktop\src-tauri\tauri.conf.json,apps\desktop\src-tauri\Cargo.toml -Pattern '"?version"?\s*[:=]'
 ```
 
-Also update `README.md` where it names the installer filename and the
-"New in x.y.z" section, and move anything newly shipped out of
-[`deferred.md`](deferred.md).
+Also update `README.md` where it names the installer filename (it appears twice
+— the Install step and the build example), and move anything newly shipped out
+of [`deferred.md`](deferred.md).
 
 ### 4. Commit, tag, push
 

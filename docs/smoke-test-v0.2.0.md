@@ -2,7 +2,7 @@
 
 **No v0.2.0 build may be handed to anyone until every P0 item below has been
 run by a human at a GUI and checked off.** The tag itself was cut from a
-headless build environment on green automation (304 vitest + 125 cargo tests)
+headless build environment on green automation (330 vitest + 130 cargo tests)
 plus a built installer — so at tag time every box here is still open, exactly
 as at v0.1.0. Same contract as
 [`smoke-test-v0.1.0.md`](smoke-test-v0.1.0.md): everything here is covered by
@@ -155,6 +155,45 @@ an editor, a terminal):
       it loads with no `.bak`, the Views card is empty, and after saving a
       view + quitting, `%APPDATA%/griddle-wm/config.json` reads
       `"version": 2` with the view and `startupViewId` persisted.
+
+## P0 — updates (spec §7, ~6 min)
+
+The updater is v0.2.0's only network feature and the README makes a hard
+promise about it ("With the toggle off, the app makes no network requests at
+all"). Nothing here is covered by pixels alone — item 1 is the promise.
+
+- [ ] **Toggle off means silence.** With **Check for updates automatically**
+      off (the default on a fresh config), launch the app and leave it running
+      for a few minutes through a normal session — enable a grid, drag windows,
+      open and close Settings. With a network monitor watching the process
+      (Resource Monitor → Network, or Fiddler/Wireshark filtered to the
+      process), **zero** outbound requests leave it. No DNS lookup for
+      `github.com`, no TLS connection.
+- [ ] **"Check now" works with the toggle off.** Settings → Updates → click
+      **Check now** while the toggle is still off. It checks (button reads
+      "Checking…", then a result line), and the toggle stays off — clicking is
+      the consent, and it does not silently enable anything. This is the only
+      request the monitor should show.
+- [ ] **Up-to-date path.** On the current release, the hint under the button
+      reads that you are on the latest, with a "last checked" time that
+      updates on each click.
+- [ ] **Toggle on persists.** Turn the toggle on, quit, relaunch: it is still
+      on, and the card's subtitle shows the last-checked time.
+- [ ] **Update-available prompt.** Install the *previous* release, enable the
+      check, and confirm the banner appears naming the new version, the
+      release date, and the release notes — and that it appears *only* as a
+      prompt: nothing downloads or installs until you click.
+- [ ] **Dismiss.** "Not now" closes the banner and the app carries on; it does
+      not reappear for the rest of the session.
+- [ ] **Install and restart.** Click install: the banner shows download
+      progress in MB, then "Installing — Griddle Window Manager will restart".
+      The app
+      restarts on the new version, and Settings → Updates shows the new
+      version number. Grids, templates, views and app defaults all survive the
+      upgrade.
+- [ ] **Failure is honest.** Disconnect the network and click **Check now**:
+      the error card explains what went wrong and offers "Try again"; the app
+      stays usable and nothing is left half-installed.
 
 ## P1 — information architecture + copy (critique round, ~3 min)
 

@@ -10,10 +10,15 @@ notes. Each item names its source so the deferral stays auditable.
 - Per-app template bindings (auto-apply a template when an app appears).
 - Animating real windows during layout changes (only overlay ghosts animate).
 - macOS / Linux support.
-- Auto-update.
 - Code-signed binaries (README documents the SmartScreen flow instead).
 - Virtual-desktop integration.
 - Saving/restoring app sessions.
+
+**Shipped since this list was written:** *Auto-update* was on this list for
+v0.1.0 and shipped in **v0.2.0** as an opt-in, off-by-default update check
+(README, "License, notices, privacy and updates"). Code-signed binaries above
+remain deferred — the updater verifies its payloads with the project's own
+minisign key, which is a different thing from an Authenticode certificate.
 
 ## Elevated windows (spec §6)
 
@@ -288,7 +293,7 @@ v0.1.0 tag must not be cut before its P0 items pass:**
 work adds its own GUI-only checks — plus the v0.1.0 regression items the
 pixel-rect changes touch — in
 [`smoke-test-v0.2.0.md`](smoke-test-v0.2.0.md). Everything in it is
-logic-tested (304 vitest + 125 cargo tests) and, exactly as at v0.1.0, none
+logic-tested (330 vitest + 130 cargo tests) and, exactly as at v0.1.0, none
 of it has been seen by a human from this build environment. The `v0.2.0`
 commit and tag mark the code and the built installer; **the P0 pass is still
 owed and gates handing that installer to anyone.** Record the results

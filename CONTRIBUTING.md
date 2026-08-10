@@ -74,6 +74,20 @@ npx tauri build
 # → src-tauri/target/release/bundle/nsis/Griddle Window Manager_<version>_x64-setup.exe
 ```
 
+**Expect this to end with a signing error, and ignore it.** The config pins the
+updater's public key and asks for updater artifacts, so after writing a complete,
+working installer the build exits non-zero with:
+
+```
+A public key has been found, but no private key. Make sure to set
+`TAURI_SIGNING_PRIVATE_KEY` environment variable.
+```
+
+The private key is not in the repository and never will be — only releases cut
+by a maintainer are signed. The installer at the path above is finished and
+installable; only the `.nsis.zip` update payload is missing. Nothing is wrong
+with your clone.
+
 Type-checking the Svelte side (not currently run in CI, but useful):
 
 ```powershell

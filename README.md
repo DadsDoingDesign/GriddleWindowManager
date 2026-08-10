@@ -273,10 +273,11 @@ redistributed in the installer are listed with their full license texts in
 [`THIRD-PARTY-LICENSES.md`](THIRD-PARTY-LICENSES.md). Both files are installed
 alongside the app.
 
-**Privacy.** There is no telemetry, no analytics, and no remote content. The
-app loads nothing from the network at runtime, and its content-security policy
-permits outbound connections only to GitHub, only for the update check
-described below. Your configuration — grids, templates, views, app defaults —
+**Privacy.** There is no telemetry, no analytics, and no account. The app loads
+no remote content — no remote scripts, styles, fonts or images; every asset it
+renders ships inside the installer. The only outbound request it can make is the
+opt-in update check described below, and its content-security policy restricts
+connections to GitHub accordingly. Your configuration — grids, templates, views, app defaults —
 stays in `%APPDATA%\griddle-wm\config.json` on your machine. Nothing about your
 windows, your applications, or your settings is ever transmitted anywhere.
 
