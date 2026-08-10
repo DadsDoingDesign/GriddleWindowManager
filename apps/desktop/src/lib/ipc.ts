@@ -12,6 +12,7 @@ import type {
   DragPos,
   Hwnd,
   MonitorInfo,
+  PlacementMode,
   PreviewState,
   StateSnapshot,
   UpdateState,
@@ -79,10 +80,14 @@ export interface SettingsSetDimsPayload {
   rows: number;
 }
 
-/** Payload of `settings-set-mode` (settings → brain, plan Task 16). */
+/**
+ * Payload of `settings-set-mode` (settings → brain, plan Task 16; extended
+ * with the three-way placement mode). The legacy spellings are still accepted
+ * by the brain, but the settings dropdown only ever sends the current ones.
+ */
 export interface SettingsSetModePayload {
   gridId: string;
-  mode: 'collision' | 'overlay';
+  mode: PlacementMode;
 }
 
 /**

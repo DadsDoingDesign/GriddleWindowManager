@@ -356,11 +356,14 @@ describe('AppConfig v3 migration (spec §7)', () => {
 
     const cfg = sanitizeConfig(v2);
     expect(cfg).not.toBeNull();
-    expect(cfg!.version).toBe(3);
+    expect(cfg!.version).toBe(4);
     expect(cfg!.autoCheckUpdates).toBe(false);
 
-    // Nothing the v2 config carried is lost.
-    expect(cfg!.grids).toEqual(v2.grids);
+    // Nothing the v2 config carried is lost. The one field that *changes* is
+    // the mode spelling: `collision` is what v0.2.0 wrote for today's `push`,
+    // and the v4 migration renames it without changing a thing about how the
+    // grid behaves.
+    expect(cfg!.grids).toEqual(v2.grids.map((g) => ({ ...g, mode: 'push' })));
     expect(cfg!.templates).toEqual(v2.templates);
     expect(cfg!.exclusions).toEqual(['slack.exe']);
     expect(cfg!.layouts).toEqual(v2.layouts);
@@ -368,7 +371,15 @@ describe('AppConfig v3 migration (spec §7)', () => {
     expect(cfg!.autostart).toBe(true);
     expect(cfg!.paused).toBe(true);
     expect(cfg!.appRules).toEqual(v2.appRules);
-    expect(cfg!.views).toEqual(v2.views);
+    expect(cfg!.views).toEqual(
+      v2.views.map((v) => ({
+        ...v,
+        grids: v.grids.map((g) => ({
+          ...g,
+          settings: { ...g.settings, mode: 'push' },
+        })),
+      })),
+    );
     expect(cfg!.startupViewId).toBe('view:1');
 
     // The migrated config round-trips stable, and survives a brain reload.
@@ -380,8 +391,8 @@ describe('AppConfig v3 migration (spec §7)', () => {
   });
 
   it('reads a v3 config that opted in, and keeps it opted in', () => {
-    const cfg = sanitizeConfig({ ...defaultConfig(), autoCheckUpdates: true });
-    expect(cfg!.version).toBe(3);
+    const cfg = sanitizeConfig({ ...defaultConfig(), version: 3, autoCheckUpdates: true });
+    expect(cfg!.version).toBe(4);
     expect(cfg!.autoCheckUpdates).toBe(true);
     expect(makeBrain(cfg!).brain.exportConfig().autoCheckUpdates).toBe(true);
   });

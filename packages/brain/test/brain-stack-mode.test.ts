@@ -1,9 +1,12 @@
-// Task 5 — overlay mode + toggle: overlay grids store tiles as Griddle
-// `absolute` tiles (tiles may overlap, no displacement), drag previews have no
-// ghosts, commits move only the dragged window, recency ordering puts the
-// top-most window last in snapshots, and setMode converts between modes
-// (overlay→collision re-adds by recency with displacement; collision→overlay
-// converts in place with no moves).
+// Task 5 — stack mode + toggle (shipped as "overlay" through v0.2.0): stack
+// grids store tiles as Griddle `absolute` tiles (tiles may overlap, no
+// displacement), drag previews have no ghosts, commits move only the dragged
+// window, recency ordering puts the top-most window last in snapshots, and
+// setMode converts across the stack boundary (stack→in-flow re-adds by recency
+// with displacement; in-flow→stack converts in place with no moves).
+//
+// setMode is called here with the pre-v4 spellings on purpose: they are still
+// a supported input, and this file is where that stays exercised.
 
 import { describe, expect, it } from 'vitest';
 import { WindowManagerBrain } from '../src/brain';
@@ -60,7 +63,7 @@ function makeGridSettings(overrides: Partial<GridSettings> = {}): GridSettings {
     monitorIds: [MON_ID],
     cols: 12,
     rows: 6,
-    mode: 'overlay',
+    mode: 'stack',
     enabled: true,
     activeTemplateId: null,
     ...overrides,
@@ -104,7 +107,7 @@ function slotsOverlap(a: { col: number; row: number; w: number; h: number }, b: 
   return a.col < b.col + b.w && b.col < a.col + a.w && a.row < b.row + b.h && b.row < a.row + a.h;
 }
 
-describe('overlay mode — placement', () => {
+describe('stack mode — placement', () => {
   it('places every window at its own snapped slot; overlapping windows both keep it', () => {
     const { brain, applies, snapshots, mon } = harness();
     // Both windows sit at the work-area origin → identical snapped slot.
@@ -140,7 +143,7 @@ describe('overlay mode — placement', () => {
   });
 });
 
-describe('overlay mode — drag pipeline', () => {
+describe('stack mode — drag pipeline', () => {
   it('previews the current slot on moveSizeStart and never emits ghosts while dragging', () => {
     const { brain, previews } = harness();
     brain.enableGrid(makeGridSettings(), [makeWindow('A'), makeWindow('B')]);
@@ -153,7 +156,7 @@ describe('overlay mode — drag pipeline', () => {
       ghosts: [],
     });
 
-    // drag A right across B's cells — overlay mode: no reflow, no ghosts
+    // drag A right across B's cells — stack mode: no reflow, no ghosts
     brain.dragMoved({ hwnd: 'A', cursorX: 1200, cursorY: 564, x: 960, y: 392, width: 480, height: 344 });
     const p = last(previews);
     expect(p.footprint).toEqual({ col: 6, row: 2, w: 3, h: 2 });
@@ -226,7 +229,7 @@ describe('overlay mode — drag pipeline', () => {
   });
 });
 
-describe('overlay mode — recency ordering', () => {
+describe('stack mode — recency ordering', () => {
   it('snapshot lists tiles bottom-to-top: the most recently interacted window last', () => {
     const { brain, snapshots } = harness();
     brain.enableGrid(makeGridSettings(), [makeWindow('A'), makeWindow('B')]);
@@ -243,7 +246,7 @@ describe('overlay mode — recency ordering', () => {
   });
 });
 
-describe("setMode('collision') on an overlay grid", () => {
+describe("setMode('collision') on a stack grid", () => {
   it('re-adds tiles by recency with displacement — most recent keeps its slot — in one apply', () => {
     const { brain, applies, snapshots } = harness();
     // A then B, both stacked on slot (0,0,3,2); B is more recent.
@@ -262,7 +265,7 @@ describe("setMode('collision') on an overlay grid", () => {
     expect(a.row + a.h).toBeLessThanOrEqual(6);
     // only the displaced window needed a move
     expect(last(applies).moves.map((m) => m.hwnd)).toEqual(['A']);
-    expect(last(snapshots).grids.find((g) => g.id === GRID_ID)!.mode).toBe('collision');
+    expect(last(snapshots).grids.find((g) => g.id === GRID_ID)!.mode).toBe('push');
   });
 
   it('after conversion the grid behaves as collision: drags displace neighbors again', () => {
@@ -280,7 +283,7 @@ describe("setMode('collision') on an overlay grid", () => {
 
   it('marks windows floating when the collision grid cannot fit them all', () => {
     const { brain, snapshots } = harness();
-    // 3×2 grid, three 3×2-cell windows stacked → collision mode fits only one.
+    // 3×2 grid, three 3×2-cell windows stacked → in-flow mode fits only one.
     brain.enableGrid(makeGridSettings({ cols: 3, rows: 2 }), [
       makeWindow('A', { width: 1920, height: 1032 }),
       makeWindow('B', { width: 1920, height: 1032 }),
@@ -296,10 +299,10 @@ describe("setMode('collision') on an overlay grid", () => {
   });
 });
 
-describe("setMode('overlay') on a collision grid", () => {
+describe("setMode('overlay') on a push grid", () => {
   it('converts in place: slots unchanged, zero moves emitted', () => {
     const { brain, applies, snapshots } = harness();
-    brain.enableGrid(makeGridSettings({ mode: 'collision' }), [
+    brain.enableGrid(makeGridSettings({ mode: 'push' }), [
       makeWindow('A'),
       makeWindow('B'), // first-fit → (3,0,3,2)
     ]);
@@ -309,7 +312,7 @@ describe("setMode('overlay') on a collision grid", () => {
 
     expect(applies).toHaveLength(appliesBefore); // no moves
     const snap = last(snapshots);
-    expect(snap.grids.find((g) => g.id === GRID_ID)!.mode).toBe('overlay');
+    expect(snap.grids.find((g) => g.id === GRID_ID)!.mode).toBe('stack');
     const tiles = gridTiles(snap);
     expect(tiles.find((t) => t.hwnd === 'A')!.slot).toEqual({ col: 0, row: 0, w: 3, h: 2 });
     expect(tiles.find((t) => t.hwnd === 'B')!.slot).toEqual({ col: 3, row: 0, w: 3, h: 2 });
@@ -317,7 +320,7 @@ describe("setMode('overlay') on a collision grid", () => {
 
   it('after conversion drags overlap freely: no ghosts, single-move commit', () => {
     const { brain, applies, previews, snapshots, mon } = harness();
-    brain.enableGrid(makeGridSettings({ mode: 'collision' }), [makeWindow('A'), makeWindow('B')]);
+    brain.enableGrid(makeGridSettings({ mode: 'push' }), [makeWindow('A'), makeWindow('B')]);
     brain.setMode(GRID_ID, 'overlay');
     const appliesBefore = applies.length;
 
@@ -345,7 +348,7 @@ describe("setMode('overlay') on a collision grid", () => {
     const snap = last(snapshots);
     expect(gridTiles(snap)).toHaveLength(2);
     expect(snap.floating).toEqual([]);
-    expect(snap.grids.find((g) => g.id === GRID_ID)!.mode).toBe('overlay');
+    expect(snap.grids.find((g) => g.id === GRID_ID)!.mode).toBe('stack');
   });
 });
 
@@ -370,7 +373,7 @@ describe('setMode — edges', () => {
     brain.setMode(GRID_ID, 'collision');
 
     const cfg = brain.exportConfig();
-    expect(cfg.grids.find((g) => g.id === GRID_ID)!.mode).toBe('collision');
+    expect(cfg.grids.find((g) => g.id === GRID_ID)!.mode).toBe('push');
   });
 
   it('ignores unknown grid ids', () => {
@@ -395,10 +398,10 @@ describe('setMode — edges', () => {
   });
 });
 
-describe('non-resizable windows in a collision grid (spec: always absolute)', () => {
+describe('non-resizable windows in a push grid (spec: always absolute)', () => {
   it('stays absolute and never appears in drag ghosts', () => {
     const { brain, previews, snapshots } = harness();
-    brain.enableGrid(makeGridSettings({ mode: 'collision' }), [
+    brain.enableGrid(makeGridSettings({ mode: 'push' }), [
       makeWindow('R'), // in flow at (0,0,3,2)
       makeWindow('B', { x: 480, y: 48 }), // in flow at (3,0,3,2)
       makeWindow('N', { x: 480, y: 48, resizable: false }), // absolute over B

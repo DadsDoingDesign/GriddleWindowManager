@@ -55,7 +55,7 @@ function makeGridSettings(overrides: Partial<GridSettings> = {}): GridSettings {
     monitorIds: [MON_ID],
     cols: 12,
     rows: 6,
-    mode: 'collision',
+    mode: 'push',
     enabled: true,
     activeTemplateId: null,
     ...overrides,
@@ -164,7 +164,7 @@ describe('enableGrid', () => {
 
   it('skips windows whose exe is in the config exclusion list', () => {
     const cfg: AppConfig = {
-      version: 3,
+      version: 4,
       grids: [],
       templates: [],
       exclusions: ['excluded.exe'],

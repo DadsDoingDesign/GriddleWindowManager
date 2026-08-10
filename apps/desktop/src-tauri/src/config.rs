@@ -17,11 +17,14 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 /// Current config schema version (contract C1). Older files still load: every
-/// field a later version added carries `#[serde(default)]`, so a v1 (v0.1.0)
-/// or v2 (v0.2.0) file deserializes with those defaults — empty rule/view
+/// field a later version added carries `#[serde(default)]`, so a v1 (v0.1.0),
+/// v2 (v0.2.0) or v3 file deserializes with those defaults — empty rule/view
 /// lists, `auto_check_updates: false` — and is re-stamped to the current
-/// version on read. Only *future* versions are quarantined.
-const CONFIG_VERSION: u32 = 3;
+/// version on read. v4 also renames the two original placement modes, which
+/// the `GridMode` serde aliases absorb: a pre-v4 file's `collision`/`overlay`
+/// read as `push`/`stack` and persist under the new names, with no change in
+/// behavior. Only *future* versions are quarantined.
+const CONFIG_VERSION: u32 = 4;
 /// Oldest schema version the migration path accepts.
 const MIN_CONFIG_VERSION: u32 = 1;
 
@@ -41,9 +44,10 @@ pub fn config_dir() -> Option<PathBuf> {
 
 /// Read + validate the config under `dir`. Missing file → `None`. Corrupt or
 /// unknown-future-version file → quarantined to `config.json.bak`, then
-/// `None`. A supported older version (v1, v2) migrates in place: the serde
-/// defaults fill the fields it lacked and the version is re-stamped, so the
-/// next write persists a current-version file.
+/// `None`. A supported older version (v1–v3) migrates in place: the serde
+/// defaults fill the fields it lacked, the `GridMode` aliases rename its
+/// placement modes, and the version is re-stamped, so the next write persists
+/// a current-version file.
 pub fn read_config_from(dir: &Path) -> Option<AppConfig> {
     let path = dir.join(CONFIG_FILE);
     let bytes = match fs::read(&path) {
@@ -265,13 +269,13 @@ mod tests {
     fn sample_config() -> AppConfig {
         use crate::ipc::{AppRule, GridMode, GridSettings, Slot, Template};
         AppConfig {
-            version: 3,
+            version: 4,
             grids: vec![GridSettings {
                 id: "grid:\\\\.\\DISPLAY1@0,0".into(),
                 monitor_ids: vec!["\\\\.\\DISPLAY1@0,0".into()],
                 cols: 12,
                 rows: 6,
-                mode: GridMode::Collision,
+                mode: GridMode::Push,
                 enabled: true,
                 active_template_id: None,
                 gap: 8,
@@ -317,7 +321,7 @@ mod tests {
                         monitor_ids: vec!["\\\\.\\DISPLAY1@0,0".into()],
                         cols: 12,
                         rows: 6,
-                        mode: GridMode::Collision,
+                        mode: GridMode::Push,
                         enabled: true,
                         active_template_id: None,
                         gap: 8,
@@ -511,6 +515,7 @@ mod tests {
         obj.remove("views");
         obj.remove("startupViewId");
         obj.remove("autoCheckUpdates");
+        json["grids"][0]["mode"] = serde_json::json!("collision"); // the v1 spelling
         let grid = json["grids"][0].as_object_mut().unwrap();
         grid.remove("gap");
         grid.remove("padding");
@@ -521,7 +526,15 @@ mod tests {
         .unwrap();
 
         let read = read_config_from(dir.path()).expect("v1 config must stay readable");
-        assert_eq!(read.version, CONFIG_VERSION, "re-stamped to the current version");
+        assert_eq!(
+            read.version, CONFIG_VERSION,
+            "re-stamped to the current version"
+        );
+        assert_eq!(
+            read.grids[0].mode,
+            crate::ipc::GridMode::Push,
+            "the v1 `collision` mode is today's push"
+        );
         assert!(read.app_rules.is_empty());
         assert!(read.views.is_empty());
         assert_eq!(read.startup_view_id, None);
@@ -542,12 +555,13 @@ mod tests {
     }
 
     /// Spec §7 "Update checks": a **real** v2 config — everything v0.2.0
-    /// wrote, spacing/rules/views and all, but no `autoCheckUpdates` —
-    /// migrates to v3 without losing a single field, and lands opted **out**.
-    /// This is the upgrade every shipped v0.2.0 install performs on first
-    /// launch, so it must not so much as reorder a slot.
+    /// wrote, spacing/rules/views and all, but no `autoCheckUpdates` and the
+    /// placement modes under their original names — migrates to the current
+    /// version without losing a single field, and lands opted **out**. This
+    /// is the upgrade every shipped v0.2.0 install performs on first launch,
+    /// so it must not so much as reorder a slot.
     #[test]
-    fn v2_config_migrates_to_v3_without_loss_and_opted_out() {
+    fn v2_config_migrates_to_current_without_loss_and_opted_out() {
         let dir = ScratchDir::new();
         fs::create_dir_all(dir.path()).unwrap();
         let expected = sample_config(); // the shape v0.2.0 persisted, minus the new field
@@ -559,6 +573,9 @@ mod tests {
             !json.to_string().contains("autoCheckUpdates"),
             "the v2 file on disk genuinely lacks the field"
         );
+        // v0.2.0 spelled today's `push` as `collision`.
+        json["grids"][0]["mode"] = serde_json::json!("collision");
+        json["views"][0]["grids"][0]["settings"]["mode"] = serde_json::json!("collision");
         fs::write(
             dir.path().join(CONFIG_FILE),
             serde_json::to_vec(&json).unwrap(),
@@ -566,7 +583,10 @@ mod tests {
         .unwrap();
 
         let read = read_config_from(dir.path()).expect("v2 config must stay readable");
-        assert_eq!(read.version, 3, "re-stamped to v3");
+        assert_eq!(
+            read.version, CONFIG_VERSION,
+            "re-stamped to the current version"
+        );
         assert!(
             !read.auto_check_updates,
             "upgrading must never opt a user into network access"
@@ -592,6 +612,88 @@ mod tests {
         // Round-trip: the next write persists v3, which reads back intact.
         write_config_to(dir.path(), &read).expect("persist migrated config");
         assert_eq!(read_config_from(dir.path()), Some(read));
+    }
+
+    /// Placement modes (contract C1): a **real** v3 config — everything
+    /// v0.2.0's successor wrote, with the two original modes under their old
+    /// names — migrates to v4 by renaming those modes and nothing else.
+    /// `collision` means push and `overlay` means stack, so an upgrading user
+    /// keeps the exact grid behavior they had; only the spelling on disk
+    /// changes, and only on the next write.
+    #[test]
+    fn v3_config_migrates_to_v4_renaming_modes_without_loss() {
+        use crate::ipc::GridMode;
+        let dir = ScratchDir::new();
+        fs::create_dir_all(dir.path()).unwrap();
+        let mut expected = sample_config();
+        expected.grids[0].mode = GridMode::Push;
+        expected.views[0].grids[0].settings.mode = GridMode::Stack;
+
+        let mut json = serde_json::to_value(&expected).unwrap();
+        json.as_object_mut()
+            .unwrap()
+            .insert("version".into(), serde_json::json!(3));
+        // The v3 file on disk spells the modes the old way.
+        json["grids"][0]["mode"] = serde_json::json!("collision");
+        json["views"][0]["grids"][0]["settings"]["mode"] = serde_json::json!("overlay");
+        fs::write(
+            dir.path().join(CONFIG_FILE),
+            serde_json::to_vec(&json).unwrap(),
+        )
+        .unwrap();
+
+        let read = read_config_from(dir.path()).expect("v3 config must stay readable");
+        assert_eq!(read.version, 4, "re-stamped to v4");
+        assert_eq!(
+            read.grids[0].mode,
+            GridMode::Push,
+            "`collision` is what push used to be called"
+        );
+        assert_eq!(
+            read.views[0].grids[0].settings.mode,
+            GridMode::Stack,
+            "`overlay` is what stack used to be called — inside views too"
+        );
+        // Nothing else moved: compare against the whole v3 payload at once.
+        assert_eq!(
+            AppConfig {
+                version: 3,
+                ..read.clone()
+            },
+            AppConfig {
+                version: 3,
+                ..expected
+            },
+            "every v3 field survives the migration untouched"
+        );
+        assert!(
+            !dir.path().join(BAK_FILE).exists(),
+            "a v3 config is migrated, not quarantined"
+        );
+
+        // Round-trip: the next write persists v4 under the new spelling, and
+        // that file reads back identical.
+        write_config_to(dir.path(), &read).expect("persist migrated config");
+        let raw = fs::read_to_string(dir.path().join(CONFIG_FILE)).unwrap();
+        assert!(raw.contains("\"mode\": \"push\""), "new spelling on disk");
+        assert!(raw.contains("\"mode\": \"stack\""), "new spelling on disk");
+        assert_eq!(read_config_from(dir.path()), Some(read));
+    }
+
+    /// The new mode is a first-class value on the wire, not just a rename.
+    #[test]
+    fn reflow_mode_round_trips_as_lowercase() {
+        use crate::ipc::GridMode;
+        let dir = ScratchDir::new();
+        let mut cfg = sample_config();
+        cfg.grids[0].mode = GridMode::Reflow;
+        write_config_to(dir.path(), &cfg).expect("write");
+        let raw = fs::read_to_string(dir.path().join(CONFIG_FILE)).unwrap();
+        assert!(
+            raw.contains("\"mode\": \"reflow\""),
+            "camelCase/lowercase wire shape: {raw}"
+        );
+        assert_eq!(read_config_from(dir.path()), Some(cfg));
     }
 
     /// The camelCase wire shape of the update toggle is part of contract C1,

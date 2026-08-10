@@ -57,7 +57,7 @@ function makeGridSettings(overrides: Partial<GridSettings> = {}): GridSettings {
     monitorIds: [MON_ID],
     cols: 12,
     rows: 6,
-    mode: 'collision',
+    mode: 'push',
     enabled: true,
     activeTemplateId: null,
     ...overrides,
@@ -206,7 +206,7 @@ describe('moveTileFromEditor — collision mode', () => {
 describe('moveTileFromEditor — overlay mode & absolute tiles', () => {
   it('moves an overlay tile freely (overlap allowed) and emits only that window', () => {
     const { brain, applies, snapshots, mon } = harness();
-    brain.enableGrid(makeGridSettings({ mode: 'overlay' }), [
+    brain.enableGrid(makeGridSettings({ mode: 'stack' }), [
       makeWindow('1'),
       makeWindow('2', { x: 600, y: 400 }),
     ]);

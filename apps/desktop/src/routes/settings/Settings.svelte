@@ -18,6 +18,7 @@
     type AppRule,
     type GridSettings,
     type MonitorInfo,
+    type PlacementMode,
     type Slot,
     type StateSnapshot,
     type UpdateState,
@@ -279,7 +280,51 @@
     if (g?.enabled) void emitSettingsSetDims({ gridId: g.id, cols, rows });
   }
 
-  function setMode(grid: GridSettings, mode: 'collision' | 'overlay'): void {
+  /**
+   * The three placement modes, in the order the dropdown lists them: the one
+   * most people want first, then the two that trade its cleverness away.
+   * `blurb` is the one-line description on the option row — it has to survive
+   * being the *only* thing a closed dropdown shows, so it stays short; `hint`
+   * is the fuller sentence printed under the control for whichever mode is
+   * selected.
+   */
+  const PLACEMENT_MODES: {
+    value: PlacementMode;
+    label: string;
+    blurb: string;
+    hint: string;
+  }[] = [
+    {
+      value: 'reflow',
+      label: 'Reflow',
+      blurb: 'others rearrange around it',
+      hint:
+        'Reflow: a dropped window lands exactly where you aimed, and as few ' +
+        'other windows as possible move aside to make room.',
+    },
+    {
+      value: 'push',
+      label: 'Push',
+      blurb: 'it shoves neighbors aside',
+      hint:
+        'Push: a dropped window shoves its neighbors out of the way one at a ' +
+        'time — if they have nowhere to go, the drop is refused.',
+    },
+    {
+      value: 'stack',
+      label: 'Stack',
+      blurb: 'windows may overlap',
+      hint:
+        'Stack: windows snap to cells but may overlap — the most recent ' +
+        'stays on top.',
+    },
+  ];
+
+  function modeHint(mode: PlacementMode): string {
+    return PLACEMENT_MODES.find((m) => m.value === mode)?.hint ?? '';
+  }
+
+  function setMode(grid: GridSettings, mode: PlacementMode): void {
     if (grid.mode === mode) return;
     void emitSettingsSetMode({ gridId: grid.id, mode });
   }
@@ -992,20 +1037,18 @@
           >
         </div>
         {#if enabled && grid}
-          <div class="segmented" role="group" aria-label="Grid mode">
-            <button
-              class:active={grid.mode === 'collision'}
-              aria-pressed={grid.mode === 'collision'}
-              title="Windows push each other aside — never overlap"
-              onclick={() => setMode(grid, 'collision')}>Tile</button
+          <label class="picker">
+            <span class="lbl">Placement</span>
+            <select
+              value={grid.mode}
+              onchange={(e) =>
+                setMode(grid, e.currentTarget.value as PlacementMode)}
             >
-            <button
-              class:active={grid.mode === 'overlay'}
-              aria-pressed={grid.mode === 'overlay'}
-              title="Windows snap to cells and may overlap"
-              onclick={() => setMode(grid, 'overlay')}>Stack</button
-            >
-          </div>
+              {#each PLACEMENT_MODES as m (m.value)}
+                <option value={m.value}>{m.label} — {m.blurb}</option>
+              {/each}
+            </select>
+          </label>
           <span class="tile-count">
             {tiles.length}
             {tiles.length === 1 ? 'window' : 'windows'}
@@ -1080,11 +1123,7 @@
         </p>
       {/if}
       {#if enabled && grid && !spanned}
-        <p class="hint">
-          {grid.mode === 'collision'
-            ? 'Tile: windows push each other aside — they never overlap.'
-            : 'Stack: windows snap to cells and may overlap — the most recent stays on top.'}
-        </p>
+        <p class="hint">{modeHint(grid.mode)}</p>
       {/if}
 
       {#if enabled && grid}
@@ -1182,20 +1221,17 @@
             use:holdRepeat={() => setSpanDims(grid, grid.cols, grid.rows + 1)}>+</button
           >
         </div>
-        <div class="segmented" role="group" aria-label="Grid mode">
-          <button
-            class:active={grid.mode === 'collision'}
-            aria-pressed={grid.mode === 'collision'}
-            title="Windows push each other aside — never overlap"
-            onclick={() => setMode(grid, 'collision')}>Tile</button
+        <label class="picker">
+          <span class="lbl">Placement</span>
+          <select
+            value={grid.mode}
+            onchange={(e) => setMode(grid, e.currentTarget.value as PlacementMode)}
           >
-          <button
-            class:active={grid.mode === 'overlay'}
-            aria-pressed={grid.mode === 'overlay'}
-            title="Windows snap to cells and may overlap"
-            onclick={() => setMode(grid, 'overlay')}>Stack</button
-          >
-        </div>
+            {#each PLACEMENT_MODES as m (m.value)}
+              <option value={m.value}>{m.label} — {m.blurb}</option>
+            {/each}
+          </select>
+        </label>
         <span class="tile-count">
           {tiles.length}
           {tiles.length === 1 ? 'window' : 'windows'}
@@ -1264,11 +1300,7 @@
           capped at {cappedGap(spacing)} — the editor below and your desktop
           both show the capped value.{/if}
       </p>
-      <p class="hint">
-        {grid.mode === 'collision'
-          ? 'Tile: windows push each other aside — they never overlap.'
-          : 'Stack: windows snap to cells and may overlap — the most recent stays on top.'}
-      </p>
+      <p class="hint">{modeHint(grid.mode)}</p>
 
       {#if union}
         {#key `${grid.id}:${grid.cols}x${grid.rows}:${grid.mode}:${grid.gap ?? 0}:${grid.padding ?? 0}`}
@@ -2142,35 +2174,37 @@
     color: var(--text-dim);
   }
 
-  .segmented {
+  /* Dropdown control (placement mode). Same well/border/radius language as
+     the steppers next to it; the option list is drawn by the OS, which the
+     window's `color-scheme: dark` already keeps in the right palette. */
+  .picker {
     display: inline-flex;
-    align-items: stretch;
+    align-items: center;
+    gap: 8px;
     border: 1px solid var(--border);
     border-radius: 9px;
     background: var(--well);
-    padding: 2px;
-    gap: 2px;
+    padding: 3px 4px 3px 10px;
   }
-  .segmented button {
+  .picker .lbl {
+    font-size: 12.5px;
+    color: var(--text-dim);
+  }
+  .picker select {
+    max-width: 230px;
     border: none;
     border-radius: 7px;
     background: transparent;
-    color: var(--text-dim);
+    color: var(--text-strong);
     font: 600 12px/1 var(--sans);
-    padding: 5px 12px;
+    padding: 5px 4px;
     cursor: pointer;
-    transition: background 0.12s ease, color 0.12s ease;
+    text-overflow: ellipsis;
   }
-  .segmented button:hover:not(.active) {
-    color: var(--text);
+  .picker select:hover {
     background: rgba(255, 255, 255, 0.04);
   }
-  .segmented button.active {
-    background: rgba(139, 124, 246, 0.22);
-    color: var(--accent);
-    cursor: default;
-  }
-  .segmented button:focus-visible {
+  .picker select:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 1px;
   }

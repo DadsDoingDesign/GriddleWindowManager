@@ -72,8 +72,8 @@ The 60-second path from installed to useful:
    exactly where they are.
 3. **Drag a window.** A translucent overlay fades in showing the grid, the
    cells your window will occupy, and ghost outlines of the neighbors that
-   will be pushed aside. Release to snap. Resizing works the same way — edges
-   land on cell boundaries.
+   will move out of the way. What the ghosts show is what you get on release.
+   Resizing works the same way — edges land on cell boundaries.
 4. **Give it some air.** In Settings, nudge **Gap** to 8 px. Every tiled
    window now has a gutter around it, and nothing changes cells.
 5. **Save the arrangement.** Once the screen looks right, hit **Capture view**
@@ -90,13 +90,30 @@ choose its columns and rows. Or turn on **Span monitors** for one grid across
 the combined work area of two or more displays; if that union is L-shaped, the
 dead space is excluded and windows snap to the nearest usable cells.
 
-**Two placement modes per grid.** **Tile** (the default) treats windows as
-tiles that cannot overlap — dropping one on an occupied cell pushes neighbors
-out of the way, and equal-size tiles swap. **Stack** lets windows snap to
-cells but overlap freely, with the most recently touched on top. Non-resizable
-windows (fixed-size dialogs) always behave as stack tiles and never push
-anyone. In `config.json` these two modes are stored under their internal names,
-`collision` and `overlay`.
+**Three placement modes per grid.** Each grid decides what happens when you
+drop a window on cells someone else is using:
+
+- **Reflow** — the dropped window lands *exactly* where you aimed, and the
+  other windows reorganise around it, as few of them moving as possible. If no
+  arrangement exists (or the search would take too long), the drop quietly
+  falls back to Push, so Reflow is never worse than Push.
+- **Push** — the dropped window shoves its neighbors aside one shove at a
+  time, and equal-size tiles swap. When a neighbor has nowhere to go the drop
+  is refused and the window snaps back. This is what earlier versions called
+  Tile.
+- **Stack** — windows snap to cells but may overlap freely, with the most
+  recently touched on top.
+
+Reflow and Push never let windows overlap; Stack does. Non-resizable windows
+(fixed-size dialogs) sit outside the arrangement in every mode: they snap to a
+cell, and they neither push nor get pushed.
+
+**Reflow is the default for new grids only.** A grid you already had keeps
+whatever mode it was on — upgrading changes nothing about how your desktop
+behaves. In `config.json` the modes are stored as `reflow`, `push` and
+`stack`; a config written by an earlier version stores the first two as
+`collision` and `overlay`, which are read as Push and Stack and rewritten
+under the new names the next time settings are saved.
 
 **Templates.** A gallery per grid, with built-ins for two columns, three
 columns, 2×2 quarters, main + side column, and two rows. Capture the current

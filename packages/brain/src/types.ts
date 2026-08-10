@@ -37,12 +37,41 @@ export interface Slot {
   h: number;
 }
 
+/**
+ * How a grid resolves a drop (contract C1, placement-mode extension).
+ *
+ * - `reflow` — the dropped window lands **exactly** where it was aimed and the
+ *   other tiles reorganise around it, moving as few of them as possible
+ *   (`solveMinimalMoves`). When the solver declines — unsolvable board, node
+ *   cap, or a solution that would strand a tile in a spanning grid's dead
+ *   space — the drop falls back to `push`, so a reflow grid is never *worse*
+ *   than a push grid.
+ * - `push` — Griddle's own displacement ruleset (`addTileWithDisplacement`):
+ *   the drop shoves neighbors aside and may itself be refused. Shipped as
+ *   `collision` through v0.2.0 and unchanged in behavior.
+ * - `stack` — tiles snap to cells but may overlap; the most recently touched
+ *   window sits on top. Shipped as `overlay` through v0.2.0, unchanged.
+ *
+ * `reflow` and `push` both keep tiles in Griddle's flow (they never overlap);
+ * only `stack` makes them absolute. Non-resizable windows are absolute in
+ * every mode.
+ */
+export type PlacementMode = 'reflow' | 'push' | 'stack';
+
+/**
+ * The v1–v3 spellings of the two original modes. Configs written by v0.1.0 /
+ * v0.2.0 still carry them, and `normalizePlacementMode` (persist.ts) maps
+ * them to `push` / `stack` on load — nothing downstream of the loaders ever
+ * sees these values.
+ */
+export type LegacyPlacementMode = 'collision' | 'overlay';
+
 export interface GridSettings {
   id: string;
   monitorIds: string[];
   cols: number;
   rows: number;
-  mode: 'collision' | 'overlay';
+  mode: PlacementMode;
   enabled: boolean;
   activeTemplateId: string | null;
   /**
@@ -129,7 +158,7 @@ export interface PreviewState {
   gridId: string;
   visible: boolean;
   footprint: Slot | null; // where the dragged window would land
-  ghosts: GhostMove[]; // neighbor reflow preview (collision mode)
+  ghosts: GhostMove[]; // neighbor reflow preview (push + reflow modes)
 }
 
 export interface DragPos {
@@ -182,10 +211,16 @@ export interface AppConfig {
   // v2 (spec v0.2 §4): adds `appRules`, `views`, `startupViewId`;
   // `GridSettings` gained `gap`/`padding`.
   // v3 (spec §7 "Update checks"): adds `autoCheckUpdates`, default false.
+  // v4 (placement modes): `GridSettings.mode` gains `reflow` and renames the
+  // two original values — `collision` -> `push`, `overlay` -> `stack`. The
+  // loaders rewrite the old spellings on read (persist.ts's
+  // `normalizePlacementMode`, the Rust mirror's serde aliases), so a v1–v3
+  // config keeps its exact behavior and simply persists the new name next
+  // time it is written.
   // The loaders (persist.ts and the Rust mirror's serde defaults) migrate
   // older configs in place — defaults `appRules: [], views: [],
   // startupViewId: null, autoCheckUpdates: false`, spacing absent-means-0.
-  version: 3;
+  version: 4;
   grids: GridSettings[];
   templates: Template[];
   exclusions: string[]; // lowercase exe names

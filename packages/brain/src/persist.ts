@@ -13,6 +13,7 @@ import type {
   AppConfig,
   AppRule,
   GridSettings,
+  PlacementMode,
   Slot,
   Template,
   View,
@@ -22,9 +23,34 @@ import type {
 
 export const DEFAULT_HOTKEY = 'Ctrl+Super+G';
 
+/**
+ * The placement mode a stored value means, or `null` if it means nothing.
+ *
+ * This is the whole v3 → v4 mode migration: `collision` and `overlay` are the
+ * names v0.1.0/v0.2.0 wrote for what are now `push` and `stack`, so every
+ * pre-existing config keeps the exact behavior it had — it just persists the
+ * new spelling the next time it is written. Both loaders run it (here for
+ * `sanitizeConfig`, and the brain's own constructor intake, because the
+ * shipped read path is Rust serde straight into the constructor).
+ */
+export function normalizePlacementMode(raw: unknown): PlacementMode | null {
+  switch (raw) {
+    case 'reflow':
+    case 'push':
+    case 'stack':
+      return raw;
+    case 'collision':
+      return 'push';
+    case 'overlay':
+      return 'stack';
+    default:
+      return null;
+  }
+}
+
 export function defaultConfig(): AppConfig {
   return {
-    version: 3,
+    version: 4,
     grids: [],
     templates: [],
     exclusions: [],
@@ -82,7 +108,8 @@ function sanitizeGridSettings(raw: unknown): GridSettings | null {
   if (!isInt(raw.cols) || !isInt(raw.rows) || raw.cols < 1 || raw.rows < 1) {
     return null;
   }
-  if (raw.mode !== 'collision' && raw.mode !== 'overlay') return null;
+  const mode = normalizePlacementMode(raw.mode);
+  if (mode === null) return null;
   const gap = sanitizeSpacing(raw.gap);
   const padding = sanitizeSpacing(raw.padding);
   return {
@@ -90,7 +117,7 @@ function sanitizeGridSettings(raw: unknown): GridSettings | null {
     monitorIds,
     cols: raw.cols,
     rows: raw.rows,
-    mode: raw.mode,
+    mode,
     enabled: raw.enabled === true,
     activeTemplateId: isNonEmptyString(raw.activeTemplateId)
       ? raw.activeTemplateId
@@ -204,15 +231,19 @@ function sanitizeView(raw: unknown): View | null {
  * otherwise returns a config with every invalid grid/template/exclusion
  * entry dropped and missing scalars defaulted. Never throws.
  *
- * Versions: v3 is current (spec §7 "Update checks"). A v1 config (written by
- * v0.1.0) or a v2 one (v0.2.0) migrates in place — `appRules: [], views: [],
+ * Versions: v4 is current (placement modes). A v1 config (written by v0.1.0),
+ * a v2 one (v0.2.0) or a v3 one migrates in place — `appRules: [], views: [],
  * startupViewId: null, autoCheckUpdates: false`, spacing fields absent
- * (absent means 0). Unknown future versions return `null`, which the host
- * treats as corrupt (`.bak` + fresh start).
+ * (absent means 0), and `mode: 'collision'|'overlay'` rewritten to
+ * `'push'|'stack'` (same behavior, new name). Unknown future versions return
+ * `null`, which the host treats as corrupt (`.bak` + fresh start).
  */
 export function sanitizeConfig(raw: unknown): AppConfig | null {
   if (!isRecord(raw)) return null;
-  if (raw.version !== 1 && raw.version !== 2 && raw.version !== 3) return null;
+  if (typeof raw.version !== 'number') return null;
+  if (raw.version < 1 || raw.version > 4 || !Number.isInteger(raw.version)) {
+    return null;
+  }
 
   const grids: GridSettings[] = [];
   const gridIds = new Set<string>();
@@ -281,7 +312,7 @@ export function sanitizeConfig(raw: unknown): AppConfig | null {
       : null;
 
   return {
-    version: 3,
+    version: 4,
     grids,
     templates,
     exclusions,

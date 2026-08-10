@@ -62,7 +62,7 @@ function makeGridSettings(overrides: Partial<GridSettings> = {}): GridSettings {
     monitorIds: [MON_ID],
     cols: 12,
     rows: 6,
-    mode: 'collision',
+    mode: 'push',
     enabled: true,
     activeTemplateId: null,
     ...overrides,
@@ -113,7 +113,7 @@ describe('serializeConfig / parseConfig', () => {
 
   it('round-trips a populated config', () => {
     const cfg: AppConfig = {
-      version: 3,
+      version: 4,
       grids: [makeGridSettings(), makeGridSettings({ id: 'grid:other', enabled: false })],
       templates: [
         {
@@ -161,7 +161,7 @@ describe('serializeConfig / parseConfig', () => {
     expect(parseConfig('null')).toBeNull();
     expect(parseConfig('42')).toBeNull();
     expect(parseConfig('[]')).toBeNull();
-    expect(parseConfig('{"version":4}')).toBeNull();
+    expect(parseConfig('{"version":5}')).toBeNull();
     expect(parseConfig('{}')).toBeNull();
   });
 
@@ -170,9 +170,9 @@ describe('serializeConfig / parseConfig', () => {
       version: 1,
       grids: [
         makeGridSettings(),
-        { id: '', monitorIds: [MON_ID], cols: 1, rows: 1, mode: 'collision' },
-        { id: 'grid:x', monitorIds: [], cols: 1, rows: 1, mode: 'collision' },
-        { id: 'grid:y', monitorIds: [MON_ID], cols: 0, rows: 1, mode: 'collision' },
+        { id: '', monitorIds: [MON_ID], cols: 1, rows: 1, mode: 'push' },
+        { id: 'grid:x', monitorIds: [], cols: 1, rows: 1, mode: 'push' },
+        { id: 'grid:y', monitorIds: [MON_ID], cols: 0, rows: 1, mode: 'push' },
         { id: 'grid:z', monitorIds: [MON_ID], cols: 2, rows: 2, mode: 'weird' },
         'garbage',
         makeGridSettings(), // duplicate id — dropped
@@ -309,7 +309,7 @@ describe('exportConfig / constructor round-trip', () => {
     const slotsA = tileSlots(last(a.snapshots));
 
     const cfg = a.brain.exportConfig();
-    expect(cfg.version).toBe(3);
+    expect(cfg.version).toBe(4);
     expect(cfg.grids).toEqual([makeGridSettings()]);
     expect(cfg.exclusions).toEqual(['excluded.exe']);
     expect(cfg.templates.filter((t) => !t.builtin).map((t) => t.name)).toEqual([
@@ -350,7 +350,7 @@ describe('exportConfig / constructor round-trip', () => {
 
   it('restores absolute tiles for non-resizable windows and overlay grids', () => {
     const a = harness();
-    a.brain.enableGrid(makeGridSettings({ mode: 'overlay' }), [
+    a.brain.enableGrid(makeGridSettings({ mode: 'stack' }), [
       makeWindow('1', { x: 640, y: 220 }),
       makeWindow('N', { x: 600, y: 300, resizable: false }),
     ]);

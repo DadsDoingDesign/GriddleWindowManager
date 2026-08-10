@@ -67,7 +67,7 @@ function makeGridSettings(overrides: Partial<GridSettings> = {}): GridSettings {
     monitorIds: [MON_ID],
     cols: 12,
     rows: 6,
-    mode: 'collision',
+    mode: 'push',
     enabled: true,
     activeTemplateId: null,
     ...overrides,
@@ -365,7 +365,7 @@ describe('rule slot clamping and displacement', () => {
 
   it('an occupied rule slot in overlay mode overlaps freely', () => {
     const { brain, snapshots, mon, applies } = harness();
-    brain.enableGrid(makeGridSettings({ mode: 'overlay' }), [
+    brain.enableGrid(makeGridSettings({ mode: 'stack' }), [
       makeWindow('A', { x: 800, y: 400 }),
     ]);
     brain.setAppRule(rule({ slot: { col: 6, row: 2, w: 3, h: 2 } }));

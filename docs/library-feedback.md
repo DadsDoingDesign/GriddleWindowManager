@@ -172,3 +172,26 @@ export. Verified against `node_modules/@griddle/core/dist/*.d.ts` and
   filters by *target selector*, not by button, so it cannot express "let
   right-clicks through" — a `dragButton`/button filter option would make
   custom context menus first-class.
+
+## Placement-mode findings (2026-08-10, reflow mode)
+
+- **No public "install this exact arrangement" op.** Reflow mode computes a
+  whole-board arrangement with our own `solveMinimalMoves` and then has to get
+  it into the `Grid`. Every mutator either runs the rules engine
+  (`moveTile`/`resizeTile`/`addTileWithDisplacement` — they would second-guess
+  a solution that is already collision-free) or is order-sensitive
+  (`removeTile` + `addTile` per tile, which needs a manual lift-then-lay-down
+  pass and reshuffles tile order). We settled on `snapshotTiles()` → mutate the
+  returned `Map` → `restoreTiles()`, which is atomic, order-preserving and
+  side-effect free — but it is documented as a snapshot/rollback pair, not as a
+  bulk-apply API, and it skips `assertValidLayout`. A public
+  `Grid.applyArrangement(moves, {validate: true})` (or simply documenting
+  `restoreTiles` as the supported bulk path, with validation) would make this
+  first-class instead of inferred.
+- **`_setTilePos` / `_setTileRect` are exported in the `.d.ts`.** They are the
+  obvious primitives for the above and are visible to consumers, but the
+  leading underscore says "internal". Either hide them from the public types or
+  bless one of them; right now a consumer has to guess.
+- Not a gap, just a note: `isInFlow(tile)` is exactly the predicate the brain
+  needed to decide which tiles a solve may move, and it being exported saved us
+  from re-deriving the `absolute`/`fixed`/`sticky` rules. Keep it public.

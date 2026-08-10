@@ -261,7 +261,7 @@ function checkInvariants(
         inFlow.push({ id: t.id, ...s });
       }
     }
-    if (g.mode === 'collision') {
+    if (g.mode !== 'stack') {
       for (let i = 0; i < inFlow.length; i++) {
         for (let j = i + 1; j < inFlow.length; j++) {
           const a = inFlow[i]!;
@@ -314,7 +314,7 @@ function checkInvariants(
           );
         }
       }
-      if (g.mode === 'collision') {
+      if (g.mode !== 'stack') {
         for (let i = 0; i < pxRects.length; i++) {
           for (let j = i + 1; j < pxRects.length; j++) {
             if (rectsOverlap(pxRects[i]!.rect, pxRects[j]!.rect)) {
@@ -363,7 +363,7 @@ function runFuzz(seed: number, opCount: number): void {
     monitorIds: [MON1.id],
     cols: 12,
     rows: 6,
-    mode: 'collision',
+    mode: 'push',
     enabled: true,
     activeTemplateId: null,
     gap: randInt(0, 64),
@@ -374,7 +374,7 @@ function runFuzz(seed: number, opCount: number): void {
     monitorIds: [MON2.id],
     cols: 8,
     rows: 4,
-    mode: 'overlay',
+    mode: 'stack',
     enabled: true,
     activeTemplateId: null,
     gap: randInt(0, 64),
@@ -387,7 +387,7 @@ function runFuzz(seed: number, opCount: number): void {
     monitorIds: [MON3.id, MON4.id],
     cols: 8,
     rows: 4,
-    mode: 'collision',
+    mode: 'push',
     enabled: true,
     activeTemplateId: null,
     gap: randInt(0, 64),
@@ -550,7 +550,7 @@ function runFuzz(seed: number, opCount: number): void {
         }
         case 'setMode': {
           const gridId = pick(GRID_IDS);
-          const mode = pick(['collision', 'overlay'] as const);
+          const mode = pick(['reflow', 'push', 'stack'] as const);
           desc = `setMode ${gridId} ${mode}`;
           brain.setMode(gridId, mode);
           break;

@@ -15,7 +15,7 @@
 
 - New entity: `AppRule { exe: string; gridId: string | null; slot: Slot }` (`gridId: null` = any grid; exe lowercase basename). One rule per (exe, gridId); saving again overwrites.
 - **Creation:** right-click a tile in the settings editor → context menu: "Save as default for <exe> on this grid" / "…on all grids" / "Remove default for <exe>" (shown only if one exists). Rules list (exe, scope, slot, delete) in a settings card.
-- **Placement precedence** (extends spec §5.4): restore-previous-tile → **matching app rule** (grid-specific beats any-grid; slot clamped to current dims; if occupied in collision mode, `addTileWithDisplacement` at the rule slot) → active-template empty slot → auto-place.
+- **Placement precedence** (extends spec §5.4): restore-previous-tile → **matching app rule** (grid-specific beats any-grid; slot clamped to current dims; if occupied in an in-flow mode — push or reflow — `addTileWithDisplacement` at the rule slot) → active-template empty slot → auto-place.
 - Rules apply on `windowAppeared` only (not to already-managed windows when a rule is created).
 
 ## 3. Startup Views
@@ -33,5 +33,5 @@
 ## 5. Quality bar
 
 - Vitest: gap/padding math (incl. rounding at odd resolutions, gap+padding+footprint interplay, clamping when `gap*(cols-1) ≥ effWidth` → gap coerced down to keep unitW ≥ 16px), rule precedence matrix, view capture/apply round-trip, claim expiry, v1→v2 migration.
-- Fuzz suite extended: random gap/padding per grid; invariants unchanged (no overlap of *rects* in collision mode — rect-level check now that gaps exist, in-bounds incl. padding).
+- Fuzz suite extended: random gap/padding per grid; invariants unchanged (no overlap of *rects* outside stack mode — rect-level check now that gaps exist, in-bounds incl. padding).
 - Existing 201 TS + 120 Rust tests stay green. Critique pass on the new UI copy + IA. Installer rebuilt as v0.2.0.

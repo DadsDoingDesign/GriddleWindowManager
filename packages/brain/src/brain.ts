@@ -1,14 +1,18 @@
 // WindowManagerBrain — pure TS layout brain (contract §C3). Zero Tauri/DOM
 // imports; the host wires native events in and applies emitted layouts out.
 //
-// One @griddle/core Grid per enabled grid. Collision mode uses in-flow tiles
-// (first-fit placement, addTileWithDisplacement fallback); non-resizable
-// windows are always `absolute` tiles (position snaps, size is left alone).
-// Overlay mode stores every tile as a Griddle `absolute` tile (pinUnits:
-// 'cells'): tiles may overlap, nothing displaces, and a brain-wide recency
-// counter orders overlay snapshots bottom-to-top (top-most last).
+// One @griddle/core Grid per enabled grid. The `push` and `reflow` placement
+// modes both use in-flow tiles (first-fit placement, addTileWithDisplacement
+// fallback) and differ only in how a *drop* is resolved: push hands the
+// collision to Griddle's displacement rules, reflow nails the dropped tile to
+// the cell the user aimed at and reorganises the rest with `solveMinimalMoves`
+// (falling back to push when the solver declines). Non-resizable windows are
+// always `absolute` tiles (position snaps, size is left alone). `stack` mode
+// stores every tile as a Griddle `absolute` tile (pinUnits: 'cells'): tiles
+// may overlap, nothing displaces, and a brain-wide recency counter orders
+// stack snapshots bottom-to-top (top-most last).
 
-import { Grid } from '@griddle/core';
+import { Grid, isInFlow } from '@griddle/core';
 import type { CellRect, Tile } from '@griddle/core';
 import {
   cellRect,
@@ -19,7 +23,8 @@ import {
   slotFromCursor,
   snapRectToSlot,
 } from './coords';
-import { extractLayoutTiles } from './persist';
+import { extractLayoutTiles, normalizePlacementMode } from './persist';
+import { solveMinimalMoves, type ReflowMove, type ReflowTile } from './reflow';
 import {
   computeUnusableCells,
   nearestUsableSlot,
@@ -36,8 +41,10 @@ import type {
   GhostMove,
   GridSettings,
   Hwnd,
+  LegacyPlacementMode,
   MonitorInfo,
   Move,
+  PlacementMode,
   PreviewState,
   Slot,
   StateSnapshot,
@@ -98,6 +105,13 @@ interface DragState {
 const DEFAULT_HOTKEY = 'Ctrl+Super+G';
 
 /**
+ * Placement mode a grid gets when nothing says otherwise. New grids only —
+ * every grid that already exists carries its own mode through the v4 config
+ * migration, so upgrading never changes how an existing desktop behaves.
+ */
+export const DEFAULT_PLACEMENT_MODE: PlacementMode = 'reflow';
+
+/**
  * How long a view's assignments stay claimable after an apply (spec v0.2 §3:
  * 120 s, configurable constant). During the window each `windowAppeared`
  * matching an unclaimed exe assignment takes that slot, beating app rules;
@@ -139,10 +153,12 @@ function normalizeAppRule(rule: AppRule): AppRule | null {
 }
 
 /**
- * Spacing hygiene for `GridSettings` entering the brain (constructor intake,
+ * Hygiene for `GridSettings` entering the brain (constructor intake,
  * `enableGrid`, view intake): a present gap/padding is clamped to an integer
- * in 0..MAX_SPACING_PX; an absent one stays absent (absent means 0
- * everywhere, and a v1 config must round-trip byte-identical).
+ * in 0..MAX_SPACING_PX (an absent one stays absent — absent means 0
+ * everywhere, and a v1 config must round-trip byte-identical), and the
+ * placement mode is normalized, which maps the pre-v4 `collision`/`overlay`
+ * spellings onto `push`/`stack` and anything unrecognizable onto the default.
  *
  * Why here and not only in persist.ts: the *shipped* read path is Rust serde
  * (`config.rs::read_config`) straight into this constructor — `sanitizeConfig`
@@ -153,6 +169,7 @@ function normalizeAppRule(rule: AppRule): AppRule | null {
  */
 function normalizeGridSettings(g: GridSettings): GridSettings {
   const out: GridSettings = { ...g, monitorIds: [...g.monitorIds] };
+  out.mode = normalizePlacementMode(g.mode) ?? DEFAULT_PLACEMENT_MODE;
   if (out.gap !== undefined) out.gap = clampSpacing(out.gap);
   if (out.padding !== undefined) out.padding = clampSpacing(out.padding);
   return out;
@@ -252,7 +269,7 @@ export class WindowManagerBrain {
   private floating = new Map<Hwnd, string>();
   /** Slots remembered across minimize, for restore. */
   private remembered = new Map<Hwnd, RememberedSlot>();
-  /** Monotonic interaction order; higher = more recent (top-most in overlay). */
+  /** Monotonic interaction order; higher = more recent (top-most in stack). */
   private recency = new Map<Hwnd, number>();
   private recencyCounter = 0;
   /** Last rect emitted per hwnd, so flush() only emits actual changes. */
@@ -656,12 +673,14 @@ export class WindowManagerBrain {
       d.lastResizing === resizing;
     if (unchanged) return;
 
-    // Overlay-mode targets never reflow neighbors; absolute tiles displace
-    // nothing either way — both preview with no ghosts.
+    // Stack-mode targets never reflow neighbors; absolute tiles displace
+    // nothing either way — both preview with no ghosts. Everything else
+    // previews with the very solver/engine its own commit will run, so the
+    // ghosts the user watches are the moves they get on release.
     const ghosts =
-      d.absolute || mg.settings.mode === 'overlay'
+      d.absolute || mg.settings.mode === 'stack'
         ? []
-        : this.simulateGhosts(mg, d, footprint, resizing);
+        : this.previewGhosts(mg, d, footprint, resizing);
 
     if (
       d.previewGridId === mg.settings.id &&
@@ -704,7 +723,7 @@ export class WindowManagerBrain {
   ): { footprint: Slot; resizing: boolean } | null {
     const dims = this.dims(mg.settings);
     // Non-resizable windows never report a size change, so this is safe for
-    // absolute tiles too (overlay-mode resizes must re-snap the footprint).
+    // absolute tiles too (stack-mode resizes must re-snap the footprint).
     const resizing =
       rect.width !== d.startRect.width || rect.height !== d.startRect.height;
     let footprint: Slot;
@@ -895,10 +914,24 @@ export class WindowManagerBrain {
     this.emitSnapshot();
   }
 
-  setMode(gridId: string, mode: 'collision' | 'overlay'): void {
+  /**
+   * Change a grid's placement mode. The pre-v4 spellings (`collision`,
+   * `overlay`) are still accepted and mean `push` / `stack`; an unrecognized
+   * value is ignored rather than corrupting the grid.
+   *
+   * Only the stack boundary moves tiles: entering `stack` converts every
+   * in-flow tile to an absolute tile at its own slot (geometry unchanged, no
+   * moves emitted), leaving it re-packs them in flow. `push` ⇄ `reflow` is
+   * pure policy — both keep the same in-flow tiles, they only resolve the
+   * *next* drop differently — so switching never disturbs the desktop.
+   */
+  setMode(gridId: string, mode: PlacementMode | LegacyPlacementMode): void {
+    const next = normalizePlacementMode(mode);
+    if (next === null) return;
     const settings = this.gridSettings.get(gridId);
-    if (!settings || settings.mode === mode) return;
-    const updated: GridSettings = { ...settings, mode };
+    if (!settings || settings.mode === next) return;
+    const wasStack = settings.mode === 'stack';
+    const updated: GridSettings = { ...settings, mode: next };
     this.gridSettings.set(gridId, updated);
 
     const mg = this.grids.get(gridId);
@@ -909,7 +942,7 @@ export class WindowManagerBrain {
     mg.settings = updated;
     if (this.drag?.sourceGridId === gridId) this.cancelDrag();
 
-    if (mode === 'overlay') {
+    if (next === 'stack') {
       // Convert in place: every in-flow tile becomes absolute at its own
       // slot. Geometry is unchanged, so no moves are emitted.
       for (const tile of [...mg.grid.tiles]) {
@@ -918,8 +951,8 @@ export class WindowManagerBrain {
           pinned: { x: tile.col, y: tile.row },
         });
       }
-    } else {
-      this.convertToCollision(mg);
+    } else if (wasStack) {
+      this.convertToInFlow(mg);
     }
     this.flush();
     this.emitSnapshot();
@@ -973,11 +1006,11 @@ export class WindowManagerBrain {
     mg.grid = this.newGrid(updated, mon);
     mg.unusable = this.unusableFor(updated, mon);
 
-    const overlay = updated.mode === 'overlay';
+    const stack = updated.mode === 'stack';
     for (const e of entries) {
       const info = this.windows.get(e.id);
       const slot = clampSlot(e.slot, cols, rows);
-      if (this.addAtSlot(mg, e.id, slot, overlay, info)) continue;
+      if (this.addAtSlot(mg, e.id, slot, stack, info)) continue;
       if (info) {
         this.placeWindow(mg, info);
       } else {
@@ -1120,11 +1153,11 @@ export class WindowManagerBrain {
     mg.grid = this.newGrid(settings, mon);
     mg.unusable = this.unusableFor(settings, mon);
 
-    const overlay = settings.mode === 'overlay';
+    const stack = settings.mode === 'stack';
     order.forEach((hwnd, i) => {
       const info = this.windows.get(hwnd);
       const slot = i < tpl.slots.length ? tpl.slots[i] : undefined;
-      if (slot && this.addAtSlot(mg, hwnd, slot, overlay, info)) return;
+      if (slot && this.addAtSlot(mg, hwnd, slot, stack, info)) return;
       // Extra window beyond the template's slots (or an unusable slot):
       // auto-place with the usual first-fit/displacement/floating rules.
       if (info) {
@@ -1168,7 +1201,7 @@ export class WindowManagerBrain {
     );
     if (!snapped) return; // spanning grid with zero usable cells
     this.commitSameGrid(mg, hwnd, snapped);
-    this.touch(hwnd); // now the most recent (top-most in overlay stacking)
+    this.touch(hwnd); // now the most recent (top-most in stack mode)
     this.flush();
     this.emitSnapshot();
   }
@@ -1177,7 +1210,7 @@ export class WindowManagerBrain {
     const layouts: Record<string, unknown> = { ...this.storedLayouts };
     for (const [id, mg] of this.grids) layouts[id] = mg.grid.toJSON();
     return {
-      version: 3,
+      version: 4,
       grids: [...this.gridSettings.values()].map((g) => ({ ...g })),
       templates: [...this.templates],
       exclusions: [...this.exclusions],
@@ -1498,7 +1531,7 @@ export class WindowManagerBrain {
       const dims = this.dims(target.settings);
       const slot = clampSlot(c.slot, dims.cols, dims.rows);
       if (
-        !this.addAtSlot(target, w.hwnd, slot, target.settings.mode === 'overlay', w)
+        !this.addAtSlot(target, w.hwnd, slot, target.settings.mode === 'stack', w)
       ) {
         continue;
       }
@@ -1519,13 +1552,13 @@ export class WindowManagerBrain {
   }
 
   /**
-   * Overlay → collision: re-add every resizable tile in recency order, most
-   * recent first so it claims its slot outright (keeps it preferentially).
+   * Stack → in-flow (push/reflow): re-add every resizable tile in recency
+   * order, most recent first so it claims its slot outright (preferentially).
    * Older tiles keep their slot if still free, else first-fit, else
    * displacement as a last resort; tiles that no longer fit become floating.
    * Non-resizable windows stay absolute (spec: always absolute).
    */
-  private convertToCollision(mg: ManagedGrid): void {
+  private convertToInFlow(mg: ManagedGrid): void {
     const gridId = mg.settings.id;
     const dims = this.dims(mg.settings);
     const converts = mg.grid.tiles
@@ -1585,18 +1618,18 @@ export class WindowManagerBrain {
       this.tileGrid.delete(t.id);
       this.appliedRects.delete(t.id);
     }
-    const overlay = mg.settings.mode === 'overlay';
+    const stack = mg.settings.mode === 'stack';
     for (const t of stranded) {
       const info = this.windows.get(t.id);
       const target = this.nearestUsable(mg, t.slot);
-      if (target && this.addAtSlot(mg, t.id, target, overlay, info)) continue;
+      if (target && this.addAtSlot(mg, t.id, target, stack, info)) continue;
       if (info && this.placeWindow(mg, info)) continue;
       this.floating.set(t.id, mg.settings.id);
     }
   }
 
   /**
-   * Add a window's tile at an exact slot (template apply). Overlay grids and
+   * Add a window's tile at an exact slot (template apply). Stack grids and
    * non-resizable windows get an absolute pinned tile (never collides);
    * in-flow tiles take the slot outright when free, else displace. Returns
    * whether the tile was created.
@@ -1605,13 +1638,13 @@ export class WindowManagerBrain {
     mg: ManagedGrid,
     hwnd: Hwnd,
     slot: Slot,
-    overlay: boolean,
+    stack: boolean,
     info: WindowInfo | undefined,
   ): boolean {
     // Dead-space slots are never assigned (spec §5.7); the caller falls back
     // to normal placement, which snaps to the nearest usable slot.
     if (!this.usable(mg, slot)) return false;
-    if (overlay || !(info?.resizable ?? true)) {
+    if (stack || !(info?.resizable ?? true)) {
       mg.grid.addTile({
         id: hwnd,
         col: slot.col,
@@ -1792,6 +1825,126 @@ export class WindowManagerBrain {
   }
 
   /**
+   * Ghosts for the current drag over an in-flow (push/reflow) grid. Reflow
+   * grids preview the *solver's* answer, because that is what the drop will
+   * commit; when the solver declines, so does the commit — both fall back to
+   * the push simulation, so the overlay can never promise an arrangement the
+   * release does not deliver.
+   */
+  private previewGhosts(
+    target: ManagedGrid,
+    d: DragState,
+    footprint: Slot,
+    resizing: boolean,
+  ): GhostMove[] {
+    if (target.settings.mode === 'reflow') {
+      const plan = this.solveReflow(target, d.hwnd, footprint);
+      if (plan) return this.ghostsFromPlan(target, plan);
+    }
+    return this.simulateGhosts(target, d, footprint, resizing);
+  }
+
+  /**
+   * Ask the minimal-move solver how to fit `hwnd` at exactly `slot` on a
+   * reflow-mode grid. Returns the displaced tiles' new origins (empty when
+   * the slot was already free), or `null` when the caller must fall back to
+   * push: an unusable target slot, nonsense the solver refuses, a board it
+   * cannot solve inside its node cap, or — on a spanning grid, whose dead
+   * cells the solver knows nothing about — a solution that would strand a
+   * tile in the seam.
+   *
+   * Pure: it reads the live grid and mutates nothing, so preview and commit
+   * can both call it and get the same answer.
+   */
+  private solveReflow(mg: ManagedGrid, hwnd: Hwnd, slot: Slot): ReflowMove[] | null {
+    if (!this.usable(mg, slot)) return null;
+    const tiles: ReflowTile[] = [];
+    for (const t of mg.grid.tiles) {
+      if (t.id === hwnd) continue;
+      // Absolute tiles (stack leftovers, non-resizable windows) sit outside
+      // the flow: Griddle's own collision queries skip them, and so does the
+      // solver's board — they neither block a drop nor get pushed by one.
+      if (!isInFlow(t)) continue;
+      tiles.push({ id: t.id, col: t.col, row: t.row, w: t.w, h: t.h });
+    }
+    const dims = this.dims(mg.settings);
+    const result = solveMinimalMoves(
+      tiles,
+      { id: hwnd, ...slot },
+      { cols: dims.cols, rows: dims.rows },
+    );
+    if (!result || !result.ok) return null;
+    if (mg.unusable.size > 0) {
+      const sizes = new Map(tiles.map((t) => [t.id, t]));
+      for (const m of result.moves) {
+        const t = sizes.get(m.id);
+        if (!t || !this.usable(mg, { col: m.col, row: m.row, w: t.w, h: t.h })) {
+          return null;
+        }
+      }
+    }
+    return result.moves;
+  }
+
+  /** Turn a solver plan into preview ghosts (from = the tile's live slot). */
+  private ghostsFromPlan(mg: ManagedGrid, moves: ReflowMove[]): GhostMove[] {
+    const ghosts: GhostMove[] = [];
+    for (const m of moves) {
+      const t = mg.grid.getTile(m.id);
+      if (!t) continue;
+      const from = tileSlotOf(t);
+      const to: Slot = { col: m.col, row: m.row, w: t.w, h: t.h };
+      if (!sameSlot(from, to)) ghosts.push({ hwnd: m.id, from, to });
+    }
+    return ghosts;
+  }
+
+  /**
+   * Reflow-mode commit: `hwnd` takes `snapped` exactly and the solved plan
+   * moves the displaced neighbors out of its way — all of it landing in the
+   * one `flush()` the caller runs, so the whole rearrangement is a single
+   * batch of real window moves.
+   *
+   * Works for a tile already on this grid (drop / editor move / resize) and
+   * for one arriving from another grid. Returns false without touching the
+   * grid when the solver declines, so the caller falls back to push.
+   */
+  private commitReflow(mg: ManagedGrid, hwnd: Hwnd, snapped: Slot): boolean {
+    const moves = this.solveReflow(mg, hwnd, snapped);
+    if (!moves) return false;
+
+    // Bulk-apply through Griddle's own snapshot/restore, which installs an
+    // arrangement wholesale: no displacement rules run, no tile is removed
+    // and re-added (which would reshuffle placement order for no reason), and
+    // the grid is never observed in a half-applied state.
+    const next = mg.grid.snapshotTiles();
+    for (const m of moves) {
+      const t = next.get(m.id);
+      if (!t) return false; // grid changed under the plan; leave it alone
+      t.col = m.col;
+      t.row = m.row;
+    }
+    const dragged = next.get(hwnd);
+    if (dragged) {
+      dragged.col = snapped.col;
+      dragged.row = snapped.row;
+      dragged.w = snapped.w;
+      dragged.h = snapped.h;
+    } else {
+      next.set(hwnd, {
+        id: hwnd,
+        col: snapped.col,
+        row: snapped.row,
+        w: snapped.w,
+        h: snapped.h,
+      });
+    }
+    mg.grid.restoreTiles(next);
+    this.tileGrid.set(hwnd, mg.settings.id);
+    return true;
+  }
+
+  /**
    * Ghost preview: run the would-be commit on a clone (toJSON → fromJSON) and
    * diff every other in-flow tile's slot. The live grid is never mutated.
    */
@@ -1839,10 +1992,17 @@ export class WindowManagerBrain {
     const tile = mg.grid.getTile(hwnd);
     if (!tile) return;
 
+    // Reflow mode: the drop lands where it was aimed and the neighbors
+    // reorganise around it. A declined solve falls through to the push path
+    // below, which is exactly what the preview showed.
+    if (mg.settings.mode === 'reflow' && isInFlow(tile)) {
+      if (this.commitReflow(mg, hwnd, snapped)) return;
+    }
+
     if (tile.position === 'absolute') {
       const info = this.windows.get(hwnd);
       if ((info?.resizable ?? true) && (snapped.w !== tile.w || snapped.h !== tile.h)) {
-        // Overlay-mode resize: footprint snaps to cells too. Absolute tiles
+        // Stack-mode resize: footprint snaps to cells too. Absolute tiles
         // never collide, so remove + re-add is side-effect free.
         mg.grid.removeTile(hwnd);
         mg.grid.addTile({
@@ -1913,10 +2073,10 @@ export class WindowManagerBrain {
     this.tileGrid.delete(hwnd);
     const info = this.windows.get(hwnd);
 
-    // Absolute in the target iff the target is overlay-mode or the window
-    // itself is non-resizable (d.absolute may just mean "source was overlay").
+    // Absolute in the target iff the target is stack-mode or the window
+    // itself is non-resizable (d.absolute may just mean "source was stack").
     const nonResizable = info ? !info.resizable : d.absolute;
-    if (target.settings.mode === 'overlay' || nonResizable) {
+    if (target.settings.mode === 'stack' || nonResizable) {
       target.grid.addTile({
         id: hwnd,
         col: snapped.col,
@@ -1927,6 +2087,11 @@ export class WindowManagerBrain {
         pinned: { x: snapped.col, y: snapped.row },
       });
       this.tileGrid.set(hwnd, target.settings.id);
+      return;
+    }
+    // Reflow mode: same rule as a same-grid drop — the arriving window takes
+    // the aimed cells and the target grid's tiles reorganise around it.
+    if (target.settings.mode === 'reflow' && this.commitReflow(target, hwnd, snapped)) {
       return;
     }
     const ok = this.runEngineOp(target, (g) =>
@@ -1967,7 +2132,7 @@ export class WindowManagerBrain {
       present.set(w.hwnd, w);
     }
 
-    const overlay = mg.settings.mode === 'overlay';
+    const stack = mg.settings.mode === 'stack';
     for (const t of stored) {
       const w = present.get(t.id);
       if (!w || this.tileGrid.has(t.id)) continue;
@@ -1981,7 +2146,7 @@ export class WindowManagerBrain {
       // Stored slots that fall into dead space (spanning grid whose monitor
       // topology changed since the snapshot) fall through to fresh placement.
       if (!this.usable(mg, t.slot)) continue;
-      if (overlay || !w.resizable) {
+      if (stack || !w.resizable) {
         mg.grid.addTile({
           id: t.id,
           ...rect,
@@ -1989,7 +2154,7 @@ export class WindowManagerBrain {
           pinned: { x: rect.col, y: rect.row },
         });
       } else {
-        // In-flow restore (a tile stored as absolute by an overlay session
+        // In-flow restore (a tile stored as absolute by a stack-mode session
         // still makes a fine in-flow target): only if the slot is free.
         if (mg.grid.tilesIn(rect).length > 0) continue;
         mg.grid.addTile({ id: t.id, ...rect });
@@ -2014,24 +2179,24 @@ export class WindowManagerBrain {
    * `windowAppeared` only (restore-previous was already handled there):
    * grid-specific app rule → any-grid app rule → active template's first
    * empty slot → auto-place. A rule slot is clamped into the grid's current
-   * dims; overlay grids and non-resizable windows take it as an absolute
-   * tile (overlap allowed), an occupied slot in collision mode displaces
+   * dims; stack grids and non-resizable windows take it as an absolute
+   * tile (overlap allowed), an occupied slot in push/reflow mode displaces
    * (`addTileWithDisplacement` at the rule slot), and a slot that cannot
    * take the tile (dead space, failed displacement) falls through to the
    * next precedence level.
    */
   private placeAppeared(mg: ManagedGrid, w: WindowInfo): void {
     const dims = this.dims(mg.settings);
-    const overlay = mg.settings.mode === 'overlay';
+    const stack = mg.settings.mode === 'stack';
     for (const rule of this.appRulesFor(w.exe, mg.settings.id)) {
       const slot = clampSlot(rule.slot, dims.cols, dims.rows);
-      if (this.addAtSlot(mg, w.hwnd, slot, overlay, w)) {
+      if (this.addAtSlot(mg, w.hwnd, slot, stack, w)) {
         this.touch(w.hwnd);
         return;
       }
     }
     const tplSlot = this.emptyTemplateSlot(mg);
-    if (tplSlot && this.addAtSlot(mg, w.hwnd, tplSlot, overlay, w)) {
+    if (tplSlot && this.addAtSlot(mg, w.hwnd, tplSlot, stack, w)) {
       this.touch(w.hwnd);
       return;
     }
@@ -2091,7 +2256,7 @@ export class WindowManagerBrain {
 
   /**
    * Place a window into a grid: absolute for non-resizable windows and for
-   * overlay-mode grids (snapped in place, overlap allowed), else first-fit in
+   * stack-mode grids (snapped in place, overlap allowed), else first-fit in
    * reading order, else displacement at the snapped slot. When even
    * displacement fails (grid full) the window is marked floating.
    * Returns whether a tile was created.
@@ -2109,7 +2274,7 @@ export class WindowManagerBrain {
       return false;
     }
 
-    if (!w.resizable || mg.settings.mode === 'overlay') {
+    if (!w.resizable || mg.settings.mode === 'stack') {
       mg.grid.addTile({
         id: w.hwnd,
         col: snapped.col,
@@ -2198,7 +2363,7 @@ export class WindowManagerBrain {
 
   /**
    * Target pixel rect for a tile. Resizable windows snap to the cell rect
-   * (position and size) whether in flow or absolute (overlay mode);
+   * (position and size) whether in flow or absolute (stack mode);
    * non-resizable absolute tiles keep the window's own size (position snap).
    */
   private desiredRect(mon: MonitorInfo, dims: GridDims, tile: Tile): Rect {
@@ -2244,8 +2409,8 @@ export class WindowManagerBrain {
     const tiles: Record<string, TileSnapshot[]> = {};
     for (const [id, mg] of this.grids) {
       const gridTiles = [...mg.grid.tiles];
-      if (mg.settings.mode === 'overlay') {
-        // Overlay stacking order: bottom-to-top, top-most (most recent) last.
+      if (mg.settings.mode === 'stack') {
+        // Stack order: bottom-to-top, top-most (most recent) last.
         gridTiles.sort((a, b) => this.recencyOf(a.id) - this.recencyOf(b.id));
       }
       tiles[id] = gridTiles.map((t) => {

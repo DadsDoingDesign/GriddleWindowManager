@@ -22,6 +22,7 @@ import type {
   GridSettings,
   MonitorInfo,
   Move,
+  PlacementMode,
   PreviewState,
   StateSnapshot,
   WindowInfo,
@@ -116,7 +117,7 @@ function gridSettings(
   monitorIds: string[],
   cols: number,
   rows: number,
-  mode: 'collision' | 'overlay' = 'collision',
+  mode: PlacementMode = 'push',
 ): GridSettings {
   return { id, monitorIds, cols, rows, mode, enabled: true, activeTemplateId: null };
 }
@@ -207,7 +208,7 @@ function assertGridConsistency(brain: WindowManagerBrain, lastSnapshot?: StateSn
         inFlow.push({ id: t.id, ...s });
       }
     }
-    if (g.mode === 'collision') {
+    if (g.mode !== 'stack') {
       for (let i = 0; i < inFlow.length; i++) {
         for (let j = i + 1; j < inFlow.length; j++) {
           const a = inFlow[i]!;
@@ -251,7 +252,7 @@ describe('stress: 60-window load', () => {
     const h = makeHarness();
     h.brain.setMonitors([MON1, MON2]);
     h.brain.enableGrid(gridSettings(GRID1, [MON1.id], 12, 6), []);
-    h.brain.enableGrid(gridSettings(GRID2, [MON2.id], 8, 4, 'overlay'), []);
+    h.brain.enableGrid(gridSettings(GRID2, [MON2.id], 8, 4, 'stack'), []);
 
     const rnd = mulberry32(0x5eed);
     const on1: string[] = [];
@@ -285,7 +286,7 @@ describe('stress: create/destroy/minimize churn', () => {
     const h = makeHarness();
     h.brain.setMonitors([MON1, MON2]);
     h.brain.enableGrid(gridSettings(GRID1, [MON1.id], 12, 6), []);
-    h.brain.enableGrid(gridSettings(GRID2, [MON2.id], 8, 4, 'overlay'), []);
+    h.brain.enableGrid(gridSettings(GRID2, [MON2.id], 8, 4, 'stack'), []);
 
     const rnd = mulberry32(0xc4c41a);
     const pick = <T>(arr: readonly T[]): T => arr[Math.floor(rnd() * arr.length)]!;
@@ -615,7 +616,7 @@ describe('resilience: brain death -> respawn rehydration', () => {
     const a = makeHarness();
     a.brain.setMonitors([MON1, MON2]);
     a.brain.enableGrid(gridSettings(GRID1, [MON1.id], 12, 6), []);
-    a.brain.enableGrid(gridSettings(GRID2, [MON2.id], 8, 4, 'overlay'), []);
+    a.brain.enableGrid(gridSettings(GRID2, [MON2.id], 8, 4, 'stack'), []);
 
     const rnd = mulberry32(0xdead);
     const windows: WindowInfo[] = [];

@@ -12,6 +12,7 @@
     effectiveSpacing,
     type AppRule,
     type MonitorInfo,
+    type PlacementMode,
     type Slot,
     type TileSnapshot,
   } from '@griddle-wm/brain';
@@ -26,7 +27,7 @@
     gridId: string;
     cols: number;
     rows: number;
-    mode: 'collision' | 'overlay';
+    mode: PlacementMode;
     monitor: MonitorInfo;
     tiles: TileSnapshot[];
     /** Grid spacing (spec v0.2 §1), physical px — scaled into editor space. */
@@ -109,10 +110,10 @@
 
   function addTileAt(hwnd: string, slot: Slot): void {
     const rect = { col: slot.col, row: slot.row, w: slot.w, h: slot.h };
-    // Overlay grids overlap by design; in collision grids an overlapping
+    // Stack grids overlap by design; in push/reflow grids an overlapping
     // snapshot tile is one the brain keeps absolute (non-resizable window),
     // so mirror it as absolute here to keep the in-flow engine consistent.
-    const absolute = mode === 'overlay' || api.grid.tilesIn(rect).length > 0;
+    const absolute = mode === 'stack' || api.grid.tilesIn(rect).length > 0;
     if (absolute) {
       api.addTile({
         id: hwnd,

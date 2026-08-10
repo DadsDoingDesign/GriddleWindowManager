@@ -54,11 +54,27 @@ pub struct Slot {
     pub h: i32,
 }
 
+/// How a grid resolves a drop (contract C1, placement-mode extension).
+///
+/// `Reflow` lands the dropped window exactly where it was aimed and moves as
+/// few neighbors as possible around it; `Push` is Griddle's displacement
+/// ruleset; `Stack` lets windows overlap, most recent on top. Rust only
+/// carries the value between disk and the brain — the behavior lives in
+/// `packages/brain`.
+///
+/// The two `alias`es are the v1–v3 spellings (`collision` = `Push`,
+/// `overlay` = `Stack`): every config written before v0.3.0 still
+/// deserializes, and re-serializes under the new name. This is the whole
+/// mode half of the v4 migration, and it mirrors
+/// `normalizePlacementMode` in `packages/brain/src/persist.ts`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum GridMode {
-    Collision,
-    Overlay,
+    Reflow,
+    #[serde(alias = "collision")]
+    Push,
+    #[serde(alias = "overlay")]
+    Stack,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -219,10 +235,13 @@ pub struct StateSnapshot {
     pub paused: bool,
 }
 
-/// Schema for `%APPDATA%/griddle-wm/config.json`. Version 3 (spec §7 "Update
-/// checks"): adds `auto_check_updates` over v2, which itself added
-/// `app_rules`, `views` and `startup_view_id` over v1. The loader in
-/// `config.rs` migrates older files in place via the serde defaults below.
+/// Schema for `%APPDATA%/griddle-wm/config.json`. Version 4 (placement
+/// modes): `GridSettings::mode` gains `reflow` and renames the two original
+/// values (`collision` -> `push`, `overlay` -> `stack`, absorbed by the
+/// serde aliases on [`GridMode`]) over v3, which added `auto_check_updates`
+/// over v2, which itself added `app_rules`, `views` and `startup_view_id`
+/// over v1. The loader in `config.rs` migrates older files in place via
+/// those aliases and the serde defaults below.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {

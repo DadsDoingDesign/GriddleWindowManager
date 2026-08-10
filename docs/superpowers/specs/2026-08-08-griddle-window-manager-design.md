@@ -15,9 +15,10 @@ Built on the third-party `@griddle/*` library by Trustybits: `@griddle/core` (he
 1. **Two layout modes per grid:**
    - **Freeform** — tiles at any cell position/footprint; moves and resizes reflow neighbors; nothing may leave viewport bounds (Griddle's layout invariant enforces this).
    - **Structured templates** — named layouts (columns, rows, splits, custom); creatable by capturing any current freeform arrangement.
-2. **Per-grid behavior toggle:**
-   - **Collision mode** — tiles never overlap; edits push neighbors (Griddle movement rules 1–6 + `addTileWithDisplacement`).
-   - **Overlay mode** — tiles may overlap; most recent edit sits on top; no pushing.
+2. **Per-grid placement mode** (revised after v0.2.0: the two original modes gained a third and were renamed — `collision` → **push**, `overlay` → **stack** — with the old names still read from disk):
+   - **Reflow mode** — tiles never overlap; a drop lands *exactly* on the aimed cells and the other tiles reorganise around it, moving as few as possible (`packages/brain/src/reflow.ts`'s `solveMinimalMoves`). A board the solver cannot resolve inside its node cap falls back to push, so reflow is never worse than push. Default for newly created grids.
+   - **Push mode** — tiles never overlap; edits push neighbors (Griddle movement rules 1–6 + `addTileWithDisplacement`). A drop whose victims have nowhere to go is refused and the window snaps back.
+   - **Stack mode** — tiles may overlap; most recent edit sits on top; no pushing.
 3. **Scope of management:** applying a grid to a monitor makes **every eligible window on that monitor** a managed tile. Minimize removes the tile from the grid; restore re-adds it (placement rules §5.4). Monitors without a grid behave stock-Windows.
 4. **Interaction model:**
    - Dragging/resizing a real window on a gridded monitor fades in a faint grid overlay with a **preview** footprint + live neighbor-reflow ghosts; **commit on mouse release** (real windows are repositioned once, in a single batched pass).
@@ -64,7 +65,7 @@ The testable heart. Exports a `WindowManagerBrain` class:
 - Pure inputs: `windowAppeared/Destroyed/Minimized/Restored`, `dragStarted/dragMoved/dragEnded`, `resizeEnded`, `monitorChanged`, `gridEnabled/Disabled`, `applyTemplate`, `captureTemplate`, `setMode`, `reflowGrid`.
 - Pure outputs (returned or emitted): `ApplyLayout { moves: [{hwnd, x, y, w, h}] }`, `PreviewState { gridId, footprint, ghostTiles }`, `StateSnapshot` for UI.
 - Coordinate mapping: monitor work-area pixels ⇄ grid cells. `unitWidth = workArea.width / cols`, `unitHeight = workArea.height / rows`. Cell footprints are rounded to nearest cell; min footprint respects a window's `MINMAXINFO` where known.
-- **Collision mode** → `addTileWithDisplacement` + movement rules; **overlay mode** → tiles added as Griddle `absolute` tiles (out-of-flow, overlap-exempt), z-order = recency.
+- **Push mode** → `addTileWithDisplacement` + movement rules; **reflow mode** → same in-flow tiles, but a *drop* is resolved by `solveMinimalMoves` and applied in bulk (Griddle `snapshotTiles`/`restoreTiles`), falling back to the push path when the solver declines; **stack mode** → tiles added as Griddle `absolute` tiles (out-of-flow, overlap-exempt), z-order = recency.
 - Non-resizable/dialog windows → `absolute` tiles always (they can't fit arbitrary cells).
 
 ### 4.2 `src-tauri` (Rust)
@@ -78,7 +79,7 @@ The testable heart. Exports a `WindowManagerBrain` class:
 ### 4.3 Frontend (`apps/desktop`, Svelte 5)
 - `/brain` — headless page hosting `WindowManagerBrain`; subscribes to Rust events, invokes Rust commands. No visible UI (debug panel behind a flag).
 - `/overlay` — canvas-light Svelte page: faint grid lines, preview footprint rect, animated ghost outlines for reflowing neighbors (reads Griddle animation config). Fully pointer-transparent.
-- `/settings` — the product UI: monitor picker, **live editor** (`<GriddleGrid>` bound to the real grid state — edits apply to real windows on commit), template manager (capture/name/apply/delete), per-grid toggles (mode, collision/overlay, cols/rows with `reflow({cols, strategy:'griddle-v1'})`), exclusion list, general settings (hotkey, autostart, pause).
+- `/settings` — the product UI: monitor picker, **live editor** (`<GriddleGrid>` bound to the real grid state — edits apply to real windows on commit), template manager (capture/name/apply/delete), per-grid toggles (placement mode: reflow/push/stack, cols/rows with `reflow({cols, strategy:'griddle-v1'})`), exclusion list, general settings (hotkey, autostart, pause).
 
 ### 4.4 Persistence
 `%APPDATA%/griddle-wm/config.json` (schema-versioned): grids (per-monitor config + mode + last layout via Griddle `toJSON()`), templates, exclusions, settings. Atomic write (temp + rename). Corrupt file → rename to `.bak`, start fresh, notify via tray balloon.
@@ -93,14 +94,14 @@ Enabling a grid on a monitor: sweep eligible windows → brain places them (§5.
 
 ### 5.3 Drag/resize interaction
 1. `MOVESIZESTART` on managed window → overlay fades in (~120 ms), drag pump starts.
-2. `drag_pos` → brain computes hovered cell footprint (drag: window's footprint follows cursor; resize: footprint = dragged rect rounded to cells) + neighbor reflow preview (collision mode) → overlay renders.
+2. `drag_pos` → brain computes hovered cell footprint (drag: window's footprint follows cursor; resize: footprint = dragged rect rounded to cells) + neighbor ghosts (push and reflow modes, each previewed by the very engine its commit will run, so the ghosts are the moves) → overlay renders.
 3. Dragging onto a *different* gridded monitor hands the preview to that grid; onto an ungridded monitor → window unmanages on release.
-4. `MOVESIZEEND` → brain commits (`moveTile`/resize + repack), actuator applies batch, overlay fades out. In overlay mode, commit just places the tile on top; no reflow.
+4. `MOVESIZEEND` → brain commits (reflow: solved arrangement in one bulk apply; push: `moveTile`/resize + repack), actuator applies the whole batch at once, overlay fades out. In stack mode, commit just places the tile on top; nothing else moves.
 5. `Esc` during native drag = Windows' own cancel; tracker sees unchanged rect → no commit.
 
 ### 5.4 Placement of new/restored windows
-- Restored window: return to its previous tile if those cells are free (collision) or always (overlay); else auto-place.
-- New window / auto-place: default footprint = template slot if a template is active and has an empty slot, else nearest-cell rounding of the window's spawn size (min 1×1, capped to grid); position via Griddle first-fit; collision mode uses `addTileWithDisplacement` if no free slot; if the grid genuinely cannot fit it (bounds invariant), the window floats and the tray shows a subtle "grid full" hint.
+- Restored window: return to its previous tile if those cells are free (push/reflow) or always (stack); else auto-place.
+- New window / auto-place: default footprint = template slot if a template is active and has an empty slot, else nearest-cell rounding of the window's spawn size (min 1×1, capped to grid); position via Griddle first-fit; push and reflow modes use `addTileWithDisplacement` if no free slot (auto-placement is first-fit in both — the minimal-move solver is a *drop* rule, not a placement rule); if the grid genuinely cannot fit it (bounds invariant), the window floats and the tray shows a subtle "grid full" hint.
 
 ### 5.5 Templates
 Template = `{ name, cols, rows, slots: TileFootprint[] }` (no app bindings in v1). **Capture** from any live grid (`toJSON()` minus window identities). **Apply**: map current windows to slots in recency (z-order) order, extras auto-placed, mode unchanged. Ships with built-ins: 2-col, 3-col, 2×2, main+side, rows.
@@ -130,7 +131,7 @@ A spanning grid's work area = bounding rect of selected monitors' work areas (v1
 
 ## 8. Testing & quality bar
 
-- **Brain unit tests (vitest):** placement rules, mode behaviors, restore rules, template capture/apply, reflow, coordinate mapping incl. DPI, grid-full behavior. Property/fuzz test: 1,000 random op sequences must preserve Griddle invariants (in-bounds, no overlap in collision mode) and never emit a move outside the work area.
+- **Brain unit tests (vitest):** placement rules, mode behaviors, restore rules, template capture/apply, reflow, coordinate mapping incl. DPI, grid-full behavior. Property/fuzz test: 1,000 random op sequences must preserve Griddle invariants (in-bounds, no overlap outside stack mode) and never emit a move outside the work area.
 - **Rust unit tests:** eligibility filter truth table, expected-rect matcher, monitor ID stability.
 - **Integration smoke:** `cargo tauri build` succeeds; app launches; brain handshake completes; spawn dummy Win32 windows (Rust test helper creates real `CreateWindowExW` windows) → enable grid → assert real rects match brain layout.
 - **Stress:** 60 simulated windows, rapid create/destroy/minimize churn, monitor topology flaps, drag-event floods at 120 Hz — no deadlocks, no layout invariant violations, apply latency < 50 ms for 20-window repack.
@@ -141,7 +142,7 @@ A spanning grid's work area = bounding rect of selected monitors' work areas (v1
 - **M1 Scaffold + Brain** — repo, Tauri 2 + Svelte 5 + Griddle deps, `packages/brain` complete with full unit suite.
 - **M2 Editor→Real windows** — tracker/actuator/monitors in Rust; settings editor drives real windows (no overlay yet).
 - **M3 Drag overlay** — movesize pipeline, per-monitor overlays, preview/commit.
-- **M4 Modes, templates, spanning** — collision/overlay toggle, template capture/apply, spanning grids.
+- **M4 Modes, templates, spanning** — placement-mode toggle, template capture/apply, spanning grids.
 - **M5 Shell polish** — tray, hotkey, persistence, pause, autostart, exclusions UI.
 - **M6 Hardening + ship** — stress/security/UX-CTO-CPO gates, installer, README/install docs.
 

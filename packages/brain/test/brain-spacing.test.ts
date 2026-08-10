@@ -61,7 +61,7 @@ function makeGridSettings(overrides: Partial<GridSettings> = {}): GridSettings {
     monitorIds: [MON_ID],
     cols: 12,
     rows: 6,
-    mode: 'collision',
+    mode: 'push',
     enabled: true,
     activeTemplateId: null,
     ...overrides,
@@ -133,7 +133,7 @@ describe('placement with gap + padding', () => {
     // 500×400 non-resizable window hugging the work-area corner: the cell
     // position snap must clamp its rect into the padded area, not just the
     // work area.
-    brain.enableGrid(makeGridSettings({ ...SPACED, mode: 'overlay' }), [
+    brain.enableGrid(makeGridSettings({ ...SPACED, mode: 'stack' }), [
       makeWindow('N', { x: 1420, y: 632, resizable: false }),
     ]);
     const eff = effectiveSpacing(mon, SPACED_DIMS);

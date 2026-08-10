@@ -52,7 +52,7 @@ function spanSettings(overrides: Partial<GridSettings> = {}): GridSettings {
     monitorIds: [MON_A.id, MON_B.id],
     cols: 8,
     rows: 4,
-    mode: 'collision',
+    mode: 'push',
     enabled: true,
     activeTemplateId: null,
     ...overrides,
@@ -159,7 +159,7 @@ describe('spanning grid — enable + placement', () => {
         monitorIds: [MON_A.id],
         cols: 12,
         rows: 6,
-        mode: 'collision',
+        mode: 'push',
         enabled: true,
         activeTemplateId: null,
       },
@@ -215,7 +215,7 @@ describe('spanning grid — enable + placement', () => {
 
   it('overlay-mode spanning grid pins dead-zone windows to usable slots', () => {
     const h = harness();
-    h.brain.enableGrid(spanSettings({ mode: 'overlay' }), []);
+    h.brain.enableGrid(spanSettings({ mode: 'stack' }), []);
     h.brain.windowAppeared(
       makeWindow('7', { monitorId: MON_B.id, x: 2600, y: 600, width: 500, height: 300 }),
     );
@@ -426,7 +426,7 @@ function triSettings(overrides: Partial<GridSettings> = {}): GridSettings {
     monitorIds: [TRI_A.id, TRI_B.id, TRI_C.id],
     cols: 6,
     rows: 4,
-    mode: 'collision',
+    mode: 'push',
     enabled: true,
     activeTemplateId: null,
     ...overrides,

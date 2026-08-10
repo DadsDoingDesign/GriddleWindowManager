@@ -8,6 +8,7 @@
 // debounced: every snapshot marks the config dirty, one timer flushes it).
 
 import {
+  DEFAULT_PLACEMENT_MODE,
   WindowManagerBrain,
   defaultConfig,
   spanGridId,
@@ -110,7 +111,7 @@ export interface BrainHost {
   readonly lastSnapshot: StateSnapshot | null;
   /**
    * Convenience for the plan's manual smoke test and the tray: enable a
-   * collision grid on a monitor (default: primary) with the given dims.
+   * grid on a monitor (default: primary) with the given dims.
    */
   enableGridOnMonitor(monitorId?: string, cols?: number, rows?: number): Promise<void>;
   /** Flush any pending debounced config save immediately. */
@@ -291,7 +292,7 @@ export async function startBrainHost(): Promise<BrainHost> {
     persistNow: flushSave,
   });
 
-  /** Enable a collision grid on a monitor against a fresh window sweep. */
+  /** Enable a grid on a monitor against a fresh window sweep. */
   const enableOnMonitor = async (monitorId?: string, cols = 12, rows = 6) => {
     markUserAction();
     const mons = await listMonitors();
@@ -309,7 +310,9 @@ export async function startBrainHost(): Promise<BrainHost> {
       monitorIds: [mon.id],
       cols,
       rows,
-      mode: existing?.mode ?? 'collision',
+      // A grid that existed before keeps its mode across a disable/enable
+      // cycle; a brand-new one starts in the default placement mode.
+      mode: existing?.mode ?? DEFAULT_PLACEMENT_MODE,
       enabled: true,
       activeTemplateId: null,
       // Spacing survives a disable/enable cycle like the mode does.
@@ -343,7 +346,7 @@ export async function startBrainHost(): Promise<BrainHost> {
       monitorIds: ids,
       cols,
       rows,
-      mode: existing?.mode ?? 'collision',
+      mode: existing?.mode ?? DEFAULT_PLACEMENT_MODE,
       enabled: true,
       activeTemplateId: null,
       gap: existing?.gap ?? 0,

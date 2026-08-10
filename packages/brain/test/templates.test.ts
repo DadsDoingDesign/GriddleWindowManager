@@ -64,7 +64,7 @@ function makeGridSettings(overrides: Partial<GridSettings> = {}): GridSettings {
     monitorIds: [MON_ID],
     cols: 12,
     rows: 6,
-    mode: 'collision',
+    mode: 'push',
     enabled: true,
     activeTemplateId: null,
     ...overrides,
@@ -102,7 +102,7 @@ const TPL_8X6: Template = {
 
 function makeConfig(templates: Template[]): AppConfig {
   return {
-    version: 3,
+    version: 4,
     grids: [],
     templates,
     exclusions: [],
@@ -284,7 +284,7 @@ describe('captureTemplate', () => {
     const { brain, snapshots } = harness();
     // Overlay mode keeps each window at its own snapped slot, so we can put
     // tiles at out-of-order positions: W1 at (6,2), W2 at (0,0).
-    brain.enableGrid(makeGridSettings({ mode: 'overlay' }), [
+    brain.enableGrid(makeGridSettings({ mode: 'stack' }), [
       makeWindow('W1', { x: 960, y: 392 }), // → slot (6,2,3,2)
       makeWindow('W2'), // → slot (0,0,3,2)
     ]);
@@ -463,14 +463,14 @@ describe('applyTemplate — different dims (reflow first)', () => {
 describe('applyTemplate — modes and special windows', () => {
   it('overlay grid: windows take template slots, mode stays overlay', () => {
     const { brain, applies, snapshots, mon } = harness(makeConfig([CUSTOM_TPL]));
-    brain.enableGrid(makeGridSettings({ mode: 'overlay' }), [makeWindow('A'), makeWindow('B')]);
+    brain.enableGrid(makeGridSettings({ mode: 'stack' }), [makeWindow('A'), makeWindow('B')]);
     const appliesBefore = applies.length;
 
     brain.applyTemplate(GRID_ID, 'tpl:custom12');
 
     expect(applies).toHaveLength(appliesBefore + 1);
     const snap = last(snapshots);
-    expect(snap.grids.find((g) => g.id === GRID_ID)!.mode).toBe('overlay');
+    expect(snap.grids.find((g) => g.id === GRID_ID)!.mode).toBe('stack');
     expect(slotOf(snap, 'B')).toEqual({ col: 0, row: 0, w: 6, h: 6 });
     expect(slotOf(snap, 'A')).toEqual({ col: 6, row: 0, w: 6, h: 3 });
     expect(last(applies).moves.find((m) => m.hwnd === 'B')).toEqual({
