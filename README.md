@@ -14,8 +14,17 @@ Drag a window and a translucent overlay shows exactly where it will land and
 which neighbors it will push; release to snap. Save arrangements as templates,
 pin apps to their usual spot, and restore your whole desktop at startup.
 
-Everything runs locally. There is no telemetry, no account, and no cloud —
-your window titles never leave your machine.
+The grid engine underneath is [Griddle](https://github.com/Trustybits/griddle)
+([`@griddle/core`](https://www.npmjs.com/package/@griddle/core) and
+[`@griddle/svelte`](https://www.npmjs.com/package/@griddle/svelte)) — a
+third-party MIT-licensed layout library by **Trustybits**. Griddle solves the
+hard part, deciding where tiles go and which neighbors move; this app teaches
+real Windows windows to obey it.
+
+Everything runs locally. There is no telemetry, no analytics, and no account —
+your window titles never leave your machine. The one network feature is an
+[update check](#license-notices-privacy-and-updates), which is opt-in and off
+by default.
 
 <!-- Demo GIF goes here once one is recorded. Drop the file at
      docs/media/demo.gif and replace this comment with:
