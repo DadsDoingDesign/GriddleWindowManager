@@ -59,8 +59,11 @@ representative at an online or offline event.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the community leaders responsible for enforcement at
-**dev@trustybits.com**.
+reported privately to the maintainer through GitHub, using
+[private vulnerability reporting](https://github.com/DadsDoingDesign/GriddleWindowManager/security/advisories/new)
+— it is the repository's private-message channel, and conduct reports are
+welcome there even though the form is labelled for security. Reports sent this
+way are visible to the maintainer alone.
 
 All complaints will be reviewed and investigated promptly and fairly.
 

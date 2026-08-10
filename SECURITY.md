@@ -15,8 +15,10 @@ Report privately through GitHub:
    of it. A minimal repro — a window label, a payload, a config file — is worth
    more than a description of the class of bug.
 
-If private reporting is unavailable to you for any reason, email
-**dev@trustybits.com** with `GriddleWindowManager` in the subject.
+Private reporting is the only channel. It is available to any GitHub account
+and keeps the report visible to the maintainer alone until a fix ships. If you
+cannot use it, open a public issue saying only that you have a security report
+and would like a private channel — no details — and one will be arranged.
 
 ### What to expect
 
