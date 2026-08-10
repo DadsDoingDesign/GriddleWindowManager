@@ -77,6 +77,39 @@ will look fine and do nothing.
 `npm run test -w packages/brain`, `cargo test` (from `apps/desktop/src-tauri`)
 and `npm run build -w apps/desktop` all pass — CI runs exactly these.
 
+### 1b. Re-check the attribution and network gates — if any dependency moved
+
+Skip only if neither `Cargo.lock` nor `package-lock.json` changed since the
+last release. Otherwise all three must hold; a stale
+`THIRD-PARTY-LICENSES.md` ships a binary whose components are not attributed,
+which is the one legal defect a user can catch by reading the file.
+
+```powershell
+cd apps/desktop/src-tauri
+
+# (a) Nothing but the updater may pull in an HTTP client.
+#     Expect exactly: reqwest -> tauri-plugin-updater -> griddle-wm
+cargo tree -i reqwest -e normal --target x86_64-pc-windows-msvc
+
+# (b) The linked closure must match what THIRD-PARTY-LICENSES.md lists.
+#     Its header states the crate count; compare against this.
+cargo metadata --format-version 1 --filter-platform x86_64-pc-windows-msvc
+```
+
+```powershell
+# (c) No webview-side network calls — all traffic stays behind the Rust plugin.
+#     Expect no matches.
+Select-String -Path apps/desktop/src -Pattern 'fetch\(|XMLHttpRequest|WebSocket|EventSource' -Recurse
+```
+
+If the closure moved, regenerate `THIRD-PARTY-LICENSES.md` by the method its
+own "How this list was produced" section documents, add any newly distinct
+license text, correct the counts in the header and in
+[`legal-and-commercial-review.md`](legal-and-commercial-review.md), and re-run
+the "no GPL/AGPL/LGPL/SSPL" check against the new closure. If the network
+surface moved, update finding 6 in
+[`security-review.md`](security-review.md).
+
 ### 2. Run the human smoke pass — before tagging
 
 Build the installer locally and work through

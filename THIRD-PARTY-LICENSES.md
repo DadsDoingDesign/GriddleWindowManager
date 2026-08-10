@@ -4,7 +4,8 @@ Griddle Window Manager is distributed as a single Windows installer that
 statically links a Rust executable and embeds a compiled web frontend. This
 file lists every third-party component redistributed in, or used to produce,
 that installer, together with the full text of every distinct license
-involved.
+involved. The installer places a copy of this file, and of `LICENSE`, next to
+the installed executable.
 
 Griddle Window Manager itself is licensed under the MIT License; see
 [`LICENSE`](LICENSE). Nothing in this file changes the license of Griddle
@@ -14,33 +15,42 @@ Window Manager's own source code.
 
 - **Rust crates** — `cargo metadata --format-version 1 --filter-platform x86_64-pc-windows-msvc`,
   walked from the `griddle-wm` root package across `normal` and `build` dependency edges.
-  Dev-dependencies are excluded because they never reach the shipped binary.
+  Dev-dependencies are excluded because they never reach the shipped binary. Where two
+  versions of a crate are both in the graph, both are listed, because both are linked.
 - **npm packages** — `license-checker --json` over the workspace, split into the
   production closure of `@griddle-wm/desktop` (code that can reach the compiled frontend)
   and build/test-only tooling.
 - License texts are copied verbatim from the files each component ships, not transcribed.
 
-Generated for Griddle Window Manager 0.2.0.
+Regenerated for Griddle Window Manager 0.2.0 from the `Cargo.lock` and
+`package-lock.json` that produce the released installer, after the in-app
+updater added its HTTP and TLS dependencies.
 
 ## Summary
 
 Every component below is under a permissive or weak-copyleft license. **No component is
 under GPL, AGPL, LGPL, SSPL, CC-BY-SA, a proprietary license, or an unresolved
-"UNLICENSED" declaration.** Two points deserve attention:
+"UNLICENSED" declaration.** This was re-checked against the closure listed here, not an
+earlier one. Three points deserve attention:
 
 - **MPL-2.0** applies to five Rust crates (`cssparser`, `cssparser-macros`, `dtoa-short`,
   `option-ext`, `selectors`) that are linked into the shipped executable, and to two
   build-only npm packages (`lightningcss`, `lightningcss-win32-x64-msvc`). MPL-2.0 is
   file-level copyleft, not project-level; see the note in the MPL-2.0 section for the
   obligation this creates and how it is discharged.
-- **Apache-2.0** applies to `tao` outright and to a large number of dual-licensed crates.
-  Its section 4 requires that this license text and any upstream `NOTICE` file travel with
-  the distribution. No component listed here ships a `NOTICE` file, so reproducing the
-  license text — as this file does — satisfies it.
+- **Apache-2.0** applies to `tao` and `sync_wrapper` outright, to `ring` conjunctively,
+  and to a large number of dual-licensed crates. Its section 4 requires that this license
+  text and any upstream `NOTICE` file travel with the distribution. No component listed
+  here ships a `NOTICE` file — re-verified across the current closure — so reproducing the
+  license text, as this file does, satisfies it.
+- **`ring`** is the one component whose license is neither a plain SPDX-standard text nor
+  a choice: it declares `Apache-2.0 AND ISC`, both of which apply simultaneously, and it
+  ships three license files, one of which is BoringSSL-derived. All three are reproduced
+  in full below. `ring` reaches the binary through `rustls` → `tauri-plugin-updater`.
 
 ---
 
-## Rust crates (271, linked into the Griddle Window Manager binary)
+## Rust crates (311, linked into the Griddle Window Manager binary)
 
 Grouped by the SPDX expression each crate declares. An `OR` expression means the crate
 is offered under any one of the listed licenses at the redistributor's choice; for those
@@ -48,7 +58,7 @@ crates Griddle Window Manager elects the MIT option where MIT is offered, and
 the Apache-2.0 option otherwise. An `AND` expression means every listed
 license applies simultaneously.
 
-### `MIT OR Apache-2.0` — 134 crates
+### `MIT OR Apache-2.0` — 149 crates
 
 - **anyhow** 1.0.104 — David Tolnay
 - **base64** 0.22.1 — Marshall Pierce
@@ -77,8 +87,16 @@ license applies simultaneously.
 - **find-msvc-tools** 0.1.10
 - **flate2** 1.1.9 — Alex Crichton, Josh Triplett
 - **form_urlencoded** 1.2.2 — The rust-url developers
-- **getrandom** 0.4.3 — The Rand Project Developers
+- **futures-channel** 0.3.33
+- **futures-core** 0.3.33
+- **futures-io** 0.3.33
+- **futures-macro** 0.3.33
+- **futures-sink** 0.3.33
+- **futures-task** 0.3.33
+- **futures-util** 0.3.33
+- **getrandom** 0.2.17 — The Rand Project Developers
 - **getrandom** 0.3.4 — The Rand Project Developers
+- **getrandom** 0.4.3 — The Rand Project Developers
 - **glob** 0.3.4 — The Rust Project Developers
 - **hashbrown** 0.12.3 — Amanieu d'Antras
 - **hashbrown** 0.17.1
@@ -86,7 +104,9 @@ license applies simultaneously.
 - **hex** 0.4.3 — KokaKiwi
 - **html5ever** 0.38.0 — The html5ever Project Developers
 - **http** 1.5.0 — Alex Crichton, Carl Lerche, Sean McArthur
+- **httparse** 1.10.1 — Sean McArthur
 - **idna** 1.1.0 — The rust-url developers
+- **ipnet** 2.12.1 — Kris Price
 - **itoa** 1.0.18 — David Tolnay
 - **jsonptr** 0.6.3 — chance dinkins, André Sá de Mello
 - **keyboard-types** 0.7.0 — Pyfisch
@@ -110,7 +130,10 @@ license applies simultaneously.
 - **regex** 1.13.1 — The Rust Project Developers, Andrew Gallant
 - **regex-automata** 0.4.18 — The Rust Project Developers, Andrew Gallant
 - **regex-syntax** 0.8.11 — The Rust Project Developers, Andrew Gallant
+- **reqwest** 0.13.4 — Sean McArthur
 - **rustc_version** 0.4.1
+- **rustls-pki-types** 1.15.1
+- **rustls-platform-verifier** 0.7.0
 - **scopeguard** 1.2.0 — bluss
 - **semver** 1.0.28 — David Tolnay
 - **serde** 1.0.229 — Erick Tryzelaar, David Tolnay
@@ -134,18 +157,20 @@ license applies simultaneously.
 - **stable_deref_trait** 1.2.1 — Robert Grosse
 - **string_cache** 0.9.0 — The Servo Project Developers
 - **string_cache_codegen** 0.6.1 — The Servo Project Developers
-- **syn** 3.0.3 — David Tolnay
 - **syn** 2.0.119 — David Tolnay
+- **syn** 3.0.3 — David Tolnay
+- **tempfile** 3.27.0 — Steven Allen, The Rust Project Developers, Ashley Mannix, Jason White
 - **tendril** 0.5.1 — Keegan McAllister, Simon Sapin, Chris Morgan
-- **thiserror** 2.0.20 — David Tolnay
 - **thiserror** 1.0.69 — David Tolnay
+- **thiserror** 2.0.20 — David Tolnay
 - **thiserror-impl** 1.0.69 — David Tolnay
 - **thiserror-impl** 2.0.20 — David Tolnay
 - **time** 0.3.55 — Jacob Pratt, Time contributors
 - **time-core** 0.1.9 — Jacob Pratt, Time contributors
 - **time-macros** 0.2.32 — Jacob Pratt, Time contributors
-- **toml** 1.1.4+spec-1.1.0
+- **tokio-rustls** 0.26.4
 - **toml** 0.9.12+spec-1.1.0
+- **toml** 1.1.4+spec-1.1.0
 - **toml_datetime** 0.7.5+spec-1.1.0
 - **toml_datetime** 1.1.1+spec-1.1.0
 - **toml_parser** 1.1.3+spec-1.1.0
@@ -156,22 +181,22 @@ license applies simultaneously.
 - **unicode-segmentation** 1.13.3 — kwantam, Manish Goregaokar
 - **url** 2.5.8 — The rust-url developers
 - **web_atoms** 0.2.5 — The html5ever Project Developers
-- **windows** 0.62.2
 - **windows** 0.61.3 — Microsoft
+- **windows** 0.62.2
 - **windows-collections** 0.2.0
 - **windows-collections** 0.3.2
-- **windows-core** 0.62.2
 - **windows-core** 0.61.2 — Microsoft
-- **windows-future** 0.3.2
+- **windows-core** 0.62.2
 - **windows-future** 0.2.1
+- **windows-future** 0.3.2
 - **windows-implement** 0.60.2
 - **windows-interface** 0.59.3
 - **windows-link** 0.1.3 — Microsoft
 - **windows-link** 0.2.1
-- **windows-numerics** 0.3.1
 - **windows-numerics** 0.2.0
-- **windows-result** 0.4.1
+- **windows-numerics** 0.3.1
 - **windows-result** 0.3.4 — Microsoft
+- **windows-result** 0.4.1
 - **windows-strings** 0.4.2 — Microsoft
 - **windows-strings** 0.5.1
 - **windows-sys** 0.59.0 — Microsoft
@@ -182,10 +207,10 @@ license applies simultaneously.
 - **windows-threading** 0.1.0 — Microsoft
 - **windows-threading** 0.2.1
 - **windows-version** 0.1.7
-- **windows_x86_64_msvc** 0.53.1
 - **windows_x86_64_msvc** 0.52.6 — Microsoft
+- **windows_x86_64_msvc** 0.53.1
 
-### `MIT` — 48 crates
+### `MIT` — 62 crates
 
 - **auto-launch** 0.5.0 — zzzgydi
 - **bytes** 1.12.1 — Carl Lerche, Sean McArthur
@@ -200,8 +225,13 @@ license applies simultaneously.
 - **embed-resource** 3.0.11 — наб, Cat Plus Plus, Liigo, azyobuzin, Peter Atashian, pravic, Gabriel Majeri, SonnyX, Johan Andersson, Jordan Poles, MSxDOS, Jim McGrath, roblabla, Jasper Bekkers, Richard Markiewicz, Emerson de Freitas Barcelos, Li Keqing, Alexis Bourget, Michael Farrell, Jacob Okamoto, Marijn Suijten, Lucas Nogueira, CharlesChen0823, Daniel Schaefer, Rene Leonhardt, ssrlive, Kan-Ru Chen, Tony, Berrysoft, Marcus Ahlberg
 - **fern** 0.7.1 — David Ross
 - **generic-array** 0.14.7 — Bartłomiej Kamiński, Aaron Trent
+- **http-body** 1.1.0 — Carl Lerche, Lucio Franco, Sean McArthur
+- **http-body-util** 0.1.4 — Carl Lerche, Lucio Franco, Sean McArthur
+- **hyper** 1.11.0 — Sean McArthur
+- **hyper-util** 0.1.20 — Sean McArthur
 - **ico** 0.5.0 — Matthew D. Steele
 - **infer** 0.19.0 — Bojan
+- **minisign-verify** 0.2.5 — Frank Denis
 - **mio** 1.2.2 — Carl Lerche, Thomas de Zeeuw, Tokio Contributors
 - **new_debug_unreachable** 1.0.6 — Matt Brubeck, Jonathan Reem
 - **phf** 0.13.1 — Steven Fackler
@@ -212,32 +242,42 @@ license applies simultaneously.
 - **plist** 1.10.0 — Ed Barnard
 - **precomputed-hash** 0.1.1 — Emilio Cobos Álvarez
 - **quick-xml** 0.41.0
-- **schemars** 1.2.2 — Graham Esau
-- **schemars** 0.9.0 — Graham Esau
 - **schemars** 0.8.22 — Graham Esau
+- **schemars** 0.9.0 — Graham Esau
+- **schemars** 1.2.2 — Graham Esau
 - **schemars_derive** 0.8.22 — Graham Esau
 - **simd-adler32** 0.3.10 — Marvin Countryman
+- **slab** 0.4.12 — Carl Lerche
 - **strsim** 0.11.1 — Danny Guo, maxbachmann
 - **synstructure** 0.13.2 — Nika Layzell
 - **tauri-winres** 0.3.6 — Tauri Programme within The Commons Conservancy, Max Resch
 - **tokio** 1.53.1 — Tokio Contributors
+- **tokio-util** 0.7.19 — Tokio Contributors
+- **tower** 0.5.3 — Tower Maintainers
+- **tower-http** 0.6.11 — Tower Maintainers
+- **tower-layer** 0.3.3 — Tower Maintainers
+- **tower-service** 0.3.3 — Tower Maintainers
 - **tracing** 0.1.44 — Eliza Weisman, Tokio Contributors
 - **tracing-attributes** 0.1.31 — Tokio Contributors, Eliza Weisman, David Barsky
 - **tracing-core** 0.1.36 — Tokio Contributors
+- **try-lock** 0.2.5 — Sean McArthur
 - **urlpattern** 0.3.0 — the Deno authors, crowlKats
 - **vswhom** 0.1.0 — nabijaczleweli
 - **vswhom-sys** 0.1.3 — наб, forrestsmithfb
+- **want** 0.3.1 — Sean McArthur
 - **webview2-com** 0.38.2
 - **webview2-com-macros** 0.8.1
 - **webview2-com-sys** 0.38.2
-- **winnow** 1.0.4
 - **winnow** 0.7.15
-- **winreg** 0.55.0 — Igor Shaula
+- **winnow** 1.0.4
 - **winreg** 0.10.1 — Igor Shaula
+- **winreg** 0.55.0 — Igor Shaula
+- **zip** 4.6.1 — Mathijs van de Nes, Marli Frost, Ryan Levick, Chris Hennick
 - **zmij** 1.0.23 — David Tolnay
 
-### `Apache-2.0 OR MIT` — 33 crates
+### `Apache-2.0 OR MIT` — 37 crates
 
+- **atomic-waker** 1.1.2 — Stjepan Glavina, Contributors to futures-rs
 - **autocfg** 1.5.1 — Josh Stone
 - **bit-set** 0.8.0 — Alexis Beingessner
 - **bit-vec** 0.8.0 — Alexis Beingessner
@@ -250,8 +290,8 @@ license applies simultaneously.
 - **fastrand** 2.5.0 — Stjepan Glavina
 - **global-hotkey** 0.8.0
 - **idna_adapter** 1.2.2 — The rust-url developers
-- **indexmap** 2.14.0
 - **indexmap** 1.9.3
+- **indexmap** 2.14.0
 - **muda** 0.19.3
 - **pin-project-lite** 0.2.17
 - **rustc-hash** 2.1.3 — The Rust Project Developers
@@ -263,7 +303,9 @@ license applies simultaneously.
 - **tauri-plugin-autostart** 2.5.1 — Tauri Programme within The Commons Conservancy
 - **tauri-plugin-global-shortcut** 2.3.2 — Tauri Programme within The Commons Conservancy
 - **tauri-plugin-log** 2.9.0 — Tauri Programme within The Commons Conservancy
+- **tauri-plugin-process** 2.3.1 — Tauri Programme within The Commons Conservancy
 - **tauri-plugin-single-instance** 2.4.3 — Tauri Programme within The Commons Conservancy
+- **tauri-plugin-updater** 2.10.1 — Tauri Programme within The Commons Conservancy
 - **tauri-runtime** 2.11.3 — Tauri Programme within The Commons Conservancy
 - **tauri-runtime-wry** 2.11.4 — Tauri Programme within The Commons Conservancy
 - **tauri-utils** 2.9.3 — Tauri Programme within The Commons Conservancy
@@ -271,6 +313,7 @@ license applies simultaneously.
 - **uuid** 1.24.0 — Ashley Mannix, Dylan DPC, Hunar Roop Kahlon
 - **window-vibrancy** 0.6.0 — Tauri Programme within The Commons Conservancy
 - **wry** 0.55.1 — Tauri Programme within The Commons Conservancy
+- **zeroize** 1.9.0 — The RustCrypto Project Developers
 
 ### `Unicode-3.0` — 18 crates
 
@@ -316,22 +359,6 @@ license applies simultaneously.
 - **option-ext** 0.2.0 — Simon Ochsenreither
 - **selectors** 0.36.1 — The Servo Project Developers
 
-> **MPL-2.0 is weak, file-level copyleft.** The reciprocity obligation attaches to the
-> *files* of these crates, not to anything that merely links against them.
-> Griddle Window Manager does not modify any of these crates — they are
-> consumed unmodified from crates.io — so the only live obligation is to say
-> so and to point to the source. Distributing Griddle Window Manager in
-> binary form is expressly permitted by MPL-2.0 section 3.2 as long as recipients are told
-> how to obtain the Source Code Form of the covered files, on the same license, at no
-> charge. That notice is given here: the unmodified sources are the published crates.io
-> releases of the exact versions listed above, retrievable at
-> `https://crates.io/crates/<name>/<version>`, and this file constitutes the section 3.2
-> notice. If any of these crates is ever patched or vendored locally, the modified files
-> must be released under MPL-2.0.
->
-> How they are reached: `cssparser`, `dtoa-short` and `selectors` arrive through
-> `dom_query`; `cssparser-macros` through `cssparser`; `option-ext` through `dirs-sys`.
-
 ### `Unlicense OR MIT` — 4 crates
 
 - **aho-corasick** 1.1.5 — Andrew Gallant
@@ -339,10 +366,26 @@ license applies simultaneously.
 - **memchr** 2.8.3 — Andrew Gallant, bluss
 - **winapi-util** 0.1.11 — Andrew Gallant
 
-### `BSD-3-Clause` — 2 crates
+### `BSD-3-Clause` — 3 crates
 
 - **alloc-no-stdlib** 2.0.4 — Daniel Reiter Horn
 - **alloc-stdlib** 0.2.4 — Daniel Reiter Horn
+- **subtle** 2.6.1 — Isis Lovecruft, Henry de Valence
+
+### `Apache-2.0` — 2 crates
+
+- **sync_wrapper** 1.0.2 — Actyx AG
+- **tao** 0.35.3 — Tauri Programme within The Commons Conservancy, The winit contributors
+
+### `Apache-2.0 OR ISC OR MIT` — 2 crates
+
+- **hyper-rustls** 0.27.9
+- **rustls** 0.23.43
+
+### `ISC` — 2 crates
+
+- **rustls-webpki** 0.103.13
+- **untrusted** 0.9.0 — Brian Smith
 
 ### `MIT OR Apache-2.0 OR Zlib` — 2 crates
 
@@ -362,13 +405,13 @@ license applies simultaneously.
 
 - **adler2** 2.0.1 — Jonas Schievink, oyvindln
 
-### `Apache-2.0` — 1 crate
-
-- **tao** 0.35.3 — Tauri Programme within The Commons Conservancy, The winit contributors
-
 ### `Apache-2.0 / MIT` — 1 crate
 
 - **fnv** 1.0.7 — Alex Crichton
+
+### `Apache-2.0 AND ISC` — 1 crate
+
+- **ring** 0.17.14
 
 ### `Apache-2.0 AND MIT` — 1 crate
 
@@ -402,7 +445,7 @@ license applies simultaneously.
 
 ## npm packages
 
-### Redistributed in the installer (23)
+### Redistributed in the installer (25)
 
 The production dependency closure of `@griddle-wm/desktop`. Code from these packages
 can be bundled by Vite into the compiled frontend that ships inside the installer.
@@ -434,6 +477,11 @@ can be bundled by Vite into the compiled frontend that ships inside the installe
 
 - **aria-query** 5.3.1 — Jesse Beach
 - **axobject-query** 4.1.0 — Jesse Beach
+
+#### `MIT OR Apache-2.0` — 2
+
+- **@tauri-apps/plugin-process** 2.3.1
+- **@tauri-apps/plugin-updater** 2.10.1
 
 #### `Apache-2.0 OR MIT` — 1
 
@@ -533,23 +581,25 @@ obligations of their licenses do not attach to the shipped artifact.
 - Griddle Window Manager embeds no fonts. All typography resolves to fonts
   already present on the user's system (`system-ui`, `Segoe UI`, `Roboto`, `ui-monospace`, `Consolas`), which are
   referenced by name only and are not redistributed.
-- Griddle Window Manager loads no remote assets at runtime.
-- `apps/desktop/public/favicon.svg` and `apps/desktop/public/icons.svg` are project
-  scaffolding left over from the initial workspace template. They are not referenced by
-  any Griddle Window Manager page and `icons.svg` contains third-party brand
-  marks. Their provenance
-  has not been established and they are **not** covered by this attribution file; they
-  should be deleted rather than attributed.
+- Griddle Window Manager loads no remote assets at runtime. The only network
+  request it can make is the opt-in update check described in
+  [`docs/security-review.md`](docs/security-review.md), which fetches release
+  metadata and, on the user's confirmation, an installer — never page assets.
+- The Vite scaffold's `apps/desktop/public/favicon.svg` and
+  `apps/desktop/public/icons.svg` were unreferenced, had unestablished provenance, and
+  `icons.svg` carried third-party brand marks. They were deleted rather than attributed,
+  and no longer reach `dist/` or the installer.
 
 ---
 
 ## License texts
 
-Each distinct license appears once below.
+Each distinct license text appears once below. Where several components under the same
+license ship materially different texts, each text is reproduced.
 
 ### MIT
 
-> Reproduced from the copy shipped with the `anyhow` crate. Each MIT-licensed component above is covered by this text together with its own copyright notice; the copyright holders are the authors listed beside each component.
+> Reproduced from the copy shipped with the `anyhow` crate. Each MIT-licensed component above is covered by this text together with its own copyright notice; the copyright holders are the authors listed beside each component. Crates offered under `Apache-2.0 OR ISC OR MIT` (`rustls`, `hyper-rustls`) are redistributed under this MIT option.
 
 ```
 Permission is hereby granted, free of charge, to any
@@ -579,7 +629,7 @@ DEALINGS IN THE SOFTWARE.
 
 ### Apache-2.0
 
-> No component listed in this file ships a NOTICE file, so Apache-2.0 section 4(d) adds no further attribution text beyond this license.
+> No component listed in this file ships a NOTICE file, so Apache-2.0 section 4(d) adds no further attribution text beyond this license. This is also the Apache-2.0 text that `ring` ships as `LICENSE-BoringSSL`; it is not repeated in the `ring` section below.
 
 ```
                               Apache License
@@ -787,6 +837,8 @@ limitations under the License.
 
 ### BSD-3-Clause
 
+_Shipped with `alloc-no-stdlib`; the same text covers `alloc-stdlib`, `brotli`, and `brotli-decompressor` under their own copyright notices._
+
 ```
 Copyright (c) 2016 Dropbox, Inc.
 All rights reserved.
@@ -802,9 +854,43 @@ Redistribution and use in source and binary forms, with or without modification,
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
+_Shipped with `subtle`, which states its own copyright notices._
+
+```
+Copyright (c) 2016-2017 Isis Agora Lovecruft, Henry de Valence. All rights reserved.
+Copyright (c) 2016-2024 Isis Agora Lovecruft. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+1. Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright
+notice, this list of conditions and the following disclaimer in the
+documentation and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its
+contributors may be used to endorse or promote products derived from
+this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
+IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE. 
+```
+
 ### ISC
 
-> Reproduced from the copy shipped with `picocolors`; the copyright line above applies to that package. `siginfo` is covered by the same license text under its own copyright.
+_Reproduced from the copy shipped with `picocolors`; the copyright line applies to that package. `siginfo` is covered by the same license text under its own copyright._
 
 ```
 ISC License
@@ -822,6 +908,157 @@ ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
 WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
 ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+```
+
+_Shipped with `rustls-webpki`._
+
+```
+Except as otherwise noted, this project is licensed under the following
+(ISC-style) terms:
+
+Copyright 2015 Brian Smith.
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHORS DISCLAIM ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+The files under third-party/chromium are licensed as described in
+third-party/chromium/LICENSE.
+```
+
+_Shipped with `untrusted`._
+
+```
+// Copyright 2015-2016 Brian Smith.
+//
+// Permission to use, copy, modify, and/or distribute this software for any
+// purpose with or without fee is hereby granted, provided that the above
+// copyright notice and this permission notice appear in all copies.
+//
+// THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHORS DISCLAIM ALL WARRANTIES
+// WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+// MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR
+// ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+// WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+// ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+// OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+```
+
+### Apache-2.0 AND ISC (`ring`)
+
+> `ring` is the only component under a conjunctive `AND` expression whose terms are not both already reproduced verbatim above, and it ships a composite notice rather than a single license file. All three of its files are reproduced here. Its Apache-2.0 portion (`LICENSE-BoringSSL`) is the standard Apache-2.0 text printed above; only the support-code notices appended to it are reproduced below, and, as that file itself states, they cover test and build infrastructure that is not compiled into the shipped library. The vendored `once_cell` polyfill that `ring/LICENSE` points to is offered under Apache-2.0 or MIT, both of which are reproduced above.
+
+_`ring/LICENSE`._
+
+```
+*ring* uses an "ISC" license, like BoringSSL used to use, for new code
+files. See LICENSE-other-bits for the text of that license.
+
+See LICENSE-BoringSSL for code that was sourced from BoringSSL under the
+Apache 2.0 license. Some code that was sourced from BoringSSL under the ISC
+license. In each case, the license info is at the top of the file.
+
+See src/polyfill/once_cell/LICENSE-APACHE and src/polyfill/once_cell/LICENSE-MIT
+for the license to code that was sourced from the once_cell project.
+```
+
+_`ring/LICENSE-other-bits` — the ISC-style terms for `ring`'s own code._
+
+```
+Copyright 2015-2025 Brian Smith.
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
+SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION
+OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
+CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+```
+
+_`ring/LICENSE-BoringSSL`, support-code notices only._
+
+```
+Licenses for support code
+-------------------------
+
+Parts of the TLS test suite are under the Go license. This code is not included
+in BoringSSL (i.e. libcrypto and libssl) when compiled, however, so
+distributing code linked against BoringSSL does not trigger this license:
+
+Copyright (c) 2009 The Go Authors. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+   * Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+   * Redistributions in binary form must reproduce the above
+copyright notice, this list of conditions and the following disclaimer
+in the documentation and/or other materials provided with the
+distribution.
+   * Neither the name of Google Inc. nor the names of its
+contributors may be used to endorse or promote products derived from
+this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+
+BoringSSL uses the Chromium test infrastructure to run a continuous build,
+trybots etc. The scripts which manage this, and the script for generating build
+metadata, are under the Chromium license. Distributing code linked against
+BoringSSL does not trigger this license.
+
+Copyright 2015 The Chromium Authors. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+   * Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+   * Redistributions in binary form must reproduce the above
+copyright notice, this list of conditions and the following disclaimer
+in the documentation and/or other materials provided with the
+distribution.
+   * Neither the name of Google Inc. nor the names of its
+contributors may be used to endorse or promote products derived from
+this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
 ### Zlib

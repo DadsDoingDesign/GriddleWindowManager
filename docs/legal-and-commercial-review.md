@@ -43,8 +43,16 @@ see the note added there.
 | Renderer | WebView2 (OS component) | Microsoft redistributable | Microsoft |
 | Installer | NSIS | zlib | NSIS contributors |
 
-271 Rust crates and 80 npm packages resolved. Every one declares a license;
+311 Rust crates and 82 npm packages resolved. Every one declares a license;
 none is missing or ambiguous.
+
+*(Recount 2026-08-10: this review was written against a 271-crate closure. The
+opt-in updater then linked in the HTTP/TLS stack — `reqwest`, `hyper`,
+`rustls`, `ring`, `minisign-verify` and their transitive deps — and
+`THIRD-PARTY-LICENSES.md` has been regenerated against the current
+`Cargo.lock`. Every conclusion below was re-run against that closure, not
+inherited. The one new license shape it introduced is `ring`'s
+`Apache-2.0 AND ISC`, handled in §3.)*
 
 ## 2. License findings — clean
 
@@ -83,10 +91,19 @@ Specific credits worth making by name in your README or About screen:
 - **Griddle** — your own library; credit it prominently, since the whole
   product is a showcase for it.
 
-Apache-2.0 §4 also requires propagating any upstream `NOTICE` file. All 271
-crate source directories were scanned: **none ships one**, so the license text
-alone suffices. Re-check if the dependency tree changes materially — `tao` is
-Apache-2.0-only and is a hard dependency.
+Apache-2.0 §4 also requires propagating any upstream `NOTICE` file. All 311
+crate source directories were re-scanned on 2026-08-10: **none ships one**, so
+the license text alone suffices. Re-check if the dependency tree changes
+materially — `tao` and `sync_wrapper` are Apache-2.0-only and are hard
+dependencies.
+
+One component needs more than the pooled license texts: **`ring`** declares
+`Apache-2.0 AND ISC` — conjunctive, so both apply, no election available — and
+ships a three-file composite notice (`LICENSE`, `LICENSE-other-bits`, and a
+BoringSSL-derived `LICENSE-BoringSSL`) rather than a standard SPDX text. All
+three are reproduced verbatim in `THIRD-PARTY-LICENSES.md`. It reaches the
+binary through `rustls` → `reqwest` → `tauri-plugin-updater`, so it arrived
+with the updater and is not covered by any pre-updater version of that file.
 
 ## 4. Can this be published? Yes.
 
