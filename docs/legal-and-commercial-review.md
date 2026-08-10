@@ -28,9 +28,19 @@ The open questions this review left for v0.2.0 are now settled:
   `griddle-wm` all keep their existing values. They shipped in v0.1.0; renaming
   them would orphan users' grids, templates, and app defaults for no user-facing
   benefit.
+- **`@griddle` is credited as a dependency, everywhere.** `@griddle/core` and
+  `@griddle/svelte` are MIT-licensed packages published by **Trustybits**
+  (`Trustybits/griddle`). This repository is a *consumer* of that library, not
+  its home: every user-facing, legal, and docs string credits it as a
+  dependency and links upstream, and none claims authorship of it. The README,
+  `CONTRIBUTING.md`, the issue-template config, and this document all state it
+  the same way. Reflow and movement bugs are filed upstream; see
+  `docs/library-feedback.md` for the ones found here.
 
 The free-OSS decision materially lowers the trademark exposure analysed in §5;
-see the note added there.
+see the note added there. Note also that §5's commercial mitigation no longer
+rests on who owns the `@griddle` npm scope — the app's name is severable from
+the library's.
 
 ## 1. What this app actually is
 
@@ -39,7 +49,7 @@ see the note added there.
 | Desktop shell | Tauri 2 | MIT / Apache-2.0 | Tauri contributors |
 | Native layer | Rust + `windows` crate | MIT / Apache-2.0 | Rust project, Microsoft |
 | UI framework | Svelte 5 + Vite | MIT | Svelte / Vite contributors |
-| Layout engine | `@griddle/core`, `@griddle/svelte` | MIT | **You (Trustybits)** |
+| Layout engine | `@griddle/core`, `@griddle/svelte` | MIT | Trustybits |
 | Renderer | WebView2 (OS component) | Microsoft redistributable | Microsoft |
 | Installer | NSIS | zlib | NSIS contributors |
 
@@ -88,8 +98,10 @@ Specific credits worth making by name in your README or About screen:
 - **Tauri** — the app shell, tray, and updater machinery.
 - **Svelte** — the UI.
 - **Rust `windows` crate** — Win32 bindings.
-- **Griddle** — your own library; credit it prominently, since the whole
-  product is a showcase for it.
+- **Griddle** — the layout engine the whole product is built on
+  (`@griddle/core`, `@griddle/svelte`, MIT © Trustybits). Credit it prominently
+  by name and link the upstream repository; this app is a *consumer* of that
+  library, not its home.
 
 Apache-2.0 §4 also requires propagating any upstream `NOTICE` file. All 311
 crate source directories were re-scanned on 2026-08-10: **none ships one**, so
@@ -134,9 +146,10 @@ spend**, it is a real, if modest, exposure — and the cheapest time to change a
 name is before anyone knows it.
 
 Mitigations, cheapest first: keep the name for free/OSS release; or ship
-commercially under a distinct product name while the npm library keeps the
-`@griddle` scope you already own; or clear the name properly with a trademark
-attorney (a few hundred dollars for a screening search).
+commercially under a distinct product name — the exposure is this app's name in
+its own market, and it can be changed without touching the upstream `@griddle`
+packages it depends on; or clear the name properly with a trademark attorney (a
+few hundred dollars for a screening search).
 
 **Resolved for v0.2.0 (2026-08-10): keep the name.** With the free-OSS decision
 in §0, the cheapest mitigation is the one that applies. The registered GRIDDLE
@@ -163,13 +176,13 @@ as single source of truth with Rust as a thin actuator, real windows as puppets
 of grid state, preview-on-drag with commit-on-release, expected-rect matching to
 suppress feedback loops. That story is worth telling in public: it demonstrates
 engineering taste, which is what a portfolio or a launch post is actually
-selling. It also markets Griddle-the-library far better than the library's own
-README can.
+selling. It also shows Griddle-the-library working under real load, which is
+worth more to that upstream project than its own README can be.
 
 Publish freely: the design spec, the architecture diagram, the brain/hands
 split, the security posture, the movement-rules integration, the test strategy,
-and the library-feedback findings (dogfooding your own library and filing the
-gaps is a *credibility* story).
+and the library-feedback findings (documenting the edges you hit in a
+dependency, with reproductions, is a *credibility* story).
 
 Keep private only: signing keys and update-endpoint credentials; and, if you
 ever add paid licensing, the license-validation logic and its keys — not because
@@ -198,7 +211,7 @@ grids, and startup views. Those are real differentiators, but they need to be
 Three viable models, best first:
 
 1. **Free and open-source, monetized indirectly.** Ship MIT on GitHub, let it
-   drive attention to Griddle-the-library and to you. Best expected value if
+   drive attention to the project and to you. Best expected value if
    the goal is reputation, and by far the lowest operational burden — no
    licensing, no support SLA, no refunds, no trademark spend.
 2. **Sponsorware / open-core.** Source public; free for personal use, paid
