@@ -4,185 +4,173 @@
   --ground:#FBFBFC; --panel:#F1F1F5; --surface:#FFFFFF; --surface-2:#FAFAFC;
   --ink:#0B0B12; --muted:#6E6E7A; --faint:#9C9CA8;
   --line:#E3E3EA; --line-soft:#EDEDF2;
-  --accent:#5B5BD6; --accent-ink:#FFFFFF; --accent-soft:rgba(91,91,214,.10); --accent-line:rgba(91,91,214,.42);
-  --shadow-lo:0 1px 2px rgba(11,11,18,.05), 0 1px 1px rgba(11,11,18,.03);
-  --shadow-hi:0 18px 40px -12px rgba(11,11,18,.24), 0 4px 10px rgba(11,11,18,.08);
-  --r:10px;
+  --accent:#5B5BD6; --accent-soft:rgba(91,91,214,.10); --accent-line:rgba(91,91,214,.45);
+  --shadow-lo:0 1px 2px rgba(11,11,18,.05); --shadow-hi:0 18px 44px -12px rgba(11,11,18,.26),0 4px 10px rgba(11,11,18,.08);
   --sans:"Segoe UI Variable Display","Segoe UI",-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
   --text:"Segoe UI Variable Text","Segoe UI",-apple-system,system-ui,sans-serif;
-  --mono:"Cascadia Code","Cascadia Mono",Consolas,ui-monospace,SFMono-Regular,monospace;
+  --mono:"Cascadia Code","Cascadia Mono",Consolas,ui-monospace,monospace;
+  --ease:cubic-bezier(.22,1,.36,1); --dur:820ms;
 }
-@media (prefers-color-scheme:dark){
-  :root{
-    --ground:#09090D; --panel:#121218; --surface:#1A1A22; --surface-2:#15151C;
-    --ink:#F3F3F7; --muted:#9B9BA9; --faint:#6E6E7E;
-    --line:#282833; --line-soft:#1F1F28;
-    --accent:#8C8CF5; --accent-ink:#0A0A10; --accent-soft:rgba(140,140,245,.13); --accent-line:rgba(140,140,245,.5);
-    --shadow-lo:0 1px 2px rgba(0,0,0,.5); --shadow-hi:0 20px 44px -12px rgba(0,0,0,.7), 0 4px 12px rgba(0,0,0,.4);
-  }
-}
+@media (prefers-color-scheme:dark){:root{
+  --ground:#09090D; --panel:#121218; --surface:#1A1A22; --surface-2:#15151C;
+  --ink:#F3F3F7; --muted:#9B9BA9; --faint:#6E6E7E; --line:#282833; --line-soft:#1F1F28;
+  --accent:#8C8CF5; --accent-soft:rgba(140,140,245,.14); --accent-line:rgba(140,140,245,.5);
+  --shadow-lo:0 1px 2px rgba(0,0,0,.5); --shadow-hi:0 20px 48px -12px rgba(0,0,0,.72),0 4px 12px rgba(0,0,0,.4);
+}}
 :root[data-theme="dark"]{
   --ground:#09090D; --panel:#121218; --surface:#1A1A22; --surface-2:#15151C;
-  --ink:#F3F3F7; --muted:#9B9BA9; --faint:#6E6E7E;
-  --line:#282833; --line-soft:#1F1F28;
-  --accent:#8C8CF5; --accent-ink:#0A0A10; --accent-soft:rgba(140,140,245,.13); --accent-line:rgba(140,140,245,.5);
-  --shadow-lo:0 1px 2px rgba(0,0,0,.5); --shadow-hi:0 20px 44px -12px rgba(0,0,0,.7), 0 4px 12px rgba(0,0,0,.4);
+  --ink:#F3F3F7; --muted:#9B9BA9; --faint:#6E6E7E; --line:#282833; --line-soft:#1F1F28;
+  --accent:#8C8CF5; --accent-soft:rgba(140,140,245,.14); --accent-line:rgba(140,140,245,.5);
+  --shadow-lo:0 1px 2px rgba(0,0,0,.5); --shadow-hi:0 20px 48px -12px rgba(0,0,0,.72),0 4px 12px rgba(0,0,0,.4);
 }
 :root[data-theme="light"]{
   --ground:#FBFBFC; --panel:#F1F1F5; --surface:#FFFFFF; --surface-2:#FAFAFC;
-  --ink:#0B0B12; --muted:#6E6E7A; --faint:#9C9CA8;
-  --line:#E3E3EA; --line-soft:#EDEDF2;
-  --accent:#5B5BD6; --accent-ink:#FFFFFF; --accent-soft:rgba(91,91,214,.10); --accent-line:rgba(91,91,214,.42);
-  --shadow-lo:0 1px 2px rgba(11,11,18,.05), 0 1px 1px rgba(11,11,18,.03);
-  --shadow-hi:0 18px 40px -12px rgba(11,11,18,.24), 0 4px 10px rgba(11,11,18,.08);
+  --ink:#0B0B12; --muted:#6E6E7A; --faint:#9C9CA8; --line:#E3E3EA; --line-soft:#EDEDF2;
+  --accent:#5B5BD6; --accent-soft:rgba(91,91,214,.10); --accent-line:rgba(91,91,214,.45);
+  --shadow-lo:0 1px 2px rgba(11,11,18,.05); --shadow-hi:0 18px 44px -12px rgba(11,11,18,.26),0 4px 10px rgba(11,11,18,.08);
 }
 *{box-sizing:border-box}
 html,body{height:100%;overflow:hidden}
-body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--text);
-  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--text);-webkit-font-smoothing:antialiased}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
 
-/* ---------- chrome ---------- */
-.topbar{position:fixed;inset:0 0 auto 0;height:60px;display:flex;align-items:center;
-  justify-content:space-between;padding:0 clamp(16px,3vw,40px);z-index:60;pointer-events:none}
+.topbar{position:fixed;inset:0 0 auto 0;height:56px;display:flex;align-items:center;
+  justify-content:space-between;padding:0 clamp(14px,3vw,34px);z-index:60;pointer-events:none}
 .topbar>*{pointer-events:auto}
-.brand{display:flex;align-items:center;gap:9px;font-family:var(--sans);font-weight:700;
-  font-size:15px;letter-spacing:-.02em}
-.mark{width:17px;height:17px;border:1.75px solid var(--ink);border-radius:4px;position:relative;flex:none}
-.mark::after{content:"";position:absolute;left:1.5px;top:1.5px;width:6px;height:6px;
-  background:var(--ink);border-radius:1.5px}
-.navlinks{display:flex;align-items:center;gap:22px}
-.navlink{font-size:13.5px;color:var(--muted);text-decoration:none;font-weight:500}
+.brand{display:flex;align-items:center;gap:8px;font-family:var(--sans);font-weight:700;font-size:14.5px;letter-spacing:-.02em}
+.mark{width:16px;height:16px;border:1.7px solid var(--ink);border-radius:4px;position:relative;flex:none}
+.mark::after{content:"";position:absolute;left:1.4px;top:1.4px;width:5.5px;height:5.5px;background:var(--ink);border-radius:1.5px}
+.navlinks{display:flex;align-items:center;gap:16px}
+.navlink{font-size:13px;color:var(--muted);text-decoration:none;font-weight:500}
 .navlink:hover{color:var(--ink)}
-.iconbtn{width:32px;height:32px;display:grid;place-items:center;border:1px solid var(--line);
-  border-radius:8px;background:var(--surface);color:var(--muted);cursor:pointer;font-size:13px;padding:0}
+.iconbtn{width:30px;height:30px;display:grid;place-items:center;border:1px solid var(--line);
+  border-radius:8px;background:var(--surface);color:var(--muted);cursor:pointer;font-size:12px;padding:0}
 .iconbtn:hover{color:var(--ink);border-color:var(--accent-line)}
 
-/* ---------- stage ---------- */
 .stage{position:fixed;inset:0;overflow:hidden}
-.card{position:absolute;left:0;top:0;border-radius:var(--r);background:var(--surface);
-  will-change:transform,width,height;display:flex;flex-direction:column;overflow:hidden}
-.card.chromed{border:1px solid var(--line);box-shadow:var(--shadow-lo)}
-.card.hero-mode{background:transparent;border-color:transparent;box-shadow:none}
-/* parked = staged off-canvas before the morph, or evicted by a grid resize */
+
+/* ============================================================
+   ONE component per card. Content is authored once, for the GRID.
+   The hero is the same nodes with different geometry and type
+   scale — never a second copy — so nothing cross-fades or ghosts.
+   ============================================================ */
+.card{position:absolute;left:0;top:0;border-radius:10px;overflow:hidden;
+  display:flex;flex-direction:column;background:var(--surface);
+  border:1px solid transparent;will-change:transform,width,height;
+  transition:transform var(--dur) var(--ease),width var(--dur) var(--ease),
+    height var(--dur) var(--ease),opacity 380ms ease,
+    background 620ms ease,border-color 620ms ease,box-shadow 620ms ease}
 .card.parked{opacity:0;pointer-events:none}
 
-/* motion */
-.anim{transition:transform var(--d,780ms) cubic-bezier(.22,1,.36,1),
-  width var(--d,780ms) cubic-bezier(.22,1,.36,1),
-  height var(--d,780ms) cubic-bezier(.22,1,.36,1),
-  opacity 340ms ease, box-shadow 260ms ease, border-color 260ms ease, background 400ms ease}
+/* hero phase: chrome dissolves, card becomes bare type on the page */
+[data-phase="hero"] .card.inhero{background:transparent;border-color:transparent;box-shadow:none}
+[data-phase="grid"] .card{border-color:var(--line);box-shadow:var(--shadow-lo)}
 
-.titlebar{height:30px;flex:none;display:flex;align-items:center;gap:9px;padding:0 12px;
-  border-bottom:1px solid var(--line-soft);opacity:0;transition:opacity 300ms ease;
+.titlebar{height:30px;flex:none;display:flex;align-items:center;gap:8px;padding:0 11px;
+  border-bottom:1px solid transparent;opacity:0;transition:opacity 420ms ease,border-color 620ms ease;
   cursor:grab;user-select:none;touch-action:none}
-.card.chromed .titlebar{opacity:1}
+[data-phase="grid"] .titlebar{opacity:1;border-bottom-color:var(--line-soft)}
+[data-phase="hero"] .card.inhero .titlebar{height:0;overflow:hidden}
 .card.dragging .titlebar{cursor:grabbing}
 .dot{width:7px;height:7px;border-radius:50%;flex:none;background:var(--faint)}
-.tbname{font-size:11.5px;color:var(--muted);font-weight:500;white-space:nowrap;
-  overflow:hidden;text-overflow:ellipsis;letter-spacing:.005em}
-.tbhint{margin-left:auto;font-family:var(--mono);font-size:9.5px;color:var(--faint);
-  opacity:0;transition:opacity 200ms ease;letter-spacing:.04em}
-.card.chromed:hover .tbhint{opacity:1}
-
-/* One card, three content states, always mounted — never re-rendered, so the
-   morph is continuous. Only opacity cross-fades; geometry animates on .card. */
-.body{position:relative;flex:1;min-height:0}
-.st{position:absolute;inset:0;padding:16px;display:flex;flex-direction:column;
-  justify-content:center;gap:10px;opacity:0;pointer-events:none;overflow:hidden;
-  transition:opacity 260ms ease}
-.card[data-state="hero"] .st-hero,
-.card[data-state="tile"] .st-tile,
-.card[data-state="detail"] .st-detail{opacity:1;pointer-events:auto}
-.st-hero{padding:0;align-items:center;text-align:center;justify-content:center}
-.st-detail{justify-content:flex-start;padding:26px 30px;overflow-y:auto;gap:14px}
-.card.hero-mode .body{padding:0}
-
-/* ---------- hero typography ---------- */
-.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.19em;color:var(--accent);
-  text-transform:uppercase;white-space:nowrap;font-weight:600}
-.headline{font-family:var(--sans);font-weight:800;letter-spacing:-.045em;line-height:.94;
-  font-size:clamp(38px,6.6vw,88px);margin:0;text-wrap:balance}
-.headline .br{display:block}
-.dek{font-size:clamp(14px,1.35vw,17.5px);line-height:1.5;color:var(--muted);margin:0;
-  max-width:34em;text-wrap:pretty}
-.cta{display:inline-flex;align-items:center;justify-content:center;gap:9px;height:52px;
-  padding:0 26px;border-radius:9px;background:var(--ink);color:var(--ground);
-  font-family:var(--text);font-size:14.5px;font-weight:600;border:0;cursor:pointer;
-  text-decoration:none;white-space:nowrap;transition:transform 160ms ease,filter 160ms ease}
-.cta:hover{transform:translateY(-1px);filter:brightness(1.14)}
-.cta:active{transform:translateY(0)}
-.meta{font-size:11.5px;color:var(--faint);font-family:var(--mono);letter-spacing:.01em;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-
-/* in-grid text scales down */
-.card.chromed .headline{font-size:clamp(19px,2.5vw,34px);letter-spacing:-.035em;line-height:1.02}
-.card.chromed .dek{font-size:13px;line-height:1.45}
-.card.chromed .eyebrow{font-size:10px;letter-spacing:.15em}
-.card.chromed .cta{height:42px;padding:0 18px;font-size:13.5px}
-
-/* fake app-window content */
-.lines{display:flex;flex-direction:column;gap:7px;padding:2px 0}
-.ln{height:7px;border-radius:4px;background:var(--line);opacity:.85}
-.applabel{font-size:12px;color:var(--muted);line-height:1.45}
-
-/* ---------- grid backdrop ---------- */
-.gridwrap{position:absolute;border-radius:14px;background:var(--panel);opacity:0;
-  transition:opacity 500ms ease;pointer-events:none}
-.gridwrap.on{opacity:1}
-.cells{position:absolute;inset:0}
-.cell{position:absolute;border-radius:6px;border:1px dashed var(--line);opacity:.55}
-.dropzone{position:absolute;border-radius:8px;background:var(--accent-soft);
-  border:1.5px solid var(--accent-line);opacity:0;transition:opacity 140ms ease;pointer-events:none}
-.dropzone.on{opacity:1}
-
-/* ---------- controls ---------- */
-.controls{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(14px);
-  display:flex;align-items:center;gap:4px;padding:7px;background:var(--surface);
-  border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow-hi);z-index:70;
-  opacity:0;pointer-events:none;transition:opacity 400ms ease,transform 400ms cubic-bezier(.22,1,.36,1)}
-.controls.on{opacity:1;pointer-events:auto;transform:translateX(-50%) translateY(0)}
-.ctl{display:flex;align-items:center;gap:7px;padding:4px 8px;border-radius:8px}
-.ctl+.ctl{border-left:1px solid var(--line-soft)}
-.ctl label{font-size:10.5px;color:var(--faint);font-family:var(--mono);letter-spacing:.09em;
-  text-transform:uppercase}
-.step{display:flex;align-items:center;gap:2px}
-.step button{width:24px;height:24px;border:1px solid var(--line);background:var(--surface-2);
-  color:var(--muted);border-radius:6px;cursor:pointer;font-size:14px;line-height:1;padding:0;
-  display:grid;place-items:center;font-family:var(--text)}
-.step button:hover:not(:disabled){color:var(--ink);border-color:var(--accent-line)}
-.step button:disabled{opacity:.35;cursor:default}
-.step .val{min-width:24px;text-align:center;font-family:var(--mono);font-size:13px;
-  font-variant-numeric:tabular-nums;font-weight:600}
-.evicted{font-size:11px;color:var(--accent);font-family:var(--mono);white-space:nowrap;
-  max-width:0;overflow:hidden;transition:max-width 400ms ease,padding 400ms ease;padding:0}
-.evicted.on{max-width:190px;padding-right:8px}
-
-/* ---------- expanded ---------- */
-.scrim{position:fixed;inset:0;background:rgba(11,11,18,.34);backdrop-filter:blur(3px);
-  opacity:0;pointer-events:none;transition:opacity 300ms ease;z-index:80}
-.scrim.on{opacity:1;pointer-events:auto}
-.card.expanded{z-index:90;box-shadow:var(--shadow-hi);cursor:default}
-.card.expanded .titlebar{cursor:default}
-.card.expanded .body{justify-content:flex-start;padding:26px 30px;overflow-y:auto;gap:14px}
-.detail{font-size:14.5px;line-height:1.62;color:var(--muted);max-width:60ch;margin:0}
-.detail strong{color:var(--ink);font-weight:600}
-.dtitle{font-family:var(--sans);font-size:23px;font-weight:750;letter-spacing:-.025em;margin:0}
-.closebtn{margin-left:auto;width:22px;height:22px;border:0;background:transparent;color:var(--faint);
-  cursor:pointer;font-size:15px;line-height:1;padding:0;display:none;place-items:center;border-radius:5px}
+.tbname{font-size:11.5px;color:var(--muted);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.closebtn{margin-left:auto;width:21px;height:21px;border:0;background:transparent;color:var(--faint);
+  cursor:pointer;font-size:14px;line-height:1;padding:0;display:none;place-items:center;border-radius:5px}
 .card.expanded .closebtn{display:grid}
 .closebtn:hover{color:var(--ink);background:var(--line-soft)}
-.card.expanded .tbhint{display:none}
 
-.skip{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);font-family:var(--mono);
-  font-size:11px;color:var(--faint);letter-spacing:.06em;z-index:65;transition:opacity 300ms ease;
-  background:none;border:0;cursor:pointer;padding:8px 12px}
-.skip:hover{color:var(--muted)}
-.skip.gone{opacity:0;pointer-events:none}
+/* padding tracks viewport height so single-row tiles never crop their text */
+.content{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;
+  gap:clamp(4px,.8vh,8px);padding:clamp(6px,1.3vh,14px) clamp(10px,1.1vw,14px);
+  overflow:hidden;transition:padding var(--dur) var(--ease)}
+[data-phase="hero"] .card.inhero .content{padding:0;align-items:center;text-align:center;gap:0}
+
+/* Type scales between phases on the SAME nodes — no duplicate text. */
+.headline{font-family:var(--sans);font-weight:800;letter-spacing:-.042em;line-height:1.0;
+  margin:0;text-wrap:balance;transition:font-size var(--dur) var(--ease),line-height var(--dur) var(--ease)}
+[data-phase="hero"] .headline{font-size:clamp(30px,5.6vw,76px);line-height:.95;letter-spacing:-.048em}
+[data-phase="grid"] .headline{font-size:clamp(15px,1.85vw,27px);line-height:1.08}
+.headline .br{display:block}
+
+.dek{color:var(--muted);margin:0;text-wrap:pretty;overflow:hidden;
+  transition:font-size var(--dur) var(--ease)}
+[data-phase="hero"] .dek{font-size:clamp(13.5px,1.3vw,17px);line-height:1.5;max-width:32em}
+[data-phase="grid"] .dek{font-size:clamp(11px,.92vw,13px);line-height:1.42}
+
+.eyebrow{font-family:var(--mono);color:var(--accent);text-transform:uppercase;font-weight:600;
+  white-space:nowrap;transition:font-size var(--dur) var(--ease),letter-spacing var(--dur) var(--ease)}
+[data-phase="hero"] .eyebrow{font-size:clamp(9.5px,.78vw,11px);letter-spacing:.2em}
+[data-phase="grid"] .eyebrow{font-size:clamp(8.5px,.68vw,10px);letter-spacing:.13em}
+
+.cta{display:inline-flex;align-items:center;justify-content:center;border-radius:8px;
+  background:var(--ink);color:var(--ground);font-weight:600;border:0;cursor:pointer;
+  text-decoration:none;white-space:nowrap;align-self:center;
+  transition:height var(--dur) var(--ease),padding var(--dur) var(--ease),
+    font-size var(--dur) var(--ease),filter 160ms ease}
+[data-phase="hero"] .cta{height:50px;padding:0 24px;font-size:14.5px}
+[data-phase="grid"] .cta{height:34px;padding:0 14px;font-size:12.5px}
+.cta:hover{filter:brightness(1.15)}
+.meta{font-family:var(--mono);color:var(--faint);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;text-align:center;transition:font-size var(--dur) var(--ease)}
+[data-phase="hero"] .meta{font-size:11px}
+[data-phase="grid"] .meta{font-size:9.5px}
+
+.lines{display:flex;flex-direction:column;gap:6px}
+.ln{height:6px;border-radius:3px;background:var(--line)}
+.applabel{font-size:11.5px;color:var(--muted);line-height:1.4;overflow:hidden}
+.applabel b{color:var(--ink);font-weight:650}
+
+/* detail layer — genuinely different content, so it is an overlay that
+   fades in over the same card rather than replacing anything */
+.detail{position:absolute;inset:0;background:var(--surface);padding:24px 28px;
+  display:flex;flex-direction:column;gap:12px;overflow-y:auto;opacity:0;pointer-events:none;
+  transition:opacity 280ms ease}
+.card.expanded .detail{opacity:1;pointer-events:auto}
+.card.expanded{z-index:90;box-shadow:var(--shadow-hi)}
+.card.expanded .titlebar{cursor:default}
+.dtitle{font-family:var(--sans);font-size:21px;font-weight:750;letter-spacing:-.025em;margin:0}
+.dbody{font-size:14px;line-height:1.6;color:var(--muted);margin:0}
+.dbody b{color:var(--ink);font-weight:600}
+
+.gridwrap{position:absolute;border-radius:13px;background:var(--panel);opacity:0;
+  transition:opacity 620ms ease;pointer-events:none}
+[data-phase="grid"] .gridwrap{opacity:1}
+.cell{position:absolute;border-radius:5px;border:1px dashed var(--line);opacity:.5}
+.dropzone{position:absolute;border-radius:7px;background:var(--accent-soft);
+  border:1.5px solid var(--accent-line);opacity:0;transition:opacity 130ms ease;pointer-events:none}
+.dropzone.on{opacity:1}
+
+.controls{position:fixed;left:50%;bottom:18px;transform:translateX(-50%) translateY(14px);
+  display:flex;align-items:center;gap:3px;padding:6px;background:var(--surface);
+  border:1px solid var(--line);border-radius:11px;box-shadow:var(--shadow-hi);z-index:70;
+  opacity:0;pointer-events:none;transition:opacity 420ms ease,transform 420ms var(--ease)}
+.controls.on{opacity:1;pointer-events:auto;transform:translateX(-50%) translateY(0)}
+.ctl{display:flex;align-items:center;gap:6px;padding:3px 7px}
+.ctl+.ctl{border-left:1px solid var(--line-soft)}
+.ctl label{font-size:9.5px;color:var(--faint);font-family:var(--mono);letter-spacing:.09em;text-transform:uppercase}
+.step{display:flex;align-items:center;gap:1px}
+.step button{width:22px;height:22px;border:1px solid var(--line);background:var(--surface-2);
+  color:var(--muted);border-radius:6px;cursor:pointer;font-size:13px;line-height:1;padding:0;display:grid;place-items:center}
+.step button:hover:not(:disabled){color:var(--ink);border-color:var(--accent-line)}
+.step button:disabled{opacity:.34;cursor:default}
+.step .val{min-width:20px;text-align:center;font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums;font-weight:600}
+select.mode{font-family:var(--text);font-size:12px;background:var(--surface-2);color:var(--ink);
+  border:1px solid var(--line);border-radius:6px;padding:3px 6px;cursor:pointer}
+.note{font-size:10.5px;color:var(--accent);font-family:var(--mono);white-space:nowrap;
+  max-width:0;overflow:hidden;transition:max-width 400ms ease;padding:0}
+.note.on{max-width:180px;padding-right:6px}
+
+.scrim{position:fixed;inset:0;background:rgba(11,11,18,.34);backdrop-filter:blur(3px);
+  opacity:0;pointer-events:none;transition:opacity 280ms ease;z-index:80}
+.scrim.on{opacity:1;pointer-events:auto}
+
+.hint{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);font-family:var(--mono);
+  font-size:10.5px;color:var(--faint);letter-spacing:.06em;z-index:65;background:none;border:0;
+  cursor:pointer;padding:8px 12px;transition:opacity 300ms ease}
+.hint.gone{opacity:0;pointer-events:none}
 
 @media (prefers-reduced-motion:reduce){
-  .anim{transition-duration:1ms !important}
-  .controls{transition-duration:1ms}
+  .card,.headline,.dek,.eyebrow,.cta,.meta,.content{transition-duration:1ms !important}
 }
 </style>
 
@@ -190,32 +178,34 @@ body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--text);
   <div class="brand"><span class="mark" aria-hidden="true"></span>Griddle</div>
   <nav class="navlinks">
     <a class="navlink" href="https://github.com/DadsDoingDesign/GriddleWindowManager" target="_blank" rel="noopener">GitHub</a>
-    <button class="iconbtn" id="themeBtn" aria-label="Toggle theme" title="Toggle theme">◐</button>
+    <button class="iconbtn" id="themeBtn" aria-label="Toggle theme">◐</button>
   </nav>
 </header>
 
 <main class="stage" id="stage">
-  <div class="gridwrap" id="gridwrap"><div class="cells" id="cells"></div><div class="dropzone" id="dropzone"></div></div>
+  <div class="gridwrap" id="gridwrap"><div id="cells"></div><div class="dropzone" id="dropzone"></div></div>
 </main>
 
-<button class="skip" id="skip">press any key to arrange &rarr;</button>
-
+<button class="hint" id="hint">press any key to arrange &rarr;</button>
 <div class="scrim" id="scrim"></div>
 
 <div class="controls" id="controls" role="group" aria-label="Grid controls">
-  <div class="ctl"><label for="colsDec">Columns</label>
-    <div class="step"><button id="colsDec" aria-label="Fewer columns">−</button>
-    <span class="val" id="colsVal">12</span>
+  <div class="ctl"><label>Mode</label>
+    <select class="mode" id="modeSel" aria-label="Placement mode">
+      <option value="reflow" disabled>Reflow · fewest moves (building)</option>
+      <option value="push" selected>Push · displace neighbours</option>
+      <option value="stack">Stack · allow overlap</option>
+    </select></div>
+  <div class="ctl"><label>Cols</label><div class="step">
+    <button id="colsDec" aria-label="Fewer columns">−</button><span class="val" id="colsVal">12</span>
     <button id="colsInc" aria-label="More columns">+</button></div></div>
-  <div class="ctl"><label for="rowsDec">Rows</label>
-    <div class="step"><button id="rowsDec" aria-label="Fewer rows">−</button>
-    <span class="val" id="rowsVal">6</span>
+  <div class="ctl"><label>Rows</label><div class="step">
+    <button id="rowsDec" aria-label="Fewer rows">−</button><span class="val" id="rowsVal">6</span>
     <button id="rowsInc" aria-label="More rows">+</button></div></div>
-  <div class="ctl"><label for="gapDec">Gap</label>
-    <div class="step"><button id="gapDec" aria-label="Less gap">−</button>
-    <span class="val" id="gapVal">10</span>
+  <div class="ctl"><label>Gap</label><div class="step">
+    <button id="gapDec" aria-label="Less gap">−</button><span class="val" id="gapVal">10</span>
     <button id="gapInc" aria-label="More gap">+</button></div></div>
-  <span class="evicted" id="evicted"></span>
+  <span class="note" id="note"></span>
 </div>
 
 <script>var GriddleLib=(()=>{var z=Object.defineProperty;var at=Object.getOwnPropertyDescriptor;var ut=Object.getOwnPropertyNames;var ht=Object.prototype.hasOwnProperty;var wt=(o,t)=>{for(var e in t)z(o,e,{get:t[e],enumerable:!0})},pt=(o,t,e,n)=>{if(t&&typeof t=="object"||typeof t=="function")for(let i of ut(t))!ht.call(o,i)&&i!==e&&z(o,i,{get:()=>t[i],enumerable:!(n=at(t,i))||n.enumerable});return o};var dt=o=>pt(z({},"__esModule",{value:!0}),o);var Et={};wt(Et,{Grid:()=>_});var N=class{constructor(){this.listeners=new Set}on(t){return this.listeners.add(t),()=>this.listeners.delete(t)}off(t){this.listeners.delete(t)}emit(t){for(let e of Array.from(this.listeners))e(t)}clear(){this.listeners.clear()}};function g(o,t){return o.col<t.col+t.w&&o.col+o.w>t.col&&o.row<t.row+t.h&&o.row+o.h>t.row}function q(o,t){if(g(o,t))return!1;let e=(o.col+o.w===t.col||t.col+t.w===o.col)&&o.row<t.row+t.h&&o.row+o.h>t.row,n=(o.row+o.h===t.row||t.row+t.h===o.row)&&o.col<t.col+t.w&&o.col+o.w>t.col,i=(o.col+o.w===t.col||t.col+t.w===o.col)&&(o.row+o.h===t.row||t.row+t.h===o.row);return e||n||i}function M(o){return{col:o.col,row:o.row,w:o.w,h:o.h}}function Y(o,t){let e=o.col+o.w/2,n=o.row+o.h/2,i=t.col+t.w/2,r=t.row+t.h/2;return{dx:i-e,dy:r-n}}function H(o,t){let{dx:e,dy:n}=Y(o,t),i=-e,r=-n;return Math.abs(i)>=Math.abs(r)?i>=0?"e":"w":r>=0?"s":"n"}function mt(o){return o==="n"?"s":o==="s"?"n":o==="e"?"w":"e"}function yt(o,t){let{dx:e,dy:n}=Y(o,t),i=Math.abs(e)>1e-9,r=Math.abs(n)>1e-9;return i&&r?"corner":i?"horizontal":"vertical"}function xt(o,t,e){let n=e==="nw"||e==="sw"?t.col-.5:t.col+t.w+.5,i=e==="nw"||e==="ne"?t.row-.5:t.row+t.h+.5,r=o.col+o.w/2,s=o.row+o.h/2,c=n-r,w=i-s;return c*c+w*w}function R(o,t){let e=H(o,t),n=mt(e),i=yt(o,t),r=["n","s","e","w"],s=new Set([e,n]),c;i==="horizontal"?c=s.has("n")?G(r,s):"n":c=s.has("e")?G(r,s):"e",s.add(c);let w=G(r,s),f=["nw","ne","sw","se"].map(d=>({c:d,d:xt(o,t,d)})).sort((d,l)=>d.d-l.d),a=f.slice(0,2).map(d=>d.c),u=f.slice(2).map(d=>d.c);return[e,n,c,w,a[0],a[1],u[0],u[1]]}function G(o,t){for(let e of o)if(!t.has(e))return e;return o[0]}function gt(o,t){let e=0,n=0;return(t==="n"||t==="nw"||t==="ne")&&(n=-1),(t==="s"||t==="sw"||t==="se")&&(n=1),(t==="w"||t==="nw"||t==="sw")&&(e=-1),(t==="e"||t==="ne"||t==="se")&&(e=1),{col:o.col+e,row:o.row+n,w:o.w,h:o.h}}function b(o){let t=gt({col:0,row:0,w:0,h:0},o);return{dx:t.col,dy:t.row}}function U(o,t){return o.w===t.w&&o.h===t.h}function V(o,t,e,n){let i=o.getTile(t);if(!i)return!1;let r=o.tiles,s=new Map(r.map(l=>[l.id,l])),c={col:e.col,row:e.row,w:i.w,h:i.h},w=R(n,c),h=o.config.maxRepackHops??64,f={positions:new Map(r.map(l=>[l.id,{col:l.col,row:l.row}])),touched:new Set,cost:0},a=new Map,u=[f],d=l=>{for(let[p,y]of l.positions){if(p===t)continue;let m=s.get(p),x={col:y.col,row:y.row,w:m.w,h:m.h};if(g(x,c))return!1}return!0};for(;u.length>0;){let l=u.shift(),p=L(l.positions,l.touched),y=a.get(p);if(y!==void 0&&y<=l.cost)continue;if(a.set(p,l.cost),d(l)){for(let[T,I]of l.positions)T!==t&&o._setTilePos(T,I);return o._setTilePos(t,e),!0}if(l.cost>=h)continue;let m=null;for(let[T,I]of l.positions){if(T===t)continue;let k=s.get(T),P={col:I.col,row:I.row,w:k.w,h:k.h};if(g(P,c)){m=k;break}}if(!m)continue;for(let T of w){let I=K(l,m.id,T,s,o,t);if(!I)continue;let P=l.touched.has(m.id)?0:1,S=l.cost+P,D=L(I.positions,I.touched),A=a.get(D);A!==void 0&&A<=S||(I.cost=S,P===0?u.unshift(I):u.push(I))}let x=new Set([m.id,...l.touched]);for(let T of x)if(T!==t)for(let I of w){let k=K(l,T,I,s,o,t);if(!k)continue;let S=l.touched.has(T)?0:1,D=l.cost+S,A=L(k.positions,k.touched),X=a.get(A);X!==void 0&&X<=D||(k.cost=D,S===0?u.unshift(k):u.push(k))}}return!1}function K(o,t,e,n,i,r){let s=o.positions.get(t);if(!s)return null;let c=n.get(t),{dx:w,dy:h}=b(e),f={col:s.col+w,row:s.row+h,w:c.w,h:c.h};if(!i.rectInBounds(f))return null;for(let[d,l]of o.positions){if(d===t||d===r)continue;let p=n.get(d),y={col:l.col,row:l.row,w:p.w,h:p.h};if(g(y,f))return null}let a=new Map(o.positions);a.set(t,{col:f.col,row:f.row});let u=new Set(o.touched);return u.add(t),{positions:a,touched:u,cost:o.cost}}function L(o,t){let e=[],n=Array.from(o.keys()).sort();for(let i of n){let r=o.get(i);e.push(`${i}:${r.col},${r.row}`)}return e.join("|")+"#"+Array.from(t).sort().join(",")}function J(o,t,e){let n=o.tilesIn(e,new Set([t]));if(n.length===0)return!0;let i=o.snapshotTiles(),r=R(M(n[0]),e);for(let s of r){if(Z(o,t,e,s))return!0;o.restoreTiles(i)}return!1}function Q(o,t,e,n={}){let i=o.getTile(t);if(!i)return!1;let r=n.forceFromRect??M(i),s={col:e.col,row:e.row,w:i.w,h:i.h};if(!o.rectInBounds(s))return!1;let c=o.tilesIn(s,new Set([t]));if(c.length===0)return o._setTilePos(t,e),!0;if(c.length===1&&q(r,M(c[0]))&&U(c[0],i)){let l=c[0],p={col:l.col,row:l.row},y={col:r.col,row:r.row};return o._setTilePos(t,p),o._setTilePos(l.id,y),!0}let w=o.snapshotTiles(),h=R(r,s),f=new Set([t]),a=!0;for(let l of c)if(!Tt(o,l.id,h,s,f)){a=!1;break}if(a)return o._setTilePos(t,e),!0;o.restoreTiles(w);let u=H(r,s);if(It(o,u)){if(Mt(o,t,e,u))return!0;o.restoreTiles(w)}for(let l of h){if(Z(o,t,s,l))return o._setTilePos(t,e),!0;o.restoreTiles(w)}return V(o,t,e,r)?!0:(o.restoreTiles(w),!1)}function Tt(o,t,e,n,i){let r=o.getTile(t);if(!r)return!1;let s=M(r);for(let c of e){let{dx:w,dy:h}=b(c),f=1/0;w>0?f=Math.max(1,n.col+n.w-s.col):w<0&&(f=Math.max(1,s.col+s.w-n.col));let a=1/0;h>0?a=Math.max(1,n.row+n.h-s.row):h<0&&(a=Math.max(1,s.row+s.h-n.row));let u;if(w===0&&h===0||(w===0?u=a:h===0?u=f:u=Math.min(f,a),!isFinite(u)))continue;let d={col:s.col+u*w,row:s.row+u*h,w:r.w,h:r.h};if(!o.rectInBounds(d))continue;let l=new Set(i);if(l.add(t),o.tilesIn(d,l).length===0)return o._setTilePos(t,{col:d.col,row:d.row}),!0}return!1}function It(o,t){let{dx:e,dy:n}=b(t);return e<0||n<0||e!==0&&!o.config.infiniteX||n!==0&&!o.config.infiniteY?!1:!!(e!==0&&o.config.infiniteX||n!==0&&o.config.infiniteY)}function Z(o,t,e,n){let{dx:i,dy:r}=b(n);if(i===0&&r===0)return!1;let s=o.tilesIn(e,new Set([t]));if(s.length===0)return!0;let c=new Map,w=[];function h(l,p){let y=1/0;i>0?y=Math.max(1,p.col+p.w-l.col):i<0&&(y=Math.max(1,l.col+l.w-p.col));let m=1/0;return r>0?m=Math.max(1,p.row+p.h-l.row):r<0&&(m=Math.max(1,l.row+l.h-p.row)),i===0?m:r===0?y:Math.min(y,m)}for(let l of s){let p=h(l,e);if(!isFinite(p))return!1;c.set(l.id,p),w.push({id:l.id,k:p})}function f(l){let p=c.get(l.id)??0;return{col:l.col+p*i,row:l.row+p*r,w:l.w,h:l.h}}let a=1e3,u=0;for(;w.length>0;){if(u++>a)return!1;let{id:l}=w.shift(),p=o.getTile(l);if(!p)continue;let y=f(p);if(!o.rectInBounds(y))return!1;for(let m of o.tiles){if(m.id===l||m.id===t)continue;let x=f(m);if(g(y,x)){let T=h(m,y);if(!isFinite(T))return!1;let I=c.get(m.id)??0,k={...m,col:m.col+I*i,row:m.row+I*r},P=h(k,y);if(!isFinite(P))return!1;let S=I+P;if(S<=I)continue;c.set(m.id,S),w.push({id:m.id,k:S})}}}let d=new Map;for(let l of o.tiles)l.id!==t&&d.set(l.id,f(l));for(let[l,p]of d){if(!o.rectInBounds(p)||g(p,e))return!1;for(let[y,m]of d)if(y!==l&&g(p,m))return!1}for(let[l,p]of d)o._setTilePos(l,{col:p.col,row:p.row});return!0}function Mt(o,t,e,n){let i=o.getTile(t);if(!i)return!1;let r={col:e.col,row:e.row,w:i.w,h:i.h},{dx:s,dy:c}=b(n),w=1e4;for(let h=0;h<w;h++){let f=o.tilesIn(r,new Set([t]));if(f.length===0)return o._setTilePos(t,e),!0;let a=f.map(u=>({...u}));for(;a.length>0;){let u=a.shift(),d=o.getTile(u.id);if(!d)continue;let l={col:d.col+s,row:d.row+c,w:d.w,h:d.h};if(!o.rectInBounds(l))return!1;o._setTilePos(u.id,{col:l.col,row:l.row});let p=o.tilesIn(l,new Set([u.id,t]));for(let y of p)a.find(m=>m.id===y.id)||a.push(y)}}return!1}function v(o){let t=o.position;return!t||t==="static"||t==="relative"||t==="sticky"}function ot(o){let t=o.config.gravity??"none";if(t==="none")return[];let e=new Set;for(let n=0;n<1e4;n++){let i=!1,r=[...o.tiles].filter(s=>v(s)).sort((s,c)=>tt(s,t)-tt(c,t));for(let s of r){let c=kt(s,t);if(!c)continue;let w={col:s.col+c.dx,row:s.row+c.dy,w:s.w,h:s.h};!o.rectInBounds(w)||o.tiles.filter(f=>f.id!==s.id&&v(f)&&g(M(f),w)).length>0||(o._setTilePos(s.id,{col:w.col,row:w.row}),e.add(s.id),i=!0)}if(!i)break}return Array.from(e)}function kt(o,t){if(t==="none")return null;if(t==="top")return o.row>0?{dx:0,dy:-1}:null;if(t==="left")return o.col>0?{dx:-1,dy:0}:null;if(t==="bottom")return{dx:0,dy:1};if(t==="right")return{dx:1,dy:0};let e=Math.sign(t.col-o.col),n=Math.sign(t.row-o.row),i=Math.abs(t.col-o.col),r=Math.abs(t.row-o.row);return i===0&&n===0?null:i>=r&&e!==0?{dx:e,dy:0}:n!==0?{dx:0,dy:n}:e!==0?{dx:e,dy:0}:null}function tt(o,t){return t==="none"?0:t==="top"?o.row:t==="bottom"?-o.row:t==="left"?o.col:t==="right"?-o.col:Math.abs(t.col-o.col)+Math.abs(t.row-o.row)}function O(o){return o.loop?.enabled===!0}function C(o){if(O(o)&&(o.infiniteX||o.infiniteY||!Number.isFinite(o.cols)||!Number.isFinite(o.rows)))throw new Error("Griddle: loop mode requires finite cols/rows and is incompatible with infiniteX/infiniteY")}function et(o,t){if(o.length===0||t<=0)return null;let e=o.reduce((r,s)=>r+s.w*s.h,0),n=Math.max(...o.map(r=>r.w)),i=Math.max(...o.map(r=>r.h));for(let r=Math.min(t,e);r>=n;r--){if(e%r!==0)continue;let s=e/r;if(s<i)continue;let c=vt(o,r,s);if(c)return{placements:c,width:r,height:s,holes:0}}return bt(o,Math.min(t,e))}function vt(o,t,e){let n=[...o].sort((u,d)=>d.w*d.h-u.w*u.h||d.h-u.h),i=n.length,r=new Uint8Array(t*e),s=new Array(i).fill(!1),c=new Map,w=0,h=(u,d,l,p)=>{if(u+l>t||d+p>e)return!1;for(let y=d;y<d+p;y++)for(let m=u;m<u+l;m++)if(r[y*t+m])return!1;return!0},f=(u,d,l,p,y)=>{for(let m=d;m<d+p;m++)for(let x=u;x<u+l;x++)r[m*t+x]=y},a=u=>{if(++w>5e4)return!1;let d=u;for(;d<t*e&&r[d];)d++;if(d>=t*e)return!0;let l=d%t,p=(d-l)/t,y=new Set;for(let m=0;m<i;m++){if(s[m])continue;let x=n[m],T=`${x.w}x${x.h}`;if(!y.has(T)&&(y.add(T),!!h(l,p,x.w,x.h))){if(s[m]=!0,f(l,p,x.w,x.h,1),c.set(x.id,{col:l,row:p}),a(d+1))return!0;s[m]=!1,f(l,p,x.w,x.h,0),c.delete(x.id)}}return!1};return a(0)?c:null}function bt(o,t){let e=[...o].sort((a,u)=>u.w*u.h-a.w*a.h||u.h-a.h),n=new Map,i=[],r=(a,u,d,l)=>{if(a+d>t)return!1;for(let p=u;p<u+l;p++){let y=i[p];if(y){for(let m=a;m<a+d;m++)if(y[m])return!1}}return!0},s=(a,u,d,l)=>{for(let p=u;p<u+l;p++){let y=i[p];y||(y=new Array(t).fill(!1),i[p]=y);for(let m=a;m<a+d;m++)y[m]=!0}},c=0;for(;e.length>0;){let a=c%t,u=(c-a)/t;if(!i[u]?.[a]){let d=e.findIndex(l=>r(a,u,l.w,l.h));if(d>=0){let l=e.splice(d,1)[0];n.set(l.id,{col:a,row:u}),s(a,u,l.w,l.h)}}c++}let w=0,h=0,f=0;for(let a of o){let u=n.get(a.id);w=Math.max(w,u.col+a.w),h=Math.max(h,u.row+a.h),f+=a.w*a.h}return{placements:n,width:w,height:h,holes:w*h-f}}var E=Object.freeze({enabled:!0,repositionDurationMs:320,repositionEasing:"cubic-bezier(0.22, 1, 0.36, 1)",liftDurationMs:160,liftEasing:"cubic-bezier(0.22, 1, 0.36, 1)",respectReducedMotion:!0});function nt(o,t){return typeof o=="number"&&Number.isFinite(o)?Math.max(0,o):t}function it(o,t){return typeof o=="string"&&o.trim()?o.trim():t}function st(o){return{enabled:o?.enabled??E.enabled,repositionDurationMs:nt(o?.repositionDurationMs,E.repositionDurationMs),repositionEasing:it(o?.repositionEasing,E.repositionEasing),liftDurationMs:nt(o?.liftDurationMs,E.liftDurationMs),liftEasing:it(o?.liftEasing,E.liftEasing),respectReducedMotion:o?.respectReducedMotion??E.respectReducedMotion}}function St(o){if(!Number.isFinite(o.cols)||!Number.isInteger(o.cols)||o.cols<=0)throw new RangeError("Griddle: reflow cols must be a positive finite integer");if(o.strategy!=="griddle-v1")throw new RangeError(`Griddle: unsupported reflow strategy "${String(o.strategy)}"`)}function rt(o,t){if(!Number.isInteger(o.w)||o.w<=0||!Number.isInteger(o.h)||o.h<=0)throw new RangeError(`Griddle: tile "${o.id}" footprint must use positive integer cells`);if(o.w<=t)return{...o};let e=t/o.w;return{...o,w:t,h:Math.max(1,Math.round(o.h*e))}}function W(o,t){let e=[];for(let n of o){if(!Number.isInteger(n.col)||!Number.isInteger(n.row)||!Number.isInteger(n.w)||!Number.isInteger(n.h)||n.col<0||n.row<0||n.w<=0||n.h<=0||n.col+n.w>t)throw new RangeError(`Griddle: reflow placement for tile "${n.id}" is outside the grid bounds`);let i=e.find(r=>g(M(r),M(n)));if(i)throw new RangeError(`Griddle: reflow placements for tiles "${i.id}" and "${n.id}" overlap`);e.push(n)}}function ct(o,t,e,n,i=0){let r={col:0,row:Math.max(0,i),w:t,h:e};for(;;){for(let s=0;s<=n-t;s+=1)if(r.col=s,!o.some(c=>g(M(c),r)))return{col:s,row:r.row};r.row+=1}}function Bt(o,t){let e=[...o].sort((s,c)=>s.row!==c.row?s.row-c.row:s.col!==c.col?s.col-c.col:s.id.localeCompare(c.id)),n=[];for(let s of e){let c=rt(s,t),w=Number.isInteger(c.col)&&Number.isInteger(c.row)&&c.col>=0&&c.row>=0&&c.col+c.w<=t;if(w&&!n.some(a=>g(M(a),M(c)))){n.push(c);continue}let f=ct(n,c.w,c.h,t,w?c.row:0);n.push({...c,...f})}let i=new Map(n.map(s=>[s.id,s])),r=o.map(s=>i.get(s.id)??{...s});return W(r,t),r}function Pt(o,t,e){let n=[],i=[];for(let s of o){let c=e[s.id];c?n.push({...s,...c}):i.push(rt(s,t))}W(n,t);let r=[...n];for(let s of i){let c=ct(r,s.w,s.h,t);r.push({...s,...c})}return W(r,t),r}function lt(o,t){St(t);let e=t.placements;return e&&Object.keys(e).length>0?Pt(o,t.cols,e):Bt(o,t.cols)}function F(o){return{infiniteX:o.infiniteX??o.cols===1/0,infiniteY:o.infiniteY??o.rows===1/0,gap:o.gap??0,gravity:o.gravity??"none",resizeHandles:o.resizeHandles??["se"],snapDuringDrag:o.snapDuringDrag??!0,maxRepackHops:o.maxRepackHops??64,...o,animation:st(o.animation)}}function $(o,t){if(!Number.isInteger(o)||o<=0)throw new RangeError(`Griddle: ${t} must be a positive integer`)}function Rt(o,t){return!o.infiniteX&&(t.col<0||t.col+t.w>o.cols)||o.infiniteX&&t.col<0||!o.infiniteY&&(t.row<0||t.row+t.h>o.rows)?!1:!o.infiniteY||t.row>=0}function ft(o,t){if(!v(t))return t;let e=t.w,n=t.h;if(!o.infiniteX&&Number.isInteger(t.col)){let i=o.cols-t.col;i>=1&&(e=Math.min(e,i))}if(!o.infiniteY&&Number.isInteger(t.row)){let i=o.rows-t.row;i>=1&&(n=Math.min(n,i))}return e===t.w&&n===t.h?t:{...t,w:e,h:n}}function B(o,t){let e=new Set,n=[];for(let i of t){if(e.has(i.id))throw new Error(`Griddle: duplicate tile id "${i.id}"`);if(e.add(i.id),$(i.w,`tile "${i.id}" width`),$(i.h,`tile "${i.id}" height`),!v(i))continue;if(!Number.isInteger(i.col)||!Number.isInteger(i.row))throw new RangeError(`Griddle: tile "${i.id}" position must use integer cells`);let r=M(i);if(!Rt(o,r))throw new RangeError(`Griddle: tile "${i.id}" is outside the grid bounds`);let s=n.find(c=>g(M(c),r));if(s)throw new RangeError(`Griddle: tiles "${s.id}" and "${i.id}" overlap`);n.push(i)}}function j(o,t,e,n){let i=new Set,r=[{col:t.col,row:t.row}],s=0;for(;r.length>0&&s++<512;){let c=r.shift(),w=`${c.col},${c.row}`;if(i.has(w))continue;i.add(w);let h={col:c.col,row:c.row,w:t.w,h:t.h};if(o.rectInBounds(h)&&o.tilesIn(h,new Set([t.id,n])).length===0&&!g(h,e))return c;r.push({col:c.col+1,row:c.row}),r.push({col:c.col-1,row:c.row}),r.push({col:c.col,row:c.row+1}),r.push({col:c.col,row:c.row-1})}return null}var _=class o{constructor(t,e=[]){this.tilesById=new Map,this.changes=new N,this.config=F(t),C(this.config);let n=e.map(i=>({...i}));B(this.config,n);for(let i of n)this.tilesById.set(i.id,i)}updateConfig(t){let e=O(this.config),n=F({...this.config,...t,animation:t.animation?{...this.config.animation,...t.animation}:this.config.animation});C(n),B(n,this.tiles),this.config=n,this.changes.emit({type:"config",tileIds:[]}),!e&&O(n)&&this.pack()}reflow(t){let e=this.tiles.filter(v),n=lt(e,t),i=new Map(n.map(c=>[c.id,c])),r=F({...this.config,cols:t.cols,infiniteX:!1});C(r);let s=[];for(let c of e){let w=i.get(c.id);w&&(c.col!==w.col||c.row!==w.row||c.w!==w.w||c.h!==w.h)&&s.push(c.id)}this.config=r;for(let c of n)this._setTileRect(c.id,c);return this.changes.emit({type:"reflow",tileIds:s}),s.length>0}get tiles(){return Array.from(this.tilesById.values())}getTile(t){return this.tilesById.get(t)}tilesIn(t,e=new Set){let n=[];for(let i of this.tilesById.values())e.has(i.id)||v(i)&&g(t,M(i))&&n.push(i);return n}rectInBounds(t){let{cols:e,rows:n,infiniteX:i,infiniteY:r}=this.config;if(i){if(t.col<0)return!1}else if(t.col<0||t.col+t.w>e)return!1;if(r){if(t.row<0)return!1}else if(t.row<0||t.row+t.h>n)return!1;return!0}addTile(t){if(this.tilesById.has(t.id))throw new Error(`Griddle: duplicate tile id "${t.id}"`);let e=ft(this.config,{...t});B(this.config,[...this.tiles,e]),this.tilesById.set(t.id,e),this.changes.emit({type:"add",tileIds:[t.id]}),this.config.gravity&&this.config.gravity!=="none"&&this.compactAll(),this._structuralRepack()}addTileWithDisplacement(t){if(this.tilesById.has(t.id))throw new Error(`Griddle: duplicate tile id "${t.id}"`);let e=ft(this.config,{...t});if($(e.w,`tile "${e.id}" width`),$(e.h,`tile "${e.id}" height`),!v(e))return this.addTile(e),!0;if(!Number.isInteger(e.col)||!Number.isInteger(e.row))return!1;let n={col:e.col,row:e.row,w:e.w,h:e.h};if(!this.rectInBounds(n))return!1;let i=this.snapshotTiles();this.tilesById.set(e.id,e);let r=this.tilesIn(n,new Set([e.id]));for(let s of r){let w=R(n,M(s)).map(b),h=!1;for(let f of w){if(f.dx===0&&f.dy===0)continue;let a={col:s.col,row:s.row};for(let u=0;u<128&&!h;u++){a={col:a.col+f.dx,row:a.row+f.dy};let d={col:a.col,row:a.row,w:s.w,h:s.h};if(!this.rectInBounds(d))break;this.tilesIn(d,new Set([s.id,e.id])).length===0&&!g(d,n)&&(this._setTilePos(s.id,a),h=!0)}if(h)break}if(!h){let f=j(this,s,n,e.id);f&&(this._setTilePos(s.id,f),h=!0)}if(!h)return this.restoreTiles(i),!1}try{B(this.config,this.tiles)}catch{return this.restoreTiles(i),!1}return this.changes.emit({type:"add",tileIds:[e.id]}),this.config.gravity&&this.config.gravity!=="none"&&this.compactAll(),this._structuralRepack(),!0}removeTile(t){this.tilesById.has(t)&&(this.tilesById.delete(t),this.changes.emit({type:"remove",tileIds:[t]}),this.config.gravity&&this.config.gravity!=="none"&&this.compactAll(),this._structuralRepack())}_structuralRepack(){O(this.config)&&(this.config.loop?.repack??"toggle")==="structural"&&this.pack()}_setTilePos(t,e){let n=this.tilesById.get(t);n&&(n.col=e.col,n.row=e.row)}_setTileRect(t,e){let n=this.tilesById.get(t);n&&(n.col=e.col,n.row=e.row,n.w=e.w,n.h=e.h)}moveTile(t,e){let n=this.tilesById.get(t);if(!n||!v(n))return!1;if(n.col===e.col&&n.row===e.row)return!0;let i=this.snapshotTiles(),r=Q(this,t,e);if(r){try{B(this.config,this.tiles)}catch{return this.restoreTiles(i),!1}this.changes.emit({type:"move",tileIds:this.tiles.map(s=>s.id)}),this.config.gravity&&this.config.gravity!=="none"&&this.compactAll()}return r}moveGroup(t,e){if(t.length===0||e.dcol===0&&e.drow===0)return!0;let n=new Set(t),i=[];for(let h of t){let f=this.tilesById.get(h);if(!f||!v(f))return!1;i.push(f)}let r=new Map;for(let h of i){let f={col:h.col+e.dcol,row:h.row+e.drow},a={col:f.col,row:f.row,w:h.w,h:h.h};if(!this.rectInBounds(a))return!1;r.set(h.id,f)}let s=this.snapshotTiles();for(let[h,f]of r)this._setTilePos(h,f);let c=new Set;for(let h of i){let f=r.get(h.id),a={col:f.col,row:f.row,w:h.w,h:h.h};for(let u of this.tilesIn(a,n))c.add(u.id)}let w=this._groupBounds(i,r);for(let h of c){let f=this.tilesById.get(h);if(!f)continue;let a=j(this,f,w,h);if(!a)return this.restoreTiles(s),!1;this._setTilePos(h,a)}for(let h of i){let f=r.get(h.id),a={col:f.col,row:f.row,w:h.w,h:h.h};if(this.tilesIn(a,n).length>0)return this.restoreTiles(s),!1}try{B(this.config,this.tiles)}catch{return this.restoreTiles(s),!1}return this.changes.emit({type:"move",tileIds:this.tiles.map(h=>h.id)}),this.config.gravity&&this.config.gravity!=="none"&&this.compactAll(),!0}_groupBounds(t,e){let n=1/0,i=1/0,r=-1/0,s=-1/0;for(let c of t){let w=e.get(c.id)??{col:c.col,row:c.row};n=Math.min(n,w.col),i=Math.min(i,w.row),r=Math.max(r,w.col+c.w),s=Math.max(s,w.row+c.h)}return{col:n,row:i,w:r-n,h:s-i}}setTilePinned(t,e){let n=this.tilesById.get(t);return!n||v(n)?!1:(n.pinned={x:e.x,y:e.y},this.changes.emit({type:"move",tileIds:[t]}),!0)}setTilePosition(t,e,n={}){let i=this.tilesById.get(t);if(!i)return!1;let r={...i,position:e};n.pinned!==void 0&&(r.pinned={...n.pinned}),n.offset!==void 0&&(r.offset={...n.offset}),n.sticky!==void 0&&(r.sticky={...n.sticky});try{B(this.config,this.tiles.map(s=>s.id===t?r:s))}catch{return!1}return Object.assign(i,r),this.changes.emit({type:"move",tileIds:[t]}),!0}resizeTile(t,e){let n=this.tilesById.get(t);if(!n)return!1;let i=Math.max(n.minW??1,Math.min(n.maxW??1e6,Math.floor(e.w))),r=Math.max(n.minH??1,Math.min(n.maxH??1e6,Math.floor(e.h))),s=this.config.infiniteX?i:Math.max(1,this.config.cols-n.col),c=this.config.infiniteY?r:Math.max(1,this.config.rows-n.row),w={w:Math.min(i,s),h:Math.min(r,c)};if(w.w===n.w&&w.h===n.h)return!0;let h={col:n.col,row:n.row,w:w.w,h:w.h};if(!this.rectInBounds(h))return!1;let f=this.snapshotTiles();if(n.w=w.w,n.h=w.h,!J(this,t,h)){let a=this.tilesIn(h,new Set([t]));for(let u of a){let l=R(h,M(u)).map(b),p=!1;for(let y of l){if(y.dx===0&&y.dy===0)continue;let m={col:u.col,row:u.row};for(let x=0;x<128&&!p;x++){m={col:m.col+y.dx,row:m.row+y.dy};let T={col:m.col,row:m.row,w:u.w,h:u.h};if(!this.rectInBounds(T))break;this.tilesIn(T,new Set([u.id,t])).length===0&&!g(T,h)&&(this._setTilePos(u.id,m),p=!0)}if(p)break}if(!p){let y=j(this,u,h,t);y&&(this._setTilePos(u.id,y),p=!0)}if(!p)return this.restoreTiles(f),!1}}try{B(this.config,this.tiles)}catch{return this.restoreTiles(f),!1}return this.changes.emit({type:"resize",tileIds:[t]}),this.config.gravity&&this.config.gravity!=="none"&&this.compactAll(),this._structuralRepack(),!0}snapshotTiles(){let t=new Map;for(let[e,n]of this.tilesById)t.set(e,{...n});return t}restoreTiles(t){this.tilesById.clear();for(let[e,n]of t)this.tilesById.set(e,{...n})}compactAll(){let t=ot(this);t.length>0&&this.changes.emit({type:"compact",tileIds:t})}pack(){let t=this.tiles.filter(v);if(t.length===0)return!1;let e=Number.isFinite(this.config.cols)?this.config.cols:0;if(e<=0)return!1;let n=1/0,i=1/0,r=-1/0,s=-1/0,c=0;for(let f of t)n=Math.min(n,f.col),i=Math.min(i,f.row),r=Math.max(r,f.col+f.w),s=Math.max(s,f.row+f.h),c+=f.w*f.h;if((r-n)*(s-i)===c){if(n===0&&i===0)return!1;let f=[];for(let a of t)this._setTilePos(a.id,{col:a.col-n,row:a.row-i}),f.push(a.id);return this.changes.emit({type:"compact",tileIds:f}),!0}let w=et(t.map(f=>({id:f.id,w:Math.min(f.w,e),h:f.h})),e);if(!w)return!1;let h=[];for(let f of t){let a=w.placements.get(f.id);if(!a)continue;let u=Math.min(f.w,e);(a.col!==f.col||a.row!==f.row||u!==f.w)&&(this._setTileRect(f.id,{col:a.col,row:a.row,w:u,h:f.h}),h.push(f.id))}return h.length>0&&this.changes.emit({type:"compact",tileIds:h}),h.length>0}toJSON(){return{version:1,config:{...this.config},tiles:this.tiles.map(t=>({...t}))}}loadJSON(t){if(t.version!==1)throw new Error(`Griddle: unsupported snapshot version ${t.version}`);let e=F(t.config);C(e);let n=t.tiles.map(i=>({...i}));B(e,n),this.config=e,this.tilesById.clear();for(let i of n)this.tilesById.set(i.id,i);this.changes.emit({type:"load",tileIds:this.tiles.map(i=>i.id)})}static fromJSON(t){if(t.version!==1)throw new Error(`Griddle: unsupported snapshot version ${t.version}`);let e=new o(t.config,t.tiles);return e.changes.emit({type:"load",tileIds:e.tiles.map(n=>n.id)}),e}};return dt(Et);})();
@@ -223,398 +213,271 @@ body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--text);
 <script>
 (function(){
 'use strict';
-const Grid = GriddleLib.Grid;
-const reduce = matchMedia('(prefers-reduced-motion:reduce)').matches;
+const Grid=GriddleLib.Grid;
+const reduce=matchMedia('(prefers-reduced-motion:reduce)').matches;
+const root=document.documentElement;
 
-/* ---------------- content ---------------- */
-const CARDS = [
-  { id:'headline', app:'Griddle Window Manager', tier:0, w:5, h:3,
-    hero:'<h1 class="headline">Every window,<span class="br">right where it belongs.</span></h1>',
-    body:'<h1 class="headline">Every window,<span class="br">right where it belongs.</span></h1>',
+/* Content authored ONCE, for the grid. The hero reuses these very nodes. */
+const CARDS=[
+  { id:'headline', app:'Griddle Window Manager', tier:0, w:5, h:3, hero:1,
+    html:'<h1 class="headline">Every window,<span class="br">right where it belongs.</span></h1>',
     title:'Every window, right where it belongs.',
-    detail:'<p class="detail">Windows 11 gives you halves and quarters. Griddle gives you a real grid — say 12 columns by 6 rows — and lets any window claim any rectangle of cells.</p><p class="detail">Drag a window and a translucent overlay shows exactly where it lands and which neighbours it pushes. Release to snap. <strong>Which is what you are doing right now</strong> — this page runs the same layout engine the app does.</p>' },
-  { id:'foss', app:'License', tier:0, w:3, h:1,
-    hero:'<div class="eyebrow">Free · Open source · Windows 11</div>',
-    body:'<div class="eyebrow">Free · Open source</div>',
+    detail:'<p class="dbody">Windows 11 gives you halves and quarters. Griddle gives you a real grid — say 12 columns by 6 rows — and lets any window claim any rectangle of cells.</p><p class="dbody">Drag one and an overlay shows exactly where it lands and which neighbours it pushes. <b>Which is what you are doing right now</b> — this page runs the same layout engine the app does.</p>' },
+  { id:'foss', app:'License', tier:0, w:3, h:1, hero:1,
+    html:'<div class="eyebrow">Free · Open source · Windows 11</div>',
     title:'MIT licensed',
-    detail:'<p class="detail">Free and open source under the MIT licence. No account, no paid tier, no telemetry. The full source, the design specs, and the entire commit history are public.</p>' },
-  { id:'dek', app:'What it does', tier:0, w:4, h:2,
-    hero:'<p class="dek">Windows 11 gives you halves and quarters. Griddle gives you a grid you design yourself — and drops every window exactly where you meant it to go.</p>',
-    body:'<p class="dek">A grid you design yourself, and every window exactly where you meant it to go.</p>',
+    detail:'<p class="dbody">Free and open source under the MIT licence. No account, no paid tier, no telemetry. The full source, the design specs, and the entire commit history are public.</p>' },
+  { id:'dek', app:'What it does', tier:0, w:4, h:2, hero:1,
+    html:'<p class="dek">A grid you design yourself — and every window exactly where you meant it to go.</p>',
     title:'What it does',
-    detail:'<p class="detail">Enable a grid on any monitor and every eligible window snaps into it. Save arrangements as <strong>templates</strong>, pin apps to their usual spot with <strong>per-app defaults</strong>, and restore your whole desktop at startup with <strong>views</strong>.</p><p class="detail">Grids work per monitor, or span several at once.</p>' },
-  { id:'cta', app:'Download', tier:0, w:4, h:2,
-    hero:'<a class="cta" href="https://github.com/DadsDoingDesign/GriddleWindowManager/releases/latest" target="_blank" rel="noopener">Download for Windows 11</a><div class="meta">v0.2.0 · 3.1 MB · x64</div>',
-    body:'<a class="cta" href="https://github.com/DadsDoingDesign/GriddleWindowManager/releases/latest" target="_blank" rel="noopener">Download for Windows 11</a><div class="meta">v0.2.0 · 3.1 MB · x64</div>',
+    detail:'<p class="dbody">Enable a grid on any monitor and every eligible window snaps into it. Save arrangements as <b>templates</b>, pin apps to their usual spot with <b>per-app defaults</b>, and restore your whole desktop at startup with <b>views</b>.</p>' },
+  { id:'cta', app:'Download', tier:0, w:4, h:2, hero:1,
+    html:'<a class="cta" href="https://github.com/DadsDoingDesign/GriddleWindowManager/releases/latest" target="_blank" rel="noopener">Download for Windows 11</a><div class="meta">v0.2.0 · 3.1 MB · x64</div>',
     title:'Download',
-    detail:'<p class="detail">Version 0.2.0, 3.1 MB, x64. It installs <strong>per-user</strong> — no administrator rights needed.</p><p class="detail">The installer is not code-signed, so SmartScreen will warn you once: choose <strong>More info → Run anyway</strong>. That warning means Windows does not recognise the publisher, not that anything is wrong — and you can always build from source instead.</p>' },
+    detail:'<p class="dbody">Version 0.2.0, 3.1 MB, x64. Installs <b>per-user</b> — no administrator rights needed.</p><p class="dbody">The installer is not code-signed, so SmartScreen warns once: choose <b>More info → Run anyway</b>. That means Windows does not recognise the publisher, not that anything is wrong.</p>' },
   { id:'vscode', app:'Visual Studio Code', tier:1, w:4, h:3, lines:[76,52,64], accent:'#4A9EDB' },
-  { id:'figma',  app:'Figma',  tier:1, w:4, h:2, lines:[68,46,58], accent:'#A259FF' },
+  { id:'figma',  app:'Figma',  tier:1, w:4, h:2, lines:[68,46], accent:'#A259FF' },
   { id:'chrome', app:'Chrome', tier:2, w:3, h:3, lines:[60,40,50], accent:'#F5A623' },
   { id:'slack',  app:'Slack',  tier:3, w:3, h:1, lines:[62], accent:'#E01E5A' },
   { id:'local', app:'Privacy', tier:3, w:3, h:1,
-    body:'<div class="applabel"><strong style="color:var(--ink)">Stays on your machine.</strong> No telemetry, no account.</div>',
+    html:'<div class="applabel"><b>Stays on your machine.</b> No telemetry, no account.</div>',
     title:'It stays on your machine',
-    detail:'<p class="detail">No telemetry, no analytics, no account. Your window titles never leave your machine. The one network feature is an update check — <strong>opt-in and off by default</strong>.</p>' },
+    detail:'<p class="dbody">No telemetry, no analytics, no account. Your window titles never leave your machine. The one network feature is an update check — <b>opt-in and off by default</b>.</p>' },
   { id:'safe', app:'Reversible', tier:3, w:3, h:1,
-    body:'<div class="applabel"><strong style="color:var(--ink)">Nothing is destroyed.</strong> Turn a grid off, windows stay put.</div>',
+    html:'<div class="applabel"><b>Nothing is destroyed.</b> Turn a grid off, windows stay put.</div>',
     title:'Nothing is destroyed',
-    detail:'<p class="detail">Turn a grid off and every window stays exactly where it is. There is also a <strong>Pause</strong> switch in the tray — the panic button — which stops all tracking instantly and survives restarts.</p>' },
+    detail:'<p class="dbody">Turn a grid off and every window stays exactly where it is. There is also a <b>Pause</b> switch in the tray — the panic button — which stops all tracking instantly.</p>' },
 ];
+const SEATS={headline:[0,0],vscode:[5,0],chrome:[9,0],dek:[0,3],cta:[4,3],figma:[8,3],
+             foss:[0,5],local:[3,5],safe:[6,5],slack:[9,5]};
 
-function appBody(c){
-  const dots = c.lines.map(w=>`<div class="ln" style="width:${w}%"></div>`).join('');
-  return `<div class="lines">${dots}</div>`;
-}
+let cols=12,rows=6,gap=10,mode='push';
+const PAD=24;
+let grid=null,expandedId=null,started=false,didDrag=false,drag=null;
+const els=new Map();
+const stage=document.getElementById('stage'),gridwrap=document.getElementById('gridwrap'),
+      cellsEl=document.getElementById('cells'),dropzone=document.getElementById('dropzone'),
+      controls=document.getElementById('controls'),scrim=document.getElementById('scrim'),
+      hint=document.getElementById('hint'),note=document.getElementById('note');
 
-/* ---------------- state ---------------- */
-let cols=12, rows=6, gap=10;
-const PAD=26;
-let grid=null, expandedId=null, phase='hero';
-const els=new Map(); // id -> {root, tb, body}
-const stage=document.getElementById('stage');
-const gridwrap=document.getElementById('gridwrap');
-const cellsEl=document.getElementById('cells');
-const dropzone=document.getElementById('dropzone');
-const controls=document.getElementById('controls');
-const scrim=document.getElementById('scrim');
-const skipBtn=document.getElementById('skip');
-const evictedEl=document.getElementById('evicted');
+function panelRect(){const w=innerWidth,h=innerHeight,mx=Math.max(16,Math.min(64,w*.045));
+  const top=68,bot=Math.min(86,h*.11);return{x:mx,y:top,w:w-mx*2,h:h-top-bot};}
+function tierLimit(){const w=innerWidth,h=innerHeight;
+  if(w<760||h<520)return 0; if(w<1060)return 1; if(w<1400)return 2; return 3;}
+function unit(){const p=panelRect();
+  return{uw:(p.w-PAD*2-gap*(cols-1))/cols,uh:(p.h-PAD*2-gap*(rows-1))/rows,p};}
+function cellRect(c,r,w,h){const{uw,uh,p}=unit();
+  return{x:p.x+PAD+c*(uw+gap),y:p.y+PAD+r*(uh+gap),w:uw*w+gap*(w-1),h:uh*h+gap*(h-1)};}
 
-function panelRect(){
-  const w=innerWidth, h=innerHeight;
-  const mx=Math.max(20, Math.min(72, w*0.05));
-  const top=76, bot=94;
-  return { x:mx, y:top, w:w-mx*2, h:h-top-bot };
-}
-function tierLimit(){
-  const w=innerWidth;
-  if(w<720) return 0;
-  if(w<1040) return 1;
-  if(w<1400) return 2;
-  return 3;
-}
-function activeCards(){ const t=tierLimit(); return CARDS.filter(c=>c.tier<=t); }
-
-function unit(){
-  const p=panelRect();
-  const uw=(p.w-PAD*2-gap*(cols-1))/cols;
-  const uh=(p.h-PAD*2-gap*(rows-1))/rows;
-  return {uw,uh,p};
-}
-function cellRect(col,row,w,h){
-  const {uw,uh,p}=unit();
-  return { x:p.x+PAD+col*(uw+gap), y:p.y+PAD+row*(uh+gap),
-           w:uw*w+gap*(w-1), h:uh*h+gap*(h-1) };
-}
-
-/* ---------------- build DOM ---------------- */
 function build(){
   for(const c of CARDS){
-    const root=document.createElement('div');
-    root.className='card anim';
-    root.dataset.id=c.id;
+    const el=document.createElement('div');
+    el.className='card'+(c.hero?' inhero':'');
+    el.dataset.id=c.id;
     const tb=document.createElement('div');
     tb.className='titlebar';
-    tb.innerHTML=`<span class="dot" style="${c.accent?`background:${c.accent}`:''}"></span>
-      <span class="tbname">${c.app}</span><span class="tbhint">drag · click to open</span>
-      <button class="closebtn" aria-label="Close">✕</button>`;
-    const body=document.createElement('div');
-    body.className='body';
-    const tileHtml = c.body || appBody(c);
-    const mk=(cls,html)=>{const d=document.createElement('div');d.className='st '+cls;d.innerHTML=html;return d;};
-    body.append(
-      mk('st-hero', c.hero || tileHtml),
-      mk('st-tile', tileHtml),
-      mk('st-detail', `<h2 class="dtitle">${c.title||c.app}</h2>${c.detail||'<p class="detail">A window managed by Griddle. Drag it anywhere on the grid; its neighbours move out of the way.</p>'}`)
-    );
-    root.dataset.state='hero';
-    root.append(tb,body);
-    stage.append(root);
-    els.set(c.id,{root,tb,body,spec:c});
-    tb.addEventListener('pointerdown',e=>onDragStart(e,c.id));
-    tb.addEventListener('click',e=>{
-      if(e.target.closest('.closebtn')){ collapse(); return; }
-      if(!didDrag) toggleExpand(c.id);
-    });
-    root.addEventListener('click',e=>{
-      if(phase!=='grid') return;
-      if(e.target.closest('a,button')) return;
-      if(expandedId===c.id) return;
-      if(!didDrag && !e.target.closest('.titlebar')) toggleExpand(c.id);
+    tb.innerHTML=`<span class="dot"${c.accent?` style="background:${c.accent}"`:''}></span>
+      <span class="tbname">${c.app}</span><button class="closebtn" aria-label="Close">✕</button>`;
+    const content=document.createElement('div');
+    content.className='content';
+    content.innerHTML=c.html||`<div class="lines">${(c.lines||[]).map(w=>`<div class="ln" style="width:${w}%"></div>`).join('')}</div>`;
+    const det=document.createElement('div');
+    det.className='detail';
+    det.innerHTML=`<h2 class="dtitle">${c.title||c.app}</h2>${c.detail||'<p class="dbody">A window managed by Griddle. Drag it anywhere; its neighbours move out of the way.</p>'}`;
+    el.append(tb,content,det);
+    stage.append(el);
+    els.set(c.id,{el,tb});
+    tb.addEventListener('pointerdown',e=>dragStart(e,c.id));
+    el.addEventListener('click',e=>{
+      if(e.target.closest('.closebtn')){collapse();return;}
+      if(!started||didDrag||e.target.closest('a'))return;
+      if(expandedId!==c.id)expand(c.id);
     });
   }
 }
+function place(id,r,d){const e=els.get(id);if(!e)return;
+  if(d!==undefined)e.el.style.setProperty('--dur',d+'ms');
+  e.el.style.transform=`translate(${r.x}px,${r.y}px)`;
+  e.el.style.width=r.w+'px';e.el.style.height=r.h+'px';}
 
-function place(id,r,opts){
-  const e=els.get(id); if(!e) return;
-  e.root.style.transform=`translate(${r.x}px,${r.y}px)`;
-  e.root.style.width=r.w+'px';
-  e.root.style.height=r.h+'px';
-  if(opts&&opts.d!==undefined) e.root.style.setProperty('--d',opts.d+'ms');
-}
-
-/* ---------------- hero layout ---------------- */
+/* Hero geometry is DERIVED: same cards, laid out as a centred stack. */
 function layoutHero(){
   const W=innerWidth,H=innerHeight;
-  const cw=Math.min(1000,W-56);
-  const cx=(W-cw)/2;
-  const sizes={
-    foss:{w:cw,h:20},
-    headline:{w:cw,h:Math.min(190,H*0.26)},
-    dek:{w:Math.min(680,cw),h:64},
-    cta:{w:Math.min(420,cw),h:84},
-  };
-  const gapY=[22,26,30];
-  const total=sizes.foss.h+gapY[0]+sizes.headline.h+gapY[1]+sizes.dek.h+gapY[2]+sizes.cta.h;
-  let y=(H-total)/2;
+  const cw=Math.min(940,W-48);
+  const rowsH={foss:18,headline:Math.min(200,H*.30),dek:Math.min(72,H*.11),cta:Math.min(92,H*.14)};
+  const gaps={foss:20,headline:22,dek:26};
   const order=['foss','headline','dek','cta'];
-  order.forEach((id,i)=>{
-    const s=sizes[id];
-    place(id,{x:(W-s.w)/2,y,w:s.w,h:s.h});
-    y+=s.h+(gapY[i]||0);
-  });
-  // non-hero cards wait above the fold, invisible
+  const total=order.reduce((s,id)=>s+rowsH[id]+(gaps[id]||0),0);
+  let y=Math.max(70,(H-total)/2);
+  for(const id of order){
+    const w=id==='dek'?Math.min(640,cw):id==='cta'?Math.min(400,cw):cw;
+    place(id,{x:(W-w)/2,y,w,h:rowsH[id]},0);
+    y+=rowsH[id]+(gaps[id]||0);
+  }
   for(const c of CARDS){
-    if(order.includes(c.id)) continue;
-    const e=els.get(c.id);
-    e.root.classList.add('parked');
-    place(c.id,{x:W/2-120,y:-200,w:240,h:150});
+    if(c.hero)continue;
+    els.get(c.id).el.classList.add('parked');
+    place(c.id,{x:W/2-120,y:H+60,w:240,h:140},0);
   }
-  for(const id of order) els.get(id).root.classList.add('hero-mode');
 }
-
-/* ---------------- grid layout ---------------- */
 function seedGrid(){
-  const {uw,uh}=unit();
+  const{uw,uh}=unit();
   grid=new Grid({cols,rows,unitWidth:Math.max(1,uw),unitHeight:Math.max(1,uh)});
-  // 12x6 = 72 cells; the full set packs it exactly, smaller tiers leave room to drag into
-  const seats=[
-    ['headline',0,0],['vscode',5,0],['chrome',9,0],
-    ['dek',0,3],['cta',4,3],['figma',8,3],
-    ['foss',0,5],['local',3,5],['safe',6,5],['slack',9,5],
-  ];
-  const active=new Set(activeCards().map(c=>c.id));
-  for(const [id,col,row] of seats){
-    if(!active.has(id)) continue;
-    const c=CARDS.find(x=>x.id===id);
-    const w=Math.min(c.w,cols), h=Math.min(c.h,rows);
-    const t={id,col:Math.min(col,cols-w),row:Math.min(row,rows-h),w,h};
-    if(!grid.addTileWithDisplacement(t)){ /* no room; card stays hidden */ }
+  const lim=tierLimit();
+  for(const c of CARDS){
+    if(c.tier>lim)continue;
+    const[sc,sr]=SEATS[c.id];
+    const w=Math.min(c.w,cols),h=Math.min(c.h,rows);
+    grid.addTileWithDisplacement({id:c.id,col:Math.min(sc,cols-w),row:Math.min(sr,rows-h),w,h});
   }
 }
-
 function renderCells(){
   const p=panelRect();
-  gridwrap.style.left=p.x+'px'; gridwrap.style.top=p.y+'px';
-  gridwrap.style.width=p.w+'px'; gridwrap.style.height=p.h+'px';
-  cellsEl.innerHTML='';
-  const {uw,uh}=unit();
-  for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
-    const d=document.createElement('div');
-    d.className='cell';
-    d.style.left=(PAD+c*(uw+gap))+'px'; d.style.top=(PAD+r*(uh+gap))+'px';
-    d.style.width=uw+'px'; d.style.height=uh+'px';
-    cellsEl.append(d);
-  }
+  gridwrap.style.cssText=`left:${p.x}px;top:${p.y}px;width:${p.w}px;height:${p.h}px`;
+  const{uw,uh}=unit();let s='';
+  for(let r=0;r<rows;r++)for(let c=0;c<cols;c++)
+    s+=`<div class="cell" style="left:${PAD+c*(uw+gap)}px;top:${PAD+r*(uh+gap)}px;width:${uw}px;height:${uh}px"></div>`;
+  cellsEl.innerHTML=s;
 }
-
-function syncTiles(dur){
-  const placed=new Set();
+function sync(d){
+  const seen=new Set();
   for(const t of grid.tiles){
-    placed.add(t.id);
-    const e=els.get(t.id); if(!e) continue;
-    e.root.classList.remove('parked');
-    e.root.classList.add('chromed');
-    e.root.classList.remove('hero-mode');
-    if(expandedId!==t.id) place(t.id,cellRect(t.col,t.row,t.w,t.h),{d:dur});
+    seen.add(t.id);
+    const e=els.get(t.id);if(!e)continue;
+    e.el.classList.remove('parked');
+    if(expandedId!==t.id)place(t.id,cellRect(t.col,t.row,t.w,t.h),d);
   }
-  for(const c of CARDS){
-    if(placed.has(c.id)) continue;
-    const e=els.get(c.id);
-    e.root.classList.add('parked');
-    e.root.classList.remove('chromed');
-  }
+  for(const c of CARDS)if(!seen.has(c.id))els.get(c.id).el.classList.add('parked');
 }
-
-function setState(id,state){
-  const e=els.get(id); if(e) e.root.dataset.state=state;
-}
-function swapToGridContent(){
-  for(const c of CARDS) setState(c.id,'tile');
-}
-
-/* ---------------- the morph ---------------- */
-let started=false;
 function start(){
-  if(started) return; started=true;
-  skipBtn.classList.add('gone');
-  seedGrid();
-  renderCells();
-  gridwrap.classList.add('on');
-  swapToGridContent();
-  const dur=reduce?1:800;
-  syncTiles(dur);
-  setTimeout(()=>{ controls.classList.add('on'); phase='grid'; }, reduce?10:620);
+  if(started)return;started=true;
+  hint.classList.add('gone');
+  seedGrid();renderCells();
+  root.dataset.phase='grid';
+  sync(reduce?1:820);
+  setTimeout(()=>controls.classList.add('on'),reduce?10:560);
 }
 
-/* ---------------- drag ---------------- */
-let drag=null, didDrag=false;
-function onDragStart(e,id){
-  if(phase!=='grid'||expandedId) return;
-  if(e.target.closest('.closebtn')) return;
-  const t=grid.getTile(id); if(!t) return;
-  const e2=els.get(id);
+function dragStart(e,id){
+  if(!started||expandedId)return;
+  const t=grid.getTile(id);if(!t)return;
+  const el=els.get(id).el,r=cellRect(t.col,t.row,t.w,t.h);
   didDrag=false;
-  const r=cellRect(t.col,t.row,t.w,t.h);
-  drag={id,tile:t,startX:e.clientX,startY:e.clientY,ox:e.clientX-r.x,oy:e.clientY-r.y,rect:r,target:{col:t.col,row:t.row}};
-  e2.root.classList.add('dragging');
-  e2.root.classList.remove('anim');
-  e2.root.style.zIndex='50';
-  e2.root.style.boxShadow='var(--shadow-hi)';
-  e2.tb.setPointerCapture(e.pointerId);
-  addEventListener('pointermove',onDragMove);
-  addEventListener('pointerup',onDragEnd,{once:true});
+  drag={id,t,sx:e.clientX,sy:e.clientY,ox:e.clientX-r.x,oy:e.clientY-r.y,to:{col:t.col,row:t.row}};
+  el.classList.add('dragging');el.style.setProperty('--dur','0ms');
+  el.style.zIndex='50';el.style.boxShadow='var(--shadow-hi)';
+  addEventListener('pointermove',dragMove);addEventListener('pointerup',dragEnd,{once:true});
 }
-function onDragMove(e){
-  if(!drag) return;
-  const dx=e.clientX-drag.startX, dy=e.clientY-drag.startY;
-  if(Math.abs(dx)>3||Math.abs(dy)>3) didDrag=true;
-  const x=e.clientX-drag.ox, y=e.clientY-drag.oy;
-  const el=els.get(drag.id);
-  el.root.style.transform=`translate(${x}px,${y}px)`;
-  const {uw,uh,p}=unit();
-  let col=Math.round((x-p.x-PAD)/(uw+gap));
-  let row=Math.round((y-p.y-PAD)/(uh+gap));
-  col=Math.max(0,Math.min(cols-drag.tile.w,col));
-  row=Math.max(0,Math.min(rows-drag.tile.h,row));
-  drag.target={col,row};
-  const dr=cellRect(col,row,drag.tile.w,drag.tile.h);
-  dropzone.style.left=(dr.x-p.x)+'px'; dropzone.style.top=(dr.y-p.y)+'px';
-  dropzone.style.width=dr.w+'px'; dropzone.style.height=dr.h+'px';
+function dragMove(e){
+  if(!drag)return;
+  if(Math.abs(e.clientX-drag.sx)>3||Math.abs(e.clientY-drag.sy)>3)didDrag=true;
+  const x=e.clientX-drag.ox,y=e.clientY-drag.oy;
+  els.get(drag.id).el.style.transform=`translate(${x}px,${y}px)`;
+  const{uw,uh,p}=unit();
+  const col=Math.max(0,Math.min(cols-drag.t.w,Math.round((x-p.x-PAD)/(uw+gap))));
+  const row=Math.max(0,Math.min(rows-drag.t.h,Math.round((y-p.y-PAD)/(uh+gap))));
+  drag.to={col,row};
+  const dr=cellRect(col,row,drag.t.w,drag.t.h);
+  dropzone.style.cssText=`left:${dr.x-p.x}px;top:${dr.y-p.y}px;width:${dr.w}px;height:${dr.h}px`;
   dropzone.classList.add('on');
 }
-function onDragEnd(){
-  if(!drag) return;
-  removeEventListener('pointermove',onDragMove);
+function dragEnd(){
+  if(!drag)return;
+  removeEventListener('pointermove',dragMove);
   dropzone.classList.remove('on');
-  const el=els.get(drag.id);
-  el.root.classList.remove('dragging');
-  el.root.classList.add('anim');
-  el.root.style.zIndex='';
-  el.root.style.boxShadow='';
-  grid.moveTile(drag.id,{col:drag.target.col,row:drag.target.row});
-  drag=null;
-  syncTiles(reduce?1:420);
+  const el=els.get(drag.id).el;
+  el.classList.remove('dragging');el.style.zIndex='';el.style.boxShadow='';
+  if(mode==='stack'){
+    const dr=cellRect(drag.to.col,drag.to.row,drag.t.w,drag.t.h);
+    grid.moveTile(drag.id,drag.to)||place(drag.id,dr,reduce?1:400);
+    el.style.zIndex='40';
+  } else {
+    grid.moveTile(drag.id,drag.to);
+  }
+  drag=null;sync(reduce?1:440);
   setTimeout(()=>{didDrag=false;},60);
 }
-
-/* ---------------- expand ---------------- */
-function toggleExpand(id){
-  if(expandedId===id){ collapse(); return; }
-  if(expandedId) collapse(true);
-  const e=els.get(id);
-  if(!grid.getTile(id)) return;
+function expand(id){
+  if(!grid.getTile(id))return;
+  if(expandedId)collapse(true);
   expandedId=id;
-  setState(id,'detail');
-  const W=innerWidth,H=innerHeight;
-  const w=Math.min(620,W-64), h=Math.min(430,H-140);
-  e.root.style.zIndex='90';
-  e.root.classList.add('expanded');
-  place(id,{x:(W-w)/2,y:(H-h)/2,w,h},{d:reduce?1:460});
+  const el=els.get(id).el;
+  el.classList.add('expanded');
+  const W=innerWidth,H=innerHeight,w=Math.min(600,W-56),h=Math.min(400,H-120);
+  place(id,{x:(W-w)/2,y:(H-h)/2,w,h},reduce?1:460);
   scrim.classList.add('on');
 }
 function collapse(quiet){
-  if(!expandedId) return;
-  const id=expandedId, e=els.get(id);
-  expandedId=null;
-  e.root.classList.remove('expanded');
-  setState(id,'tile');
+  if(!expandedId)return;
+  const id=expandedId;expandedId=null;
+  const el=els.get(id).el;
+  el.classList.remove('expanded');
   const t=grid.getTile(id);
-  if(t) place(id,cellRect(t.col,t.row,t.w,t.h),{d:reduce?1:460});
-  setTimeout(()=>{ e.root.style.zIndex=''; },460);
-  if(!quiet) scrim.classList.remove('on');
+  if(t)place(id,cellRect(t.col,t.row,t.w,t.h),reduce?1:460);
+  setTimeout(()=>{el.style.zIndex='';},470);
+  if(!quiet)scrim.classList.remove('on');
 }
-
-/* ---------------- controls ---------------- */
-function flashEvicted(n){
-  if(!n) return;
-  evictedEl.textContent = n===1 ? '1 window did not fit' : `${n} windows did not fit`;
-  evictedEl.classList.add('on');
-  clearTimeout(flashEvicted._t);
-  flashEvicted._t=setTimeout(()=>evictedEl.classList.remove('on'),2600);
+function flash(n){
+  if(!n)return;
+  note.textContent=n===1?'1 window did not fit':`${n} windows did not fit`;
+  note.classList.add('on');clearTimeout(flash._t);
+  flash._t=setTimeout(()=>note.classList.remove('on'),2600);
 }
 function applyDims(nc,nr){
-  const before=grid.tiles.length;
-  const snapshot=grid.tiles.map(t=>({...t}));
-  cols=nc; rows=nr;
-  const {uw,uh}=unit();
+  const snap=grid.tiles.map(t=>({...t}));
+  cols=nc;rows=nr;
+  const{uw,uh}=unit();
   grid=new Grid({cols,rows,unitWidth:Math.max(1,uw),unitHeight:Math.max(1,uh)});
   let dropped=0;
-  for(const t of snapshot){
-    const w=Math.min(t.w,cols), h=Math.min(t.h,rows);
-    const col=Math.max(0,Math.min(t.col,cols-w));
-    const row=Math.max(0,Math.min(t.row,rows-h));
-    if(!grid.addTileWithDisplacement({id:t.id,col,row,w,h})) dropped++;
+  for(const t of snap){
+    const w=Math.min(t.w,cols),h=Math.min(t.h,rows);
+    if(!grid.addTileWithDisplacement({id:t.id,col:Math.max(0,Math.min(t.col,cols-w)),row:Math.max(0,Math.min(t.row,rows-h)),w,h}))dropped++;
   }
   document.getElementById('colsVal').textContent=cols;
   document.getElementById('rowsVal').textContent=rows;
-  renderCells();
-  syncTiles(reduce?1:520);
-  flashEvicted(dropped);
-  updateBtns();
+  renderCells();sync(reduce?1:520);flash(dropped);btns();
 }
-function updateBtns(){
-  document.getElementById('colsDec').disabled = cols<=4;
-  document.getElementById('colsInc').disabled = cols>=20;
-  document.getElementById('rowsDec').disabled = rows<=3;
-  document.getElementById('rowsInc').disabled = rows>=10;
-  document.getElementById('gapDec').disabled = gap<=0;
-  document.getElementById('gapInc').disabled = gap>=28;
+function btns(){
+  document.getElementById('colsDec').disabled=cols<=4;
+  document.getElementById('colsInc').disabled=cols>=20;
+  document.getElementById('rowsDec').disabled=rows<=3;
+  document.getElementById('rowsInc').disabled=rows>=10;
+  document.getElementById('gapDec').disabled=gap<=0;
+  document.getElementById('gapInc').disabled=gap>=28;
 }
 document.getElementById('colsInc').onclick=()=>applyDims(Math.min(20,cols+1),rows);
 document.getElementById('colsDec').onclick=()=>applyDims(Math.max(4,cols-1),rows);
 document.getElementById('rowsInc').onclick=()=>applyDims(cols,Math.min(10,rows+1));
 document.getElementById('rowsDec').onclick=()=>applyDims(cols,Math.max(3,rows-1));
-document.getElementById('gapInc').onclick=()=>{gap=Math.min(28,gap+2);document.getElementById('gapVal').textContent=gap;renderCells();syncTiles(reduce?1:380);updateBtns();};
-document.getElementById('gapDec').onclick=()=>{gap=Math.max(0,gap-2);document.getElementById('gapVal').textContent=gap;renderCells();syncTiles(reduce?1:380);updateBtns();};
-
-/* ---------------- theme ---------------- */
+document.getElementById('gapInc').onclick=()=>{gap=Math.min(28,gap+2);document.getElementById('gapVal').textContent=gap;renderCells();sync(reduce?1:380);btns();};
+document.getElementById('gapDec').onclick=()=>{gap=Math.max(0,gap-2);document.getElementById('gapVal').textContent=gap;renderCells();sync(reduce?1:380);btns();};
+document.getElementById('modeSel').onchange=e=>{mode=e.target.value;};
 document.getElementById('themeBtn').onclick=()=>{
-  const cur=document.documentElement.getAttribute('data-theme');
-  const sysDark=matchMedia('(prefers-color-scheme:dark)').matches;
-  const now = cur ? cur : (sysDark?'dark':'light');
-  document.documentElement.setAttribute('data-theme', now==='dark'?'light':'dark');
+  const cur=root.getAttribute('data-theme');
+  const sys=matchMedia('(prefers-color-scheme:dark)').matches;
+  root.setAttribute('data-theme',(cur?cur:(sys?'dark':'light'))==='dark'?'light':'dark');
 };
-
-/* ---------------- wiring ---------------- */
 scrim.addEventListener('click',()=>collapse());
 addEventListener('keydown',e=>{
-  if(e.key==='Escape'){ if(expandedId) collapse(); return; }
-  if(!started && !e.metaKey && !e.ctrlKey && !e.altKey){ start(); }
+  if(e.key==='Escape'){collapse();return;}
+  if(!started&&!e.metaKey&&!e.ctrlKey&&!e.altKey)start();
 });
-skipBtn.addEventListener('click',start);
-stage.addEventListener('click',e=>{ if(!started && !e.target.closest('a,button')) start(); });
+hint.addEventListener('click',start);
+stage.addEventListener('click',e=>{if(!started&&!e.target.closest('a,button'))start();});
+let rt;addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(()=>{
+  if(!started){layoutHero();return;}
+  renderCells();
+  if(expandedId){const W=innerWidth,H=innerHeight,w=Math.min(600,W-56),h=Math.min(400,H-120);
+    place(expandedId,{x:(W-w)/2,y:(H-h)/2,w,h},1);}
+  sync(1);
+},130);});
 
-let rt;
-addEventListener('resize',()=>{
-  clearTimeout(rt);
-  rt=setTimeout(()=>{
-    if(!started){ layoutHero(); return; }
-    renderCells();
-    if(expandedId){ const c=els.get(expandedId);
-      const W=innerWidth,H=innerHeight,w=Math.min(620,W-64),h=Math.min(430,H-140);
-      place(expandedId,{x:(W-w)/2,y:(H-h)/2,w,h},{d:1}); }
-    syncTiles(1);
-  },120);
-});
-
+root.dataset.phase='hero';
 build();
-layoutHero();
-updateBtns();
-// ?hold freezes the intro so the hero composition can be inspected; any key or click still starts it.
+requestAnimationFrame(()=>{layoutHero();
+  requestAnimationFrame(()=>{for(const[,e]of els)e.el.style.removeProperty('--dur');});});
+btns();
 const hold=new URLSearchParams(location.search).has('hold');
-if(reduce) start();
-else if(!hold) setTimeout(()=>{ if(!started) start(); }, 2600);
+if(reduce)start();else if(!hold)setTimeout(()=>{if(!started)start();},2400);
 })();
 </script>
