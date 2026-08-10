@@ -1,0 +1,64 @@
+name: CI
+
+# Griddle Window Manager is Windows-only: the Rust shell is Win32-specific
+# (SetWinEventHook, DeferWindowPos) and does not compile elsewhere, so there is
+# no point running a matrix.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Test and build (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      # MSRV is pinned to 1.81 in apps/desktop/src-tauri/Cargo.toml
+      # (rust-version); `stable` satisfies it. The MSVC toolchain and the
+      # Windows SDK are preinstalled on windows-latest runners.
+      - name: Set up Rust (stable, MSVC)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - name: Install npm workspaces
+        run: npm ci
+
+      # Pure-TS layout brain. No GUI, no Win32, no Tauri — this is the fast
+      # suite and it carries most of the behavioural coverage.
+      - name: Test layout brain (vitest)
+        run: npm run test -w packages/brain
+
+      # Rust shell: guard policy, config, actuator math, tracker, monitors.
+      # Does not need the frontend bundle — `tauri::generate_context!` tolerates
+      # an absent frontendDist in the dev profile.
+      - name: Test Rust shell (cargo)
+        working-directory: apps/desktop/src-tauri
+        run: cargo test --locked
+
+      # Vite build of the three webviews (brain host, settings, overlay).
+      # This is what `tauri build` consumes via beforeBuildCommand.
+      - name: Build frontend bundle
+        run: npm run build -w apps/desktop

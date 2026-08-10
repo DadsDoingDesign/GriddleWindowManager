@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/DadsDoingDesign/GriddleWindowManager/security/advisories/new
+    about: Do not open a public issue for security problems. Report privately here; see SECURITY.md for the threat model and what to expect.
+  - name: Bug in the @griddle layout library
+    url: https://github.com/Trustybits/griddle/issues
+    about: Griddle Window Manager builds on the third-party @griddle library by Trustybits. Bugs in grid movement or reflow semantics belong upstream.
+  - name: Already-known deferrals
+    url: https://github.com/DadsDoingDesign/GriddleWindowManager/blob/master/docs/deferred.md
+    about: Features consciously left out of v0.2.0, with the reason for each. Check here before filing a feature request.

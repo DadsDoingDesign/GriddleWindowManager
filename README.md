@@ -229,6 +229,28 @@ apps/desktop/src-tauri/  Rust shell: tracker, actuator, monitors, overlays, tray
 docs/                    design spec, plan, security review, deferred items
 ```
 
+## Contributing
+
+Bug reports and pull requests are welcome.
+[`CONTRIBUTING.md`](CONTRIBUTING.md) has the prerequisites, the three commands
+CI runs, and the architecture rules a change has to respect (the brain stays
+pure TypeScript, only `actuator.rs` moves windows, IPC changes land on both
+sides of the contract). GUI-affecting changes need a pass through
+[`docs/smoke-test-v0.2.0.md`](docs/smoke-test-v0.2.0.md) — the automated suites
+cover logic, not pixels.
+
+Participation is under the [Code of Conduct](CODE_OF_CONDUCT.md). Security
+issues go through the private channel in [`SECURITY.md`](SECURITY.md), never a
+public issue. Release mechanics are in [`docs/RELEASING.md`](docs/RELEASING.md).
+
+The grid movement and reflow logic comes from
+[`@griddle/core`](https://www.npmjs.com/package/@griddle/core) and
+[`@griddle/svelte`](https://www.npmjs.com/package/@griddle/svelte), a
+third-party MIT-licensed library by Trustybits
+([Trustybits/griddle](https://github.com/Trustybits/griddle)). Griddle Window
+Manager is a consumer of that library — bugs in the grid semantics themselves
+generally belong upstream.
+
 ## License & privacy
 
 MIT licensed — see [`LICENSE`](LICENSE). Third-party components redistributed

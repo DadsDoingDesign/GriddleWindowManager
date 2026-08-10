@@ -1,0 +1,93 @@
+name: Release
+
+# Cuts a GitHub Release for a pushed `v*` tag: builds the NSIS installer and
+# the updater artifacts, signs the update with the minisign key, and uploads
+# everything.
+#
+# Before pushing the tag, run the human smoke pass (docs/smoke-test-v0.2.0.md)
+# on a locally built installer — see docs/RELEASING.md. This workflow publishes
+# a *live* release, not a draft, because the updater endpoint configured in
+# tauri.conf.json is
+#   .../releases/latest/download/latest.json
+# and `releases/latest` only ever resolves to a published, non-prerelease
+# release. A draft release would leave that endpoint 404ing.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Rust (stable, MSVC)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - name: Install npm workspaces
+        run: npm ci
+
+      # Same gate as CI. A tag build that fails its tests should not become a
+      # release that users can install.
+      - name: Test layout brain (vitest)
+        run: npm run test -w packages/brain
+
+      - name: Test Rust shell (cargo)
+        working-directory: apps/desktop/src-tauri
+        run: cargo test --locked
+
+      # tauri-action runs `npm run tauri -- build` from apps/desktop, which
+      # runs the configured beforeBuildCommand (`npm run build`, i.e. vite) and
+      # then bundles. `createUpdaterArtifacts: true` in tauri.conf.json makes
+      # the bundler emit the updater zip plus its `.sig`; `includeUpdaterJson`
+      # below generates and uploads `latest.json` pointing at them.
+      - name: Build, sign and publish release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Minisign private key for the updater. Set in
+          # Settings → Secrets and variables → Actions. See docs/RELEASING.md.
+          # The matching public key is pinned in tauri.conf.json; a mismatch
+          # means every client rejects the update signature.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: apps/desktop
+          tagName: ${{ github.ref_name }}
+          releaseName: Griddle Window Manager ${{ github.ref_name }}
+          releaseBody: |
+            Install by downloading the `_x64-setup.exe` asset below and running it.
+            It installs per-user — no administrator rights needed.
+
+            The binaries are **not code-signed**, so Windows SmartScreen will
+            warn on first run: *More info → Run anyway*. See the README for the
+            full explanation, or build from source if you prefer.
+
+            `latest.json` and the `.sig` files are updater artifacts, not
+            downloads — the app's opt-in update check consumes them.
+          # Must stay false: `releases/latest/download/latest.json` (the updater
+          # endpoint) does not resolve to draft or prerelease releases.
+          releaseDraft: false
+          prerelease: false
+          # Generate and upload latest.json, pointing at the NSIS installer.
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: true

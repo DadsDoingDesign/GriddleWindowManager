@@ -9,8 +9,9 @@ as at v0.1.0. Same contract as
 automated tests at the logic level only — the pixels have to be *seen* once.
 v0.2.0 tasks append their GUI-only checks to this file as they land.
 
-Build under test: `apps/desktop/src-tauri/target/release/bundle/nsis/Griddle
-WM_0.2.0_x64-setup.exe` from a clean `npx tauri build`.
+Build under test:
+`apps/desktop/src-tauri/target/release/bundle/nsis/Griddle Window
+Manager_0.2.0_x64-setup.exe` from a clean `npx tauri build`.
 
 ---
 
