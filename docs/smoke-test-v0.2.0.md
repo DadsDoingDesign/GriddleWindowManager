@@ -187,10 +187,9 @@ all"). Nothing here is covered by pixels alone — item 1 is the promise.
       not reappear for the rest of the session.
 - [ ] **Install and restart.** Click install: the banner shows download
       progress in MB, then "Installing — Griddle Window Manager will restart".
-      The app
-      restarts on the new version, and Settings → Updates shows the new
-      version number. Grids, templates, views and app defaults all survive the
-      upgrade.
+      The app restarts on the new version, and Settings → Updates shows the
+      new version number. Grids, templates, views and app defaults all survive
+      the upgrade.
 - [ ] **Failure is honest.** Disconnect the network and click **Check now**:
       the error card explains what went wrong and offers "Try again"; the app
       stays usable and nothing is left half-installed.

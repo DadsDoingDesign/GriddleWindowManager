@@ -277,9 +277,10 @@ alongside the app.
 no remote content — no remote scripts, styles, fonts or images; every asset it
 renders ships inside the installer. The only outbound request it can make is the
 opt-in update check described below, and its content-security policy restricts
-connections to GitHub accordingly. Your configuration — grids, templates, views, app defaults —
-stays in `%APPDATA%\griddle-wm\config.json` on your machine. Nothing about your
-windows, your applications, or your settings is ever transmitted anywhere.
+connections to GitHub accordingly. Your configuration — grids, templates,
+views, app defaults — stays in `%APPDATA%\griddle-wm\config.json` on your
+machine. Nothing about your windows, your applications, or your settings is
+ever transmitted anywhere.
 
 **Updates are opt-in and off by default.** With the toggle off, the app makes
 no network requests at all; that guarantee is a pure function in the layout
