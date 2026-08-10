@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "site-demo",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["--yes", "http-server", "site/demo", "-p", "4321", "-c-1", "--silent"],
+      "port": 4321
+    }
+  ]
+}
