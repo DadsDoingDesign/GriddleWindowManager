@@ -42,6 +42,12 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "license": "MIT",
+    "licenseFile": "../../../LICENSE",
+    "resources": {
+      "../../../LICENSE": "LICENSE.txt",
+      "../../../THIRD-PARTY-LICENSES.md": "THIRD-PARTY-LICENSES.md"
+    },
     "windows": {
       "nsis": {
         "installMode": "currentUser"

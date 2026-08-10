@@ -227,8 +227,10 @@ docs/                    design spec, plan, security review, deferred items
 
 ## License & privacy
 
-MIT licensed — see [`LICENSE`](LICENSE). No network access anywhere in the
-app: no HTTP client, no telemetry, no remote assets, strict CSP. A security
-review of the IPC surface — written for v0.1.0 and re-checked against the
-v0.2.0 additions — is in
-[`docs/security-review.md`](docs/security-review.md).
+MIT licensed — see [`LICENSE`](LICENSE). Third-party components redistributed
+in the installer are listed with their license texts in
+[`THIRD-PARTY-LICENSES.md`](THIRD-PARTY-LICENSES.md); both files are also
+installed alongside the app. No network access anywhere in the app: no HTTP
+client, no telemetry, no remote assets, strict CSP. A security review of the
+IPC surface — written for v0.1.0 and re-checked against the v0.2.0 additions —
+is in [`docs/security-review.md`](docs/security-review.md).
