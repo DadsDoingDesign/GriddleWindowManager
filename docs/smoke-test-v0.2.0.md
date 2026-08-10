@@ -175,13 +175,13 @@ an editor, a terminal):
 ## P1 — claim window edge cases (critique round, ~5 min)
 
 - [ ] **Docking**: with a startup view whose grid lives on an external
-      monitor, undock, quit Griddle WM, relaunch, then dock within two
+      monitor, undock, quit Griddle Window Manager, relaunch, then dock within two
       minutes with one of the view's programs already running. When the
       monitor appears, that program's window lands on its saved cells (not
       auto-placed). Automated coverage exists in `views.test.ts`; this checks
       the real hotplug burst.
 - [ ] **Pause**: with a startup view selected, pause from the tray, relaunch
-      Griddle WM (it comes back paused), wait more than two minutes, then
+      Griddle Window Manager (it comes back paused), wait more than two minutes, then
       resume and launch one of the view's programs. Its window still lands on
       the saved cells — the pause does not spend the claim window.
 

@@ -1,9 +1,10 @@
-# Griddle WM
+# Griddle Window Manager
 
-A grid-based window manager for **Windows 11**. Griddle WM snaps real
-application windows onto user-configurable per-monitor (or monitor-spanning)
-grids, shows a live overlay preview while you drag, and gives you a settings
-window with a drag-and-drop grid editor that rearranges your actual desktop.
+A grid-based window manager for **Windows 11**. Griddle Window Manager snaps
+real application windows onto user-configurable per-monitor (or
+monitor-spanning) grids, shows a live overlay preview while you drag, and
+gives you a settings window with a drag-and-drop grid editor that rearranges
+your actual desktop.
 
 Under the hood it is a Tauri 2 app with a "TS brain, Rust hands" split: a
 hidden webview runs the layout engine ([`@griddle/core`](https://www.npmjs.com/package/@griddle/core))
@@ -19,11 +20,12 @@ desktop that can be restored at startup.
 
 ## Install
 
-1. Download `Griddle WM_0.2.0_x64-setup.exe` from this repository's
-   [releases page](../../releases) (or build it from source, below).
+1. Download `Griddle Window Manager_0.2.0_x64-setup.exe` from this
+   repository's [releases page](../../releases) (or build it from source,
+   below).
 2. Run the installer. It installs **per-user** — no administrator rights needed.
-3. Launch **Griddle WM** from the Start menu. A first-run page opens where you
-   pick a monitor and enable your first grid (default 12×6).
+3. Launch **Griddle Window Manager** from the Start menu. A first-run page
+   opens where you pick a monitor and enable your first grid (default 12×6).
 
 ### About the SmartScreen warning
 
@@ -125,10 +127,10 @@ program sits where.
   already running, or that start within the next two minutes, land on their
   saved spots; during that window a view outranks app defaults. Extra
   windows are auto-placed as usual.
-- **Load at startup**: pick a view (or None) and Griddle WM applies it on
-  launch. With autostart on, that covers the apps Windows relaunches after a
-  reboot — they claim their cells as they appear, even though every window
-  handle is new.
+- **Load at startup**: pick a view (or None) and Griddle Window Manager
+  applies it on launch. With autostart on, that covers the apps Windows
+  relaunches after a reboot — they claim their cells as they appear, even
+  though every window handle is new.
 - Views can be renamed and deleted; deleting the startup view resets the
   choice to None.
 
@@ -141,7 +143,7 @@ cells. Enabling a spanning grid replaces the per-monitor grids it covers, and
 re-enabling a per-monitor grid tears down a covering span.
 
 Spanning grids have had the least real-world testing of anything in Griddle
-WM — please report anything odd.
+Window Manager — please report anything odd.
 
 ### Hotkey, tray, pause
 
@@ -158,9 +160,10 @@ WM — please report anything odd.
 ### Exclusions
 
 Settings → Excluded apps keeps a list of executable names (e.g. `slack.exe`)
-that Griddle WM never manages. Add one by typing the exe name or by picking
-from a list of currently open windows. Excluding a running app releases its
-windows in place; removing an exclusion manages them again without a restart.
+that Griddle Window Manager never manages. Add one by typing the exe name or
+by picking from a list of currently open windows. Excluding a running app
+releases its windows in place; removing an exclusion manages them again
+without a restart.
 
 Configuration lives in `%APPDATA%\griddle-wm\config.json` — plain local JSON,
 written atomically, safe to back up. (In the file, the Tile/Stack modes are
@@ -170,8 +173,8 @@ place the first time it runs — nothing to do by hand.
 ## Limitations (v0.2.0)
 
 - **Elevated (admin) windows cannot be managed.** Windows does not allow a
-  non-elevated process to move elevated windows, and Griddle WM deliberately
-  runs unelevated. Elevated windows are simply left alone.
+  non-elevated process to move elevated windows, and Griddle Window Manager
+  deliberately runs unelevated. Elevated windows are simply left alone.
 - Windows without a normal caption (splash screens, some tool popups) float
   free by design.
 - Some apps draw their own window frames or override move/size behavior and
@@ -194,10 +197,11 @@ Prerequisites:
 - [Rust](https://rustup.rs/) stable ≥ 1.81 with the MSVC toolchain
 - WebView2 runtime (preinstalled on Windows 11)
 
-Clone this repository (the clone URL is on this page under **Code**), then
-from the checkout root:
+Clone this repository, then from the checkout root:
 
 ```powershell
+git clone https://github.com/DadsDoingDesign/GriddleWindowManager.git
+cd GriddleWindowManager
 npm install
 
 # run the test suites
@@ -210,7 +214,7 @@ npx tauri dev    # run from apps/desktop
 # release build + NSIS installer
 cd apps/desktop
 npx tauri build
-# → src-tauri/target/release/bundle/nsis/Griddle WM_0.2.0_x64-setup.exe
+# → src-tauri/target/release/bundle/nsis/Griddle Window Manager_0.2.0_x64-setup.exe
 ```
 
 The app icon set is generated from the original artwork in

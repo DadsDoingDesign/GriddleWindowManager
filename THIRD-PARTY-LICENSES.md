@@ -1,12 +1,14 @@
 # Third-party licenses
 
-Griddle WM is distributed as a single Windows installer that statically links a Rust
-executable and embeds a compiled web frontend. This file lists every third-party
-component redistributed in, or used to produce, that installer, together with the full
-text of every distinct license involved.
+Griddle Window Manager is distributed as a single Windows installer that
+statically links a Rust executable and embeds a compiled web frontend. This
+file lists every third-party component redistributed in, or used to produce,
+that installer, together with the full text of every distinct license
+involved.
 
-Griddle WM itself is licensed under the MIT License; see [`LICENSE`](LICENSE).
-Nothing in this file changes the license of Griddle WM's own source code.
+Griddle Window Manager itself is licensed under the MIT License; see
+[`LICENSE`](LICENSE). Nothing in this file changes the license of Griddle
+Window Manager's own source code.
 
 ## How this list was produced
 
@@ -18,7 +20,7 @@ Nothing in this file changes the license of Griddle WM's own source code.
   and build/test-only tooling.
 - License texts are copied verbatim from the files each component ships, not transcribed.
 
-Generated for Griddle WM 0.2.0.
+Generated for Griddle Window Manager 0.2.0.
 
 ## Summary
 
@@ -38,12 +40,13 @@ under GPL, AGPL, LGPL, SSPL, CC-BY-SA, a proprietary license, or an unresolved
 
 ---
 
-## Rust crates (271, linked into `griddle-wm.exe`)
+## Rust crates (271, linked into the Griddle Window Manager binary)
 
 Grouped by the SPDX expression each crate declares. An `OR` expression means the crate
 is offered under any one of the listed licenses at the redistributor's choice; for those
-crates Griddle WM elects the MIT option where MIT is offered, and the Apache-2.0 option
-otherwise. An `AND` expression means every listed license applies simultaneously.
+crates Griddle Window Manager elects the MIT option where MIT is offered, and
+the Apache-2.0 option otherwise. An `AND` expression means every listed
+license applies simultaneously.
 
 ### `MIT OR Apache-2.0` — 134 crates
 
@@ -314,9 +317,10 @@ otherwise. An `AND` expression means every listed license applies simultaneously
 - **selectors** 0.36.1 — The Servo Project Developers
 
 > **MPL-2.0 is weak, file-level copyleft.** The reciprocity obligation attaches to the
-> *files* of these crates, not to anything that merely links against them. Griddle WM does
-> not modify any of these crates — they are consumed unmodified from crates.io — so the
-> only live obligation is to say so and to point to the source. Distributing Griddle WM in
+> *files* of these crates, not to anything that merely links against them.
+> Griddle Window Manager does not modify any of these crates — they are
+> consumed unmodified from crates.io — so the only live obligation is to say
+> so and to point to the source. Distributing Griddle Window Manager in
 > binary form is expressly permitted by MPL-2.0 section 3.2 as long as recipients are told
 > how to obtain the Source Code Form of the covered files, on the same license, at no
 > charge. That notice is given here: the unmodified sources are the published crates.io
@@ -523,16 +527,17 @@ obligations of their licenses do not attach to the shipped artifact.
 - `apps/desktop/app-icon.svg` and everything generated from it under
   `apps/desktop/src-tauri/icons/` (`icon.ico`, `icon.png`, `icon.icns`, the `Square*Logo.png`
   set, `32x32.png`, `64x64.png`, `128x128.png`, `128x128@2x.png`, `StoreLogo.png`) are
-  original artwork authored for this project and are covered by Griddle WM's own MIT
-  license. The raster files are mechanical derivatives of the SVG, produced by
-  `npx tauri icon`.
-- Griddle WM embeds no fonts. All typography resolves to fonts already present on the
-  user's system (`system-ui`, `Segoe UI`, `Roboto`, `ui-monospace`, `Consolas`), which are
+  original artwork authored for this project and are covered by Griddle Window
+  Manager's own MIT license. The raster files are mechanical derivatives of the
+  SVG, produced by `npx tauri icon`.
+- Griddle Window Manager embeds no fonts. All typography resolves to fonts
+  already present on the user's system (`system-ui`, `Segoe UI`, `Roboto`, `ui-monospace`, `Consolas`), which are
   referenced by name only and are not redistributed.
-- Griddle WM loads no remote assets at runtime.
+- Griddle Window Manager loads no remote assets at runtime.
 - `apps/desktop/public/favicon.svg` and `apps/desktop/public/icons.svg` are project
   scaffolding left over from the initial workspace template. They are not referenced by
-  any Griddle WM page and `icons.svg` contains third-party brand marks. Their provenance
+  any Griddle Window Manager page and `icons.svg` contains third-party brand
+  marks. Their provenance
   has not been established and they are **not** covered by this attribution file; they
   should be deleted rather than attributed.
 

@@ -1,8 +1,8 @@
 [package]
 name = "griddle-wm"
 version = "0.2.0"
-description = "Griddle WM - a Windows 11 grid window manager"
-authors = ["Griddle WM contributors"]
+description = "Griddle Window Manager - a Windows 11 grid window manager"
+authors = ["Griddle Window Manager contributors"]
 license = "MIT"
 edition = "2021"
 # 1.81 minimum (security review): from 1.81 a panic reaching a non-unwind

@@ -39,7 +39,7 @@ Where the plan/spec assumes an API, check here first.
 | `DEFAULT_AUTO_SCROLL_CONFIG`, `resolveAutoScrollConfig`, `edgeScrollVelocity`, `edgeScrollDelta` | autoscroll.js | |
 | `rectsOverlap`, `rectsAdjacent`, `rectContains`, `rectEquals`, `priorityDirections`, `faceClosestToOrigin`, `oppositeFace`, `classifyOrigin`, `translateRect`, `offsetRect`, `directionStep`, `tileRect`, `footprintEquals` | geometry.js | Pure cell-rect helpers; `tileRect(tile)` → `CellRect`. |
 | `visibleRange`, `visibleTiles`, `gridContentSize` | virtualize.js | |
-| `loopEnabled`, `loopInteraction`, `assertLoopable`, `wrapValue`, `wrapCell`, `loopBounds`, `loopPeriod`, `loopShift`, `loopInstances`, `resolveLoop` | loop.js | Loop mode (unused by Griddle WM). |
+| `loopEnabled`, `loopInteraction`, `assertLoopable`, `wrapValue`, `wrapCell`, `loopBounds`, `loopPeriod`, `loopShift`, `loopInstances`, `resolveLoop` | loop.js | Loop mode (unused by Griddle Window Manager). |
 | `PanController` | pan.js | |
 | `Emitter` | events.js | `grid.changes` is an `Emitter<GridChangeEvent>`. |
 | `DragController`, `GroupDragController` | drag.js / group-drag.js | Pointer-drag state machines (browser-side). |

@@ -1,4 +1,4 @@
-# Security Review — Griddle WM v0.1.0
+# Security Review — Griddle Window Manager v0.1.0
 
 Review date: 2026-08-08. Fixes landed: 2026-08-09.
 Re-checked against v0.2.0 (spacing / app rules / startup views) on

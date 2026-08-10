@@ -241,7 +241,7 @@ mod win {
         let hwnd = match CreateWindowExW(
             WINDOW_EX_STYLE(0),
             class_name,
-            w!("Griddle WM monitor watcher"),
+            w!("Griddle Window Manager monitor watcher"),
             WINDOW_STYLE(0),
             0,
             0,

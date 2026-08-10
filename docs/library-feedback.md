@@ -1,6 +1,6 @@
 # @griddle/* library feedback
 
-Discrepancies between what the Griddle WM plan/spec assumed and what the
+Discrepancies between what the Griddle Window Manager plan/spec assumed and what the
 installed packages (`@griddle/core` 0.1.11, `@griddle/svelte` 0.1.10) actually
 export. Verified against `node_modules/@griddle/core/dist/*.d.ts` and
 `node_modules/@griddle/svelte/dist/*.d.ts` (authoritative).

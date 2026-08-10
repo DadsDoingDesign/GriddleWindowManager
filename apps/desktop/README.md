@@ -1,6 +1,6 @@
 # apps/desktop
 
-The Griddle WM desktop app: a Tauri 2 (Rust) shell hosting Svelte 5 webviews.
+The Griddle Window Manager desktop app: a Tauri 2 (Rust) shell hosting Svelte 5 webviews.
 
 - `src/routes/brain/` — the hidden brain host page; runs `@griddle-wm/brain`
   as the single source of layout truth.

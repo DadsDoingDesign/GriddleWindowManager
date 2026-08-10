@@ -1,6 +1,8 @@
-# Griddle WM Implementation Plan
+# Griddle Window Manager Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+> **Historical record.** This plan was written for v0.1.0, when the working product name was "Griddle WM". The product is now **Griddle Window Manager**; task text below that names v0.1.0 build artifacts is left as-shipped rather than retconned. Internal identifiers named here (`dev.griddle.wm`, `%APPDATA%/griddle-wm`, the `griddle-wm` crate and `@griddle-wm/*` packages) are unchanged and still current.
 
 **Goal:** A Windows 11 window manager that snaps real app windows onto user-configurable per-monitor (or spanning) grids, with a drag-time overlay preview and a live Griddle-powered editor.
 

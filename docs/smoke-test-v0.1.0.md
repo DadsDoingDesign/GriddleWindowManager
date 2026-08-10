@@ -21,7 +21,7 @@ WM_0.1.0_x64-setup.exe` from a clean `npx tauri build`.
 ### 1. Install + launch on a clean machine (~5 min)
 
 - [ ] Copy the NSIS installer to a machine (or fresh Windows account) that
-      has never run Griddle WM. Run it. Expect the SmartScreen "Windows
+      has never run Griddle Window Manager. Run it. Expect the SmartScreen "Windows
       protected your PC" flow described in the README ("More info → Run
       anyway") — confirm the README's wording matches what you see.
 - [ ] Install completes **without an elevation prompt** (per-user install).
@@ -94,7 +94,7 @@ This is the disaster-recovery path; `respawn_brain_host` has never executed
 outside unit tests.
 
 - [ ] With a grid enabled and windows managed, open Task Manager →
-      Details, find the `msedgewebview2.exe` tree owned by Griddle WM and
+      Details, find the `msedgewebview2.exe` tree owned by Griddle Window Manager and
       end the **renderer** process for the hidden brain page (or
       `taskkill /f /im msedgewebview2.exe` for the blunt version — it kills
       all Griddle webviews; overlays/settings recreate on demand).

@@ -1,4 +1,4 @@
-# Griddle WM — Spacing, App Rules, and Startup Views (v0.2.0)
+# Griddle Window Manager — Spacing, App Rules, and Startup Views (v0.2.0)
 
 **Date:** 2026-08-09 · **Extends:** 2026-08-08-griddle-window-manager-design.md
 

@@ -1,4 +1,4 @@
-# Deferred items — Griddle WM v0.1.0 → v0.2.0
+# Deferred items — Griddle Window Manager v0.1.0 → v0.2.0
 
 Everything consciously *not* done for v0.1.0, collected from the design spec
 (§6, §7, §10), the security review's accepted findings, and per-task commit

@@ -25,7 +25,7 @@ returns `false`.
    (`repack.ts`, bounded by `GridConfig.maxRepackHops`, default 64) as a last
    resort.
 
-## Related behaviors relevant to Griddle WM
+## Related behaviors relevant to Griddle Window Manager
 
 - **Resize** (`Grid.resizeTile` → `displaceResizeOverlaps`): resize grows in
   place; overlapping neighbors are cascade-pushed away from the grown

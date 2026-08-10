@@ -169,7 +169,7 @@ fn ensure_overlay(app: &AppHandle, monitor_id: &str) -> Result<WebviewWindow, St
 
     let label = format!("overlay-{}", NEXT_LABEL.fetch_add(1, Ordering::SeqCst));
     let win = WebviewWindowBuilder::new(app, &label, WebviewUrl::App(overlay_url(monitor_id).into()))
-        .title("Griddle WM Overlay")
+        .title("Griddle Window Manager Overlay")
         .transparent(true)
         .decorations(false)
         .shadow(false)

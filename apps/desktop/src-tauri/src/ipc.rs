@@ -248,7 +248,7 @@ pub struct AppConfig {
     /// View applied on app launch (spec v0.2 §3); absent/`null` = none.
     #[serde(default)]
     pub startup_view_id: Option<String>,
-    /// Check GitHub Releases for a newer Griddle WM (spec §7 "Update
+    /// Check GitHub Releases for a newer Griddle Window Manager (spec §7 "Update
     /// checks"). The only field in this file that can cause an outbound
     /// request, so it defaults to **false** and stays false for every v1/v2
     /// config, which never carried it (same migration pattern as

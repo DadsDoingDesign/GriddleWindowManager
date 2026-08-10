@@ -34,7 +34,7 @@
 </script>
 
 <main>
-  <h1>Griddle WM brain</h1>
+  <h1>Griddle Window Manager brain</h1>
   <p>
     This window is normally hidden. It hosts the layout brain that drives real
     windows. If you can read this, the window was shown for debugging.

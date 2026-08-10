@@ -1,9 +1,36 @@
-# Legal & Commercial Review — Griddle WM
+# Legal & Commercial Review — Griddle Window Manager
 
 **Date:** 2026-08-09 · **Reviewed at:** v0.2.0
+**Updated:** 2026-08-10 — §0 records the decisions taken for the public release.
 **Not legal advice.** This is an engineering-grade audit of what the project
 uses and what those licenses require. Get a lawyer before signing anything or
 launching a paid product.
+
+## 0. Decisions taken (2026-08-10)
+
+The open questions this review left for v0.2.0 are now settled:
+
+- **Distribution: free and open source.** Option 1 of §7 — MIT on GitHub, no
+  paid tier, no license keys, no signing spend. This is the lowest-burden path
+  and the one with the fewest legal obligations: no commercial exposure to
+  clear, no support SLA, no refunds.
+- **Product name: "Griddle Window Manager".** The full name is what appears in
+  every user-facing, legal, and packaging string — the installer `productName`,
+  the NSIS publisher and copyright lines, the README title, and the docs. The
+  short form "Griddle WM" survives only in the tray tooltip, where a single
+  cramped line also has to carry the grid-full message.
+- **Repository: `https://github.com/DadsDoingDesign/GriddleWindowManager`.**
+  This is the canonical URL, including the updater endpoint in
+  `tauri.conf.json`.
+- **Internal identifiers are frozen.** The bundle identifier `dev.griddle.wm`,
+  the config directory `%APPDATA%\griddle-wm\`, the npm workspace names
+  (`@griddle-wm/brain`, `@griddle-wm/desktop`), and the Rust crate name
+  `griddle-wm` all keep their existing values. They shipped in v0.1.0; renaming
+  them would orphan users' grids, templates, and app defaults for no user-facing
+  benefit.
+
+The free-OSS decision materially lowers the trademark exposure analysed in §5;
+see the note added there.
 
 ## 1. What this app actually is
 
@@ -94,6 +121,20 @@ commercially under a distinct product name while the npm library keeps the
 `@griddle` scope you already own; or clear the name properly with a trademark
 attorney (a few hundred dollars for a screening search).
 
+**Resolved for v0.2.0 (2026-08-10): keep the name.** With the free-OSS decision
+in §0, the cheapest mitigation is the one that applies. The registered GRIDDLE
+mark covers social-media-marketing SaaS; a free Windows window manager is a
+distant market, sold to different buyers through different channels, and there
+is no marketing spend building consumer association in the registrant's class.
+The residual risk is low and it is accepted. Two conditions attach:
+
+- The full product name is **"Griddle Window Manager"**, which reads as a
+  descriptive compound rather than as the bare mark.
+- **This decision is scoped to the free OSS release.** If the project ever
+  takes money — paid tier, sponsorware, commercial license — §5's original
+  analysis reapplies at full weight and the name must be cleared by an attorney
+  before any spend.
+
 ## 6. How much architecture to expose
 
 **Expose all of it. The architecture is the asset, not the secret.**
@@ -131,7 +172,7 @@ Market comparables: DisplayFusion ~$39 one-time, AquaSnap Pro ~$18,
 macOS equivalents (Magnet, Moom, Rectangle Pro) $10–15. The realistic price
 band for a Windows window manager is **$10–25 one-time**, not subscription.
 
-What Griddle WM genuinely has that FancyZones does not: live collision reflow
+What Griddle Window Manager genuinely has that FancyZones does not: live collision reflow
 (neighbors push each other rather than sitting in static zones), grid
 restructuring in a live editor, the overlay/collision mode switch, spanning
 grids, and startup views. Those are real differentiators, but they need to be
@@ -168,6 +209,7 @@ keep the design docs and commit history — they evidence the human authorship.
 1. Rebuild and verify the installer carries `LICENSE.txt` and
    `THIRD-PARTY-LICENSES.md` — done in this review.
 2. Run `docs/smoke-test-v0.2.0.md` on real hardware before any public release.
-3. Decide free-OSS versus paid — that decision sets the update endpoint, the
-   signing spend, and whether the name needs clearing.
+3. ~~Decide free-OSS versus paid~~ — decided: free OSS (§0). The update
+   endpoint now points at the canonical repository; there is no signing spend
+   and the name does not need clearing at this scope.
 4. If publishing: capture the demo GIF first. It is the whole pitch.

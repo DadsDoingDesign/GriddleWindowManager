@@ -101,7 +101,7 @@ pub fn respawn_brain_host(app: &AppHandle) {
         crate::guard::MAIN_LABEL,
         WebviewUrl::App("/brain".into()),
     )
-    .title("Griddle WM Brain")
+    .title("Griddle Window Manager Brain")
     .inner_size(800.0, 600.0)
     .visible(false)
     .build()
@@ -234,7 +234,8 @@ fn heartbeat_loop(app: &AppHandle) {
         if attempt == HEARTBEAT_MAX_RESPAWNS {
             log::error!(
                 "final automatic respawn attempt — if the brain stays silent, \
-                 window management is down until Griddle WM is restarted"
+                 window management is down until Griddle Window Manager is \
+                 restarted"
             );
         }
         let app2 = app.clone();
@@ -318,7 +319,7 @@ pub fn open_settings(app: &AppHandle) -> tauri::Result<()> {
         return Ok(());
     }
     WebviewWindowBuilder::new(app, SETTINGS_LABEL, WebviewUrl::App("/settings".into()))
-        .title("Griddle WM Settings")
+        .title("Griddle Window Manager Settings")
         .inner_size(900.0, 720.0)
         .min_inner_size(560.0, 400.0)
         .center()
@@ -366,6 +367,10 @@ pub fn monitor_menu_label(m: &MonitorInfo) -> String {
 /// Tray tooltip: silent when everything fits; names the failure when windows
 /// float because their grid is full (spec §5.4 "grid-full hint" — the one
 /// moment the product misbehaves must not be the one moment it says nothing).
+///
+/// This is the one sanctioned place for the short form "Griddle WM": a tray
+/// tooltip is a single cramped line that also has to carry the grid-full
+/// sentence. Everywhere else the product is "Griddle Window Manager".
 pub fn tray_tooltip(floating: usize) -> String {
     match floating {
         0 => "Griddle WM".to_string(),
@@ -495,7 +500,7 @@ fn build_menu(
     menu.append(&MenuItem::with_id(
         app,
         MENU_ID_QUIT,
-        "Quit Griddle WM",
+        "Quit Griddle Window Manager",
         true,
         None::<&str>,
     )?)?;

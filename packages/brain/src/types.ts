@@ -200,7 +200,8 @@ export interface AppConfig {
   /** View applied on app launch, or null for none (spec v0.2 §3). */
   startupViewId: string | null;
   /**
-   * Check GitHub Releases for a newer Griddle WM (spec §7 "Update checks").
+   * Check GitHub Releases for a newer Griddle Window Manager (spec §7
+   * "Update checks").
    * **Default false** — this is the only setting in the whole config that
    * can cause an outbound request, so it stays off until the user turns it
    * on. Absent in every v1/v2 config, which reads as `false`.

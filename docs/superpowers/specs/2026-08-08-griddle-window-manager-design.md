@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-08
 **Status:** Approved architecture (Approach 1); autonomous build authorized
-**Product name (working):** Griddle WM
+**Product name (working):** Griddle Window Manager
 
 ## 1. Vision
 

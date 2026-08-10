@@ -1,6 +1,6 @@
 {
   "$schema": "../../../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Griddle WM",
+  "productName": "Griddle Window Manager",
   "version": "0.2.0",
   "identifier": "dev.griddle.wm",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Griddle WM Brain",
+        "title": "Griddle Window Manager Brain",
         "url": "/brain",
         "visible": false,
         "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,IntensiveWakeUpThrottling --disable-background-timer-throttling",
@@ -31,7 +31,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/dadsdoingdesign/griddle-wm/releases/latest/download/latest.json"
+        "https://github.com/DadsDoingDesign/GriddleWindowManager/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEIzMTNCQkZBNkU1MkU5MApSV1NRTHVXbXZ6c3hDNElpcm55WEFUSWFubGcvTUNodVROcFJtWXpFbm81cjhkOGZBU0ZxQUQrcAo=",
       "windows": {
@@ -43,10 +43,10 @@
     "active": true,
     "targets": ["nsis"],
     "createUpdaterArtifacts": true,
-    "publisher": "Griddle WM contributors",
-    "copyright": "© 2026 Griddle WM contributors",
+    "publisher": "Griddle Window Manager contributors",
+    "copyright": "© 2026 Griddle Window Manager contributors",
     "shortDescription": "Grid-based window manager for Windows 11",
-    "longDescription": "Snaps real application windows onto user-configurable per-monitor (or monitor-spanning) grids, with a drag-time overlay preview and a live grid editor.",
+    "longDescription": "Griddle Window Manager snaps real application windows onto user-configurable per-monitor (or monitor-spanning) grids, with a drag-time overlay preview and a live grid editor.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
