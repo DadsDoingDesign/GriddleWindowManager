@@ -234,7 +234,7 @@ select.mode{font-family:var(--text);font-size:12px;background:var(--surface-2);c
 <div class="controls" id="controls" role="group" aria-label="Grid controls">
   <div class="ctl tier-0"><label>Grid responsiveness</label>
     <select class="mode" id="modeSel" aria-label="Grid responsiveness">
-      <option value="reflow" selected>Reorganize · fewest moves</option>
+      <option value="reflow" selected>Reorganize · reflow</option>
       <option value="push">Push · displace neighbours</option>
       <option value="stack">Overlap · windows stack</option>
     </select></div>
@@ -555,6 +555,79 @@ function dragMove(e){
   dropzone.style.cssText=`left:${dr.x-p.x}px;top:${dr.y-p.y}px;width:${dr.w}px;height:${dr.h}px`;
   dropzone.classList.add('on');
 }
+/* ---- reorder + repack ----
+   The board is a reading order. A drop pins the dragged tile exactly where it was
+   released and re-packs every other tile, in reading order, into the first slot
+   that fits. Packing is constructive rather than a search, so it always yields a
+   valid board — unlike exact placement, which needs a re-tiling that usually does
+   not exist once the grid is fully packed. The price is that untouched tiles can
+   travel: a tile that no longer fits the gap it used to hold gets leapfrogged by
+   a smaller one. */
+function overlaps(a,b){return a.col<b.col+b.w&&a.col+a.w>b.col&&a.row<b.row+b.h&&a.row+a.h>b.row;}
+function firstFit(placed,w,h){
+  for(let r=0;r<=rows-h;r++)for(let c=0;c<=cols-w;c++){
+    const rect={col:c,row:r,w,h};
+    if(!placed.some(p=>overlaps(rect,p)))return{col:c,row:r};
+  }
+  return null;
+}
+function reorderRepack(id,to){
+  const lim=tierLimit();
+  const onBoard=new Map(grid.tiles.map(t=>[t.id,{...t}]));
+  const me=onBoard.get(id);
+  if(!me)return null;
+  const pinned={...me,col:to.col,row:to.row};
+  if(pinned.col<0||pinned.row<0||pinned.col+pinned.w>cols||pinned.row+pinned.h>rows)return null;
+  /* The roster is every card that belongs on the board at this size, not just the
+     ones currently placed. Without that, an evicted tile is gone for good: the
+     headline is 15 cells and will never find a 5x3 hole again once it is off. */
+  const reading=CARDS.filter(c=>c.tier<=lim&&c.id!==id).map(c=>{
+    const t=onBoard.get(c.id);
+    return{id:c.id,tier:c.tier,w:Math.min(c.w,cols),h:Math.min(c.h,rows),
+           row:t?t.row:Infinity,col:t?t.col:Infinity};
+  }).sort((a,b)=>a.row-b.row||a.col-b.col||(a.id<b.id?-1:1));
+  const pack=order=>{
+    const placed=[pinned], evicted=[];
+    for(const t of order){
+      const pos=firstFit(placed,t.w,t.h);
+      if(pos)placed.push({...t,...pos});else evicted.push(t.id);
+    }
+    return{placed,evicted};
+  };
+  // First-fit in reading order is predictable but a poor packer, and a bad fit
+  // costs a whole tile. Try other orderings and keep the least damaging result.
+  // Cost is weighted, not counted: tier 0 is the page's actual content, so losing
+  // the headline is never an acceptable price for keeping two decorative tiles.
+  const a=pack(reading);
+  if(!a.evicted.length)return a;
+  const tierOf=tid=>{const c=CARDS.find(x=>x.id===tid);return c?c.tier:9;};
+  const cost=r=>r.evicted.reduce((s,eid)=>s+(tierOf(eid)===0?100:1),0);
+  const cands=[a,
+    pack(reading.slice().sort((x,y)=>y.w*y.h-x.w*x.h)),
+    pack(reading.slice().sort((x,y)=>tierOf(x.id)-tierOf(y.id)||y.w*y.h-x.w*x.h))];
+  return cands.reduce((best,c)=>cost(c)<cost(best)?c:best);
+}
+function applyLayout(placed){
+  const{uw,uh}=unit();
+  const g=new Grid({cols,rows,unitWidth:Math.max(1,uw),unitHeight:Math.max(1,uh)});
+  for(const t of placed)g.addTile({id:t.id,col:t.col,row:t.row,w:t.w,h:t.h});
+  grid=g;
+}
+
+/* An eviction is not permanent. Once a tile is off the board the minimal-move
+   solver never reconsiders it — it only knows about tiles already placed — so the
+   board would keep drifting emptier. After any successful drop, if a card that
+   belongs on the board is missing, repack the whole thing (pinning the tile the
+   user just placed) to make room for it again. */
+function heal(){
+  const lim=tierLimit();
+  if(!CARDS.some(c=>c.tier<=lim&&!grid.getTile(c.id)))return;
+  const t=grid.getTile(drag.id);
+  if(!t)return;
+  const rr=reorderRepack(drag.id,{col:t.col,row:t.row});
+  if(rr)applyLayout(rr.placed);
+}
+
 function dragEnd(){
   if(!drag)return;
   removeEventListener('pointermove',dragMove);
@@ -579,8 +652,19 @@ function dragEnd(){
       snap.tiles=[...others.map(t=>{const m=moved.get(t.id);return m?{...t,col:m.col,row:m.row}:t;}),target];
       grid.loadJSON(snap);
       flashMoved(res.movedCount);
+      heal();
     } else {
-      grid.moveTile(drag.id,drag.to);   // no arrangement found — fall back to push
+      // No exact re-tiling exists — which on a fully packed board is the common
+      // case, not the exception. Reflow instead, so the drop always lands.
+      const before=new Map(grid.tiles.map(t=>[t.id,t.col+','+t.row]));
+      const rr=reorderRepack(drag.id,drag.to);
+      if(rr){
+        applyLayout(rr.placed);
+        flashMoved(rr.placed.filter(t=>t.id!==drag.id&&before.get(t.id)!==t.col+','+t.row).length);
+        flash(rr.evicted.filter(eid=>!grid.getTile(eid)).length);
+      } else {
+        grid.moveTile(drag.id,drag.to);
+      }
     }
   } else {
     grid.moveTile(drag.id,drag.to);
