@@ -76,32 +76,41 @@ html:not(.ready) .stage,html:not(.ready) .gridwrap,html:not(.ready) .hint{opacit
    scale — never a second copy — so nothing cross-fades or ghosts.
    ============================================================ */
 .card{position:absolute;left:0;top:0;border-radius:var(--card-radius);overflow:hidden;
-  display:flex;flex-direction:column;
-  background:var(--surface);
-  background:color-mix(in srgb,var(--surface) 89%,transparent);
+  display:flex;flex-direction:column;background:transparent;
   border:1px solid transparent;will-change:transform,width,height;
   transition:transform var(--dur) var(--ease) var(--delay,0ms),
     width var(--dur) var(--ease) var(--delay,0ms),
     height var(--dur) var(--ease) var(--delay,0ms),
     opacity 420ms ease var(--delay,0ms),
-    background 620ms ease,border-color 620ms ease,box-shadow 620ms ease}
+    border-color 620ms ease,box-shadow 620ms ease}
 .card.parked{opacity:0;pointer-events:none}
 
-/* Tiles sit at 89% so the grid reads faintly through them. Whichever one you
-   are touching comes forward to full opacity. The hero rules below outrank
-   this, which is what keeps the intro window solid until you start arranging
-   — after that it is just another tile and follows the same rule. */
-.card:hover,.card.dragging,.card.expanded{background:var(--surface)}
+/* Tiles sit at 89% so the grid reads faintly through them, and whichever one you
+   are touching comes forward to full.
+   The surface is its OWN LAYER rather than the tile's background-color, because
+   transitioning a background-color repaints the entire tile on every frame of
+   the fade. Ten large translucent tiles on a 4K display cannot repaint that fast,
+   so the ramp only landed every second or third frame — which is what read as
+   flicker. Opacity on a separate layer is composited: no repaint, no stepping.
+   z-index:-1 keeps it behind the tile's own content, and the card already forms
+   a stacking context (will-change:transform) so it cannot slip out behind the
+   card itself. */
+.card::before{content:"";position:absolute;inset:0;z-index:-1;
+  background:var(--surface);opacity:.89;pointer-events:none;
+  transition:opacity 340ms cubic-bezier(.4,0,1,1)}          /* leaving: ease-in */
+.card:hover::before,.card.dragging::before,.card.expanded::before{
+  opacity:1;transition:opacity 200ms cubic-bezier(0,0,.2,1)} /* arriving: ease-out */
 
 /* hero phase: chrome dissolves, card becomes bare type on the page */
-[data-phase="hero"] .card.inhero{background:transparent;border-color:transparent;box-shadow:none}
+[data-phase="hero"] .card.inhero{border-color:transparent;box-shadow:none}
+[data-phase="hero"] .card.inhero::before{opacity:0}
 [data-phase="grid"] .card{border-color:var(--line);box-shadow:var(--shadow-lo)}
 
 /* ...except the headline, which IS the intro window. It keeps its chrome while
    floating over an empty grid, then minimises into its own tile. The three other
    hero elements ride inside it and fly out to their own seats. */
-[data-phase="hero"] .card.inhero[data-id="headline"]{background:var(--surface);
-  border-color:var(--line);box-shadow:var(--shadow-hi)}
+[data-phase="hero"] .card.inhero[data-id="headline"]{border-color:var(--line);box-shadow:var(--shadow-hi)}
+[data-phase="hero"] .card.inhero[data-id="headline"]::before{opacity:1}
 
 .titlebar{height:30px;flex:none;display:flex;align-items:center;gap:8px;padding:0 11px;
   border-bottom:1px solid transparent;opacity:0;transition:opacity 420ms ease,border-color 620ms ease;
@@ -152,11 +161,7 @@ html:not(.ready) .stage,html:not(.ready) .gridwrap,html:not(.ready) .hint{opacit
    the exact inverse of --ground in both themes — so the button lands on the
    widest contrast step the palette has, and the one tile that matters most is
    the one the eye reaches first. */
-[data-phase="grid"] .card[data-id="cta"]{background:var(--ground);
-  background:color-mix(in srgb,var(--ground) 89%,transparent)}
-[data-phase="grid"] .card[data-id="cta"]:hover,
-[data-phase="grid"] .card[data-id="cta"].dragging,
-[data-phase="grid"] .card[data-id="cta"].expanded{background:var(--ground)}
+[data-phase="grid"] .card[data-id="cta"]::before{background:var(--ground)}
 .card[data-id="cta"] .meta{color:var(--muted)}
 
 .cta{display:inline-flex;align-items:center;justify-content:center;border-radius:8px;
@@ -428,9 +433,9 @@ const CARDS=[
     detail:'<p class="dbody">Version 0.2.0, 3.1 MB, x64. Installs <b>per-user</b> — no administrator rights needed.</p><p class="dbody">The installer is not code-signed, so SmartScreen warns once: choose <b>More info → Run anyway</b>. That means Windows does not recognise the publisher, not that anything is wrong.</p>' },
   { id:'modes', app:'Placement', tier:1, w:4, h:3, accent:'#4A9EDB',
     html:'<div class="feat">'
-      +'<div class="frow"><span class="fkey">Reorganize</span><span class="fval">the window lands <b>exactly</b> where you aimed, and the others reorganise around it — as few of them moving as possible</span></div>'
-      +'<div class="frow"><span class="fkey">Shoving</span><span class="fval">neighbours are shoved aside one shove at a time, and equal-size windows swap</span></div>'
-      +'<div class="frow"><span class="fkey">Overlap</span><span class="fval">windows stop contesting space entirely and lie over one another, most recent on top</span></div>'
+      +'<div class="frow"><span class="fkey">Reorganize</span><span class="fval">lands <b>exactly</b> where you aimed; the others reorganise around it, as few moving as possible</span></div>'
+      +'<div class="frow"><span class="fkey">Shoving</span><span class="fval">neighbours shoved aside one at a time; equal-size windows swap</span></div>'
+      +'<div class="frow"><span class="fkey">Overlap</span><span class="fval">no contest for space — tiles lie over each other, most recent on top</span></div>'
       +'</div>',
     title:'Placement modes',
     detail:'<p class="dbody">Every grid decides for itself what happens when you drop a window on cells someone else is already using.</p><p class="dbody"><b>Reorganize</b> lands the window exactly where you aimed and reorganises the rest, moving as few as it can. <b>Tile shoving</b> shoves neighbours aside one shove at a time, and refuses the drop when one has nowhere to go. <b>Overlap</b> drops the contest for space altogether — tiles lie over each other, stretch anywhere in the grid, and the one you touched last comes to the top.</p><p class="dbody">The selector at the bottom of this page drives all of them on this grid, right now — including <b>Griddle default</b>, which hands the decision to the layout library unaided.</p>' },
