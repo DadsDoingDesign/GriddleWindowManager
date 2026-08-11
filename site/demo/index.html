@@ -148,9 +148,15 @@ html.pristine[data-phase="grid"] .card[data-id="headline"]::before{background:va
 .closebtn:hover{color:var(--ink);background:var(--line-soft)}
 
 /* padding tracks viewport height so single-row tiles never crop their text */
+/* A QUERY CONTAINER. Tile content that wants to scale should scale with its
+   TILE, not with the viewport — a 3x1 tile and a 8x6 tile on the same screen
+   have the same vw and wildly different room. Safe to contain: the card is
+   explicitly sized in px and .content is flex:1 of it, so its size never came
+   from its children in the first place. */
 .content{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;
   gap:clamp(4px,.8vh,8px);padding:var(--padY,16px) var(--padX,20px);
-  overflow:hidden;transition:padding var(--dur) var(--ease)}
+  overflow:hidden;transition:padding var(--dur) var(--ease);
+  container:tile / size}
 [data-phase="hero"] .card.inhero .content{padding:0;align-items:center;text-align:center;gap:0}
 /* The intro group is centred as a whole, not hung off a centred headline, so the
    space above the eyebrow and below the description stays balanced. JS measures
@@ -241,9 +247,15 @@ html.pristine[data-phase="grid"] .card[data-id="headline"]::before{background:va
    gets a ceiling and the columns reflow inside it; auto-fit means one column on
    a narrow tile and four on a wide one, with the thumbnails the same size in
    both. min-height:0 lets it be clipped rather than forcing the card taller. */
-.tgal{display:grid;gap:clamp(4px,.7vw,9px);align-self:center;min-height:0;
-  width:100%;max-width:clamp(190px,24vw,430px);
-  grid-template-columns:repeat(auto-fit,minmax(clamp(66px,6.4vw,98px),1fr))}
+/* Sized against the TILE, not the viewport (cqi = 1% of the container's inline
+   size, cqb of its block size). A fixed max-width was the previous fix for
+   thumbnails ballooning on a big tile, and it overcorrected: on a large tile the
+   gallery sat marooned at 430px in the middle of acres of space. Container units
+   scale it with the tile in both directions instead — wide tile, wide
+   thumbnails; short tile, capped height so it cannot overflow. */
+.tgal{display:grid;gap:clamp(5px,1.8cqi,16px);align-self:center;min-height:0;width:100%;
+  grid-template-columns:repeat(auto-fit,minmax(clamp(64px,20cqi,230px),1fr))}
+.tmini svg{max-height:min(30cqb,200px)}
 .tmini,.dtpl{display:flex;flex-direction:column;gap:5px;align-items:stretch;
   background:none;border:1px solid var(--line);border-radius:7px;padding:5px;
   cursor:pointer;font:inherit;color:inherit;text-align:center;min-width:0;
@@ -251,7 +263,7 @@ html.pristine[data-phase="grid"] .card[data-id="headline"]::before{background:va
 .tmini:hover,.dtpl:hover{border-color:var(--accent-line);background:var(--accent-soft)}
 .tmini:focus-visible,.dtpl:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .tmini svg,.dtpl svg{width:100%;height:auto;display:block}
-.tmini span{font-size:clamp(8px,.68vw,11px);color:var(--muted);font-family:var(--mono);
+.tmini span{font-size:clamp(8px,3.2cqi,15px);color:var(--muted);font-family:var(--mono);
   letter-spacing:.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dtpl span{font-size:clamp(9.5px,.8vw,13px);color:var(--ink);font-family:var(--mono);
   letter-spacing:.03em;font-weight:600}
@@ -266,7 +278,7 @@ html.pristine[data-phase="grid"] .card[data-id="headline"]::before{background:va
 .tmini i{display:block;border-radius:2px;background:var(--accent-soft);border:1px solid var(--accent-line)}
 .tnew{border-style:dashed;background:none;place-items:center;color:var(--faint);
   font-size:14px;line-height:1;font-family:var(--mono)}
-.tcap{font-size:clamp(9.5px,.78vw,13px);color:var(--muted);line-height:1.45;margin:clamp(5px,.9vh,10px) 0 0;text-wrap:pretty}
+.tcap{font-size:clamp(9.5px,3cqi,15px);color:var(--muted);line-height:1.45;margin:clamp(5px,1.6cqb,12px) 0 0;text-wrap:pretty}
 
 /* a compact stat strip for the short tiles */
 .kv{display:flex;flex-wrap:wrap;gap:clamp(3px,.8vh,8px) clamp(14px,1.4vw,26px);
@@ -360,8 +372,8 @@ html.pristine[data-phase="grid"] .card[data-id="headline"]::before{background:va
    uncapped auto-fit would stretch four thumbnails across a 2000px screen.
    (The stale .dtpl / .dtpl span rules that used to sit here were overriding the
    real ones further up — the name rendered muted and small instead of solid.) */
-.dtpls{display:grid;gap:clamp(8px,1vw,14px);width:100%;max-width:660px;
-  grid-template-columns:repeat(auto-fit,minmax(clamp(104px,10vw,150px),1fr))}
+.dtpls{display:grid;gap:clamp(8px,1vw,16px);width:100%;max-width:min(100%,900px);
+  grid-template-columns:repeat(auto-fit,minmax(clamp(112px,13vw,215px),1fr))}
 
 /* overflow:hidden is what makes the carousel a carousel — cells (and, being
    clipped by .stage, tiles) past the visible page are drawn but not shown until
@@ -674,14 +686,20 @@ const TEMPLATES=[
    blurb:'one thing you are working on, three you are watching',
    slots:[{col:0,row:0,w:8,h:6},{col:8,row:0,w:4,h:2},{col:8,row:2,w:4,h:2},{col:8,row:4,w:4,h:2}]},
   {id:'cockpit',name:'Cockpit',cols:14,rows:6,
-   blurb:'centre column between two full-height rails',
-   slots:[{col:0,row:0,w:3,h:6},{col:3,row:0,w:8,h:4},{col:3,row:4,w:8,h:2},{col:11,row:0,w:3,h:6}]},
+   blurb:'a working centre, stacked rails either side — seven windows',
+   slots:[{col:0,row:0,w:3,h:3},{col:0,row:3,w:3,h:3},
+          {col:3,row:0,w:8,h:4},{col:3,row:4,w:8,h:2},
+          {col:11,row:0,w:3,h:2},{col:11,row:2,w:3,h:2},{col:11,row:4,w:3,h:2}]},
   {id:'dashboard',name:'Dashboard',cols:12,rows:5,
-   blurb:'a full-width banner over three equal panels',
-   slots:[{col:0,row:0,w:12,h:1},{col:0,row:1,w:4,h:4},{col:4,row:1,w:4,h:4},{col:8,row:1,w:4,h:4}]},
+   blurb:'a full-width banner over eight equal panels — the dense one',
+   slots:[{col:0,row:0,w:12,h:1},
+          {col:0,row:1,w:3,h:2},{col:3,row:1,w:3,h:2},{col:6,row:1,w:3,h:2},{col:9,row:1,w:3,h:2},
+          {col:0,row:3,w:3,h:2},{col:3,row:3,w:3,h:2},{col:6,row:3,w:3,h:2},{col:9,row:3,w:3,h:2}]},
   {id:'mosaic',name:'Mosaic',cols:10,rows:5,
-   blurb:'a deliberately uneven board — big, tall, and a pair beneath',
-   slots:[{col:0,row:0,w:6,h:3},{col:6,row:0,w:4,h:5},{col:0,row:3,w:3,h:2},{col:3,row:3,w:3,h:2}]},
+   blurb:'a deliberately uneven board, no two tiles the same',
+   slots:[{col:0,row:0,w:6,h:3},
+          {col:6,row:0,w:4,h:2},{col:6,row:2,w:4,h:1},{col:6,row:3,w:4,h:2},
+          {col:0,row:3,w:3,h:2},{col:3,row:3,w:3,h:2}]},
 ];
 /* Height follows the template's own aspect, so a 14x6 thumbnail is visibly wider
    than a 10x5 one — the gallery shows you the re-dimension before you click. */
@@ -875,6 +893,16 @@ const PAD=24;
    carousel costs one subtraction in cellRect rather than a scrolling container,
    a re-parented DOM, and a second coordinate space. */
 let offX=0,offY=0;
+/* Canvas zoom. Ctrl+wheel is the zoom gesture on every canvas tool and every
+   map, and the browser claims it for page zoom — so the handler is non-passive
+   and calls preventDefault, which is the only way to take it back. Zoom scales
+   the CELL, not the page: tiles keep their cell footprints and the whole board
+   grows or shrinks around them, so zooming out is how you see a canvas that has
+   grown past one screen. Only canvas has it; the paged modes have exactly one
+   screenful to show and nothing to zoom out to. */
+let zoom=1;
+const ZOOM_MIN=.35,ZOOM_MAX=2.4;
+function zoomOf(){return ovf==='canvas'?zoom:1;}
 /* How far past the visible page tiles may live, per overflow mode.
    The MIN floor matters more than the multiple: on a 1x1 board, "three times the
    page" is three cells, which is not a canvas by any reading. A floor of 16
@@ -941,7 +969,11 @@ function tierLimit(){const w=innerWidth,h=innerHeight;
    simplification of the grid — it IS the grid. A tile's size is a cell count, so
    the only thing a resize can change is how many cells it spans. */
 function unit(){const p=panelRect();
-  return{uw:(p.w-PAD*2-gap*(cols-1))/cols,uh:(p.h-PAD*2-gap*(rows-1))/rows,p};}
+  // zoom scales the cell; gap does not scale, because a gap is a spacing setting
+  // in px and shrinking it with the zoom would make a zoomed-out board look
+  // fused together rather than smaller
+  const z=zoomOf();
+  return{uw:((p.w-PAD*2-gap*(cols-1))/cols)*z,uh:((p.h-PAD*2-gap*(rows-1))/rows)*z,p};}
 
 /* The ONLY place the carousel offset is applied. Everything that positions
    anything — tiles, cells, the drop preview, the expanded popout — goes through
@@ -1356,7 +1388,7 @@ function resetAll(){
   const was=dimsSame&&grid?grid.toJSON():null;
   hideToast();
   cols=DEFAULTS.cols;rows=DEFAULTS.rows;gap=DEFAULTS.gap;radius=DEFAULTS.radius;
-  mode=DEFAULTS.mode;ovf=DEFAULTS.ovf;offX=0;offY=0;
+  mode=DEFAULTS.mode;ovf=DEFAULTS.ovf;offX=0;offY=0;zoom=1;
   document.getElementById('modeSel').value=mode;
   document.getElementById('ovfSel').value=ovf;
   root.classList.toggle('canvasmode',ovf==='canvas');
@@ -1612,11 +1644,13 @@ function dragEnd(){
        runs, so opening a tile is the motion the page has been teaching all along.
    Nothing here hardcodes a size, so changing cols/rows/gap/padding cannot leave
    the popout misaligned with the board behind it.
-   The carousel offset is added BACK, deliberately: an expanded tile covers the
-   visible page, never the whole scrolled extent. Otherwise reading a tile two
-   screens down would open a sheet that starts off-screen. */
-function expandRect(){const r=cellRect(0,0,cols,rows);
-  return{x:r.x+offX,y:r.y+offY,w:r.w,h:r.h};}
+   Derived from the PANEL rather than from cellRect, so it is immune to both the
+   carousel offset and the canvas zoom: an opened tile always covers the board
+   area you can see, whatever the board is doing behind it. Otherwise reading a
+   tile two screens down would open a sheet that starts off-screen, and zooming
+   out would shrink the thing you opened in order to read it. */
+function expandRect(){const p=panelRect();
+  return{x:p.x+PAD,y:p.y+PAD,w:p.w-PAD*2,h:p.h-PAD*2};}
 function expand(id){
   if(!grid.getTile(id))return;
   if(expandedId)collapse(true);
@@ -1650,7 +1684,7 @@ function applyDims(nc,nr){
   hideToast();
   const snap=grid.tiles.map(t=>({...t}));
   cols=nc;rows=nr;
-  offX=0;offY=0;   // the page just changed size; any carousel position is stale
+  offX=0;offY=0;zoom=1;   // the page just changed size; any carousel position is stale
   grid=newGrid();
   const ex=extent();
   let dropped=0;
@@ -1729,7 +1763,7 @@ function markOverflowInert(){
   c.title=inert?'Overlap never runs out of room, so overflow does not apply':'';
 }
 document.getElementById('ovfSel').onchange=e=>{
-  ovf=e.target.value;
+  ovf=e.target.value;zoom=1;
   root.classList.toggle('canvasmode',ovf==='canvas');
   if(started)rebuildForOverflow();else{offX=0;offY=0;}
   refreshReset();
@@ -1832,8 +1866,35 @@ function snapOff(){
    it, the board advances a tile at a time and always lands on one. */
 const WHEEL_LOCK_MS=150;
 let wheelUntil=0;
+/* Zoom about the cursor, so the cell under the pointer stays under the pointer —
+   zooming about the origin instead makes a canvas feel like it is running away
+   from you. Cell size scales with the zoom but the gap does not, so the board
+   point under the cursor is recomputed from the live metrics rather than assumed
+   to scale linearly. */
+function zoomAt(cx,cy,next){
+  const p=panelRect();
+  const before=unit();
+  const bx=(cx-(p.x+PAD)+offX),by=(cy-(p.y+PAD)+offY);
+  const colAt=bx/(before.uw+gap),rowAt=by/(before.uh+gap);
+  zoom=Math.max(ZOOM_MIN,Math.min(ZOOM_MAX,next));
+  const after=unit();
+  offX=colAt*(after.uw+gap)-(cx-(p.x+PAD));
+  offY=rowAt*(after.uh+gap)-(cy-(p.y+PAD));
+  clampScroll();
+}
 addEventListener('wheel',e=>{
-  if(!started||expandedId||!scrolls()||!canScroll())return;
+  if(!started||expandedId)return;
+  // Ctrl+wheel: zoom the canvas, not the page. preventDefault is the whole point
+  // and needs a non-passive listener, which is why this one is registered as it is.
+  if(e.ctrlKey&&ovf==='canvas'){
+    e.preventDefault();
+    if(!e.deltaY)return;
+    zoomAt(e.clientX,e.clientY,zoom*(e.deltaY>0?0.9:1/0.9));
+    renderCells();
+    queueScroll(reduce?1:120);
+    return;
+  }
+  if(!scrolls()||!canScroll())return;
   const now=performance.now();
   if(now<wheelUntil)return;
   // Shift+wheel is the horizontal convention everywhere (browsers, editors,
@@ -1848,7 +1909,7 @@ addEventListener('wheel',e=>{
   else offY=(Math.round(offY/s.y)+dir)*s.y;
   clampScroll();
   queueScroll(reduce?1:260);
-},{passive:true});
+},{passive:false});
 
 /* ---- drag the canvas itself ----
    Pointer-down on the board background — not on a tile — grabs the canvas and
