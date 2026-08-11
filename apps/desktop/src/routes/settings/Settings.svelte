@@ -774,15 +774,43 @@
   }
 </script>
 
+<!--
+  The mark: a capital G built out of grid cells, on a 150-unit master
+  (4x4 grid, cell 33, gap 6). Convex corners 8, concave 4; the counter is
+  outer 12 / stroke 8 / inner 4. Drawn at 28px here, where the 1.5px stroke
+  holds — below 32px the counter has to go solid instead.
+  Source of truth: apps/desktop/app-icon.svg.
+-->
+{#snippet brandMark()}
+  <svg class="brandmark" viewBox="0 0 150 150" fill="none" aria-hidden="true">
+    <path
+      fill="currentColor"
+      d="M8 0H103A8 8 0 0 1 111 8V25A8 8 0 0 1 103 33H37A4 4 0 0 0 33 37V113A4 4 0 0 0 37 117H64A8 8 0 0 1 72 125V142A8 8 0 0 1 64 150H8A8 8 0 0 1 0 142V8A8 8 0 0 1 8 0Z"
+    />
+    <rect
+      x="82"
+      y="82"
+      width="64"
+      height="64"
+      rx="8"
+      stroke="currentColor"
+      stroke-width="8"
+    />
+  </svg>
+{/snippet}
+
 <div class="page">
   {#if firstRun}
     <header>
-      <div>
-        <h1>Griddle Window Manager</h1>
-        <p class="tagline">
-          Window grids for your desktop{#if appVersion}
-            <span class="version">{appVersion}</span>{/if}
-        </p>
+      <div class="brand">
+        {@render brandMark()}
+        <div>
+          <h1>Griddle Window Manager</h1>
+          <p class="tagline">
+            Window grids for your desktop{#if appVersion}
+              <span class="version">{appVersion}</span>{/if}
+          </p>
+        </div>
       </div>
     </header>
 
@@ -849,12 +877,15 @@
     </section>
   {:else}
   <header>
-    <div>
-      <h1>Griddle Window Manager</h1>
-      <p class="tagline">
-        Window grids for your desktop{#if appVersion}
-          <span class="version">{appVersion}</span>{/if}
-      </p>
+    <div class="brand">
+      {@render brandMark()}
+      <div>
+        <h1>Griddle Window Manager</h1>
+        <p class="tagline">
+          Window grids for your desktop{#if appVersion}
+            <span class="version">{appVersion}</span>{/if}
+        </p>
+      </div>
     </div>
     <!-- Pause is the panic button (spec §6) — it lives where a stressed
          user looks first, not at the bottom of General. -->
@@ -1849,6 +1880,18 @@
     display: inline-flex;
     align-items: center;
     gap: 12px;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-width: 0;
+  }
+  .brandmark {
+    width: 28px;
+    height: 28px;
+    flex: none;
+    color: var(--text-strong);
   }
   h1 {
     font-size: 22px;

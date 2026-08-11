@@ -1,4 +1,5 @@
 <title>Griddle Window Manager</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 150 150'><style>*{fill:%230B0B12}@media(prefers-color-scheme:dark){*{fill:%23F3F3F7}}</style><path d='M8 0H103A8 8 0 0 1 111 8V25A8 8 0 0 1 103 33H37A4 4 0 0 0 33 37V113A4 4 0 0 0 37 117H64A8 8 0 0 1 72 125V142A8 8 0 0 1 64 150H8A8 8 0 0 1 0 142V8A8 8 0 0 1 8 0Z'/><rect x='78' y='78' width='72' height='72' rx='8'/></svg>">
 <style>
 :root{
   --ground:#FBFBFC; --panel:#F1F1F5; --surface:#FFFFFF; --surface-2:#FAFAFC;
@@ -39,8 +40,10 @@ body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--text);
   justify-content:space-between;padding:0 clamp(14px,3vw,34px);z-index:60;pointer-events:none}
 .topbar>*{pointer-events:auto}
 .brand{display:flex;align-items:center;gap:8px;font-family:var(--sans);font-weight:700;font-size:14.5px;letter-spacing:-.02em}
-.mark{width:16px;height:16px;border:1.7px solid var(--ink);border-radius:4px;position:relative;flex:none}
-.mark::after{content:"";position:absolute;left:1.4px;top:1.4px;width:5.5px;height:5.5px;background:var(--ink);border-radius:1.5px}
+/* The G is built out of grid cells: 4x4, cell 33, gap 6, on a 150 master.
+   The counter is solid here because below 32px an outlined one would land
+   at a sub-pixel stroke. Source of truth: apps/desktop/app-icon.svg. */
+.mark{width:18px;height:18px;flex:none;color:var(--ink);display:block}
 .navlinks{display:flex;align-items:center;gap:16px}
 .navlink{font-size:13px;color:var(--muted);text-decoration:none;font-weight:500}
 .navlink:hover{color:var(--ink)}
@@ -216,7 +219,7 @@ select.mode{font-family:var(--text);font-size:12px;background:var(--surface-2);c
 </style>
 
 <header class="topbar">
-  <div class="brand"><span class="mark" aria-hidden="true"></span>Griddle</div>
+  <div class="brand"><svg class="mark" viewBox="0 0 150 150" fill="currentColor" aria-hidden="true"><path d="M8 0H103A8 8 0 0 1 111 8V25A8 8 0 0 1 103 33H37A4 4 0 0 0 33 37V113A4 4 0 0 0 37 117H64A8 8 0 0 1 72 125V142A8 8 0 0 1 64 150H8A8 8 0 0 1 0 142V8A8 8 0 0 1 8 0Z"/><rect x="78" y="78" width="72" height="72" rx="8"/></svg>Griddle</div>
   <nav class="navlinks">
     <a class="navlink" href="https://github.com/DadsDoingDesign/GriddleWindowManager" target="_blank" rel="noopener">GitHub</a>
     <button class="iconbtn" id="themeBtn" aria-label="Toggle theme">◐</button>
