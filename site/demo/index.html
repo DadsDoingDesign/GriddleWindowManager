@@ -48,7 +48,14 @@ body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--text);
   border-radius:8px;background:var(--surface);color:var(--muted);cursor:pointer;font-size:12px;padding:0}
 .iconbtn:hover{color:var(--ink);border-color:var(--accent-line)}
 
-.stage{position:fixed;inset:0;overflow:hidden}
+/* absolute, NOT fixed. position:fixed creates a stacking context, which trapped
+   every card inside it — so .card.expanded's z-index:90 was competing with its
+   siblings rather than with .scrim's 80, and the scrim painted over the expanded
+   card no matter how high its z-index went. html/body are height:100% with
+   overflow:hidden, so absolute inset:0 lands in exactly the same place while
+   leaving the cards in the root stacking context where the z-index scale means
+   what it says. */
+.stage{position:absolute;inset:0;overflow:hidden}
 
 /* ============================================================
    ONE component per card. Content is authored once, for the GRID.
@@ -104,13 +111,13 @@ body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--text);
   margin:0;text-wrap:balance;transition:font-size var(--dur) var(--ease),line-height var(--dur) var(--ease)}
 /* vh term keeps the intro type from outgrowing the window on short viewports */
 [data-phase="hero"] .headline{font-size:clamp(30px,min(5.6vw,11.5vh),76px);line-height:.95;letter-spacing:-.048em}
-[data-phase="grid"] .headline{font-size:clamp(15px,1.85vw,27px);line-height:1.08}
+[data-phase="grid"] .headline{font-size:clamp(15px,1.95vw,34px);line-height:1.08}
 .headline .br{display:block}
 
 .dek{color:var(--muted);margin:0;text-wrap:pretty;overflow:hidden;
   transition:font-size var(--dur) var(--ease)}
 [data-phase="hero"] .dek{font-size:clamp(13.5px,1.3vw,17px);line-height:1.5;max-width:32em}
-[data-phase="grid"] .dek{font-size:clamp(11px,.92vw,13px);line-height:1.42}
+[data-phase="grid"] .dek{font-size:clamp(11px,1.02vw,17px);line-height:1.5}
 
 .eyebrow{font-family:var(--mono);color:var(--accent);text-transform:uppercase;font-weight:600;
   white-space:nowrap;transition:font-size var(--dur) var(--ease),letter-spacing var(--dur) var(--ease)}
@@ -138,10 +145,45 @@ body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--text);
 [data-phase="hero"] .meta{font-size:11px}
 [data-phase="grid"] .meta{font-size:9.5px}
 
-.lines{display:flex;flex-direction:column;gap:6px}
-.ln{height:6px;border-radius:3px;background:var(--line)}
-.applabel{font-size:11.5px;color:var(--muted);line-height:1.4;overflow:hidden}
+.applabel{font-size:clamp(11px,.9vw,15px);color:var(--muted);line-height:1.45;overflow:hidden}
 .applabel b{color:var(--ink);font-weight:650}
+
+/* ---- in-tile content ----
+   Every tile says something true about the app before it is clicked. Empty
+   tiles made the board read as a mockup of a product rather than the product;
+   these are the actual feature set, at a size that survives a 27" monitor. */
+
+/* the headline tile keeps its hero type, and gains a second line once it is a
+   tile — the claim needs a supporting sentence at tile scale, and the hero
+   cannot afford one */
+.subhead{color:var(--muted);margin:clamp(10px,1.4vh,20px) 0 0;line-height:1.5;text-wrap:pretty;
+  font-size:clamp(10.5px,.95vw,16.5px);max-width:38em}
+/* content that only makes sense once the card is a tile. The hero is one
+   sentence and a headline by design; these would crowd it. */
+[data-phase="hero"] .gridonly{display:none}
+
+/* key/value feature rows — the label is the term, the value is what it does */
+.feat{display:flex;flex-direction:column;gap:clamp(5px,1.6vh,18px);overflow:hidden}
+.frow{display:flex;gap:9px;align-items:baseline;line-height:1.4}
+.fkey{flex:none;min-width:clamp(52px,4.4vw,74px);font-family:var(--mono);font-size:clamp(8.5px,.7vw,12px);
+  color:var(--accent);text-transform:uppercase;letter-spacing:.08em;font-weight:600}
+.fval{font-size:clamp(10.5px,.95vw,16.5px);color:var(--muted);text-wrap:pretty}
+.fval b{color:var(--ink);font-weight:600}
+
+/* template thumbnails: real built-ins, drawn as the layouts they are */
+.tgal{display:grid;grid-template-columns:repeat(3,1fr);gap:clamp(4px,.8vw,10px)}
+.tmini{aspect-ratio:4/3;display:grid;gap:2px;padding:2px;border:1px solid var(--line);
+  border-radius:4px;background:var(--surface-2)}
+.tmini i{display:block;border-radius:2px;background:var(--accent-soft);border:1px solid var(--accent-line)}
+.tnew{border-style:dashed;background:none;place-items:center;color:var(--faint);
+  font-size:14px;line-height:1;font-family:var(--mono)}
+.tlead{font-size:clamp(10.5px,.95vw,16.5px);color:var(--ink);line-height:1.5;margin:0 0 clamp(8px,1.4vh,16px);text-wrap:pretty;font-weight:500}
+.tcap{font-size:clamp(9.5px,.8vw,14px);color:var(--muted);line-height:1.5;margin:clamp(6px,1.2vh,14px) 0 0;text-wrap:pretty}
+
+/* a compact stat strip for the short tiles */
+.kv{display:flex;flex-wrap:wrap;gap:clamp(3px,.8vh,8px) clamp(14px,1.4vw,26px);
+  font-size:clamp(10px,.9vw,15px);color:var(--muted);line-height:1.5;margin-top:clamp(8px,1.4vh,18px)}
+.kv b{color:var(--ink);font-weight:600}
 
 /* detail layer — genuinely different content, so it is an overlay that
    fades in over the same card rather than replacing anything */
@@ -176,15 +218,34 @@ body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--text);
   opacity:0;transition:opacity 260ms ease}
 [data-phase="grid"].tools-on .rhandle{opacity:1}
 .card.expanded .rhandle,.card.parked .rhandle{display:none}
-/* a corner bracket, not an icon — it reads as "grab this corner" at 9px */
+/* a corner bracket, not an icon — it reads as "grab this corner" at 9px.
+   Drawn in --line, the same weight as the card's own border: present on ten
+   tiles at once, anything brighter reads as decoration and pulls the eye off
+   the content. It earns contrast only under the cursor. */
 .rhandle::after{content:"";position:absolute;right:4px;bottom:4px;width:9px;height:9px;
-  border-right:2px solid var(--faint);border-bottom:2px solid var(--faint);
+  border-right:1.5px solid var(--line);border-bottom:1.5px solid var(--line);
   border-bottom-right-radius:3px;transition:border-color 140ms ease}
+.card:hover .rhandle::after{border-color:var(--faint)}
 .rhandle:hover::after,.rhandle:focus-visible::after,.rhandle.grabbing::after{border-color:var(--accent)}
 .rhandle:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:4px}
-.dropzone{position:absolute;border-radius:7px;background:var(--accent-soft);
-  border:1.5px solid var(--accent-line);opacity:0;transition:opacity 130ms ease;pointer-events:none}
-.dropzone.on{opacity:1}
+/* Drop preview. It must paint ABOVE the tiles, not on the grid backdrop: the
+   board is fully packed with opaque cards, so a highlight underneath them is
+   invisible in exactly the moment it is needed. This is what the app itself
+   does — a translucent overlay over the real windows, showing the cells you are
+   about to claim. Cells are drawn individually so you can count them, which is
+   the whole point of a grid.
+   Above the DRAGGED card too (z-index 55 vs its 50), not just the static ones:
+   the card follows the cursor and the snap target is the cell under it, so the
+   two almost always coincide — draw the preview underneath and the card hides
+   the very thing it is previewing. The wash is ~12% alpha, so the card still
+   reads through it. */
+.preview{position:absolute;inset:0;pointer-events:none;z-index:55;opacity:0;
+  transition:opacity 120ms ease}
+.preview.on{opacity:1}
+.pcell{position:absolute;border-radius:5px;background:var(--accent-soft);
+  border:1px solid var(--accent-line)}
+.pzone{position:absolute;border-radius:7px;border:2px solid var(--accent);
+  box-shadow:0 0 0 1px var(--ground)}
 
 .controls{position:fixed;left:50%;bottom:18px;transform:translateX(-50%) translateY(14px);
   display:flex;align-items:center;gap:3px;padding:6px;background:var(--surface);
@@ -258,7 +319,8 @@ select.mode{font-family:var(--text);font-size:12px;background:var(--surface-2);c
 </header>
 
 <main class="stage" id="stage">
-  <div class="gridwrap" id="gridwrap"><div id="cells"></div><div class="dropzone" id="dropzone"></div></div>
+  <div class="gridwrap" id="gridwrap"><div id="cells"></div></div>
+  <div class="preview" id="preview" aria-hidden="true"></div>
 </main>
 
 <button class="hint" id="hint">press any key to arrange &rarr;</button>
@@ -303,7 +365,9 @@ const root=document.documentElement;
 /* Content authored ONCE, for the grid. The hero reuses these very nodes. */
 const CARDS=[
   { id:'headline', app:'Griddle Window Manager', tier:0, w:5, h:3, hero:1,
-    html:'<h1 class="headline">Every window,<span class="br">right where it belongs.</span></h1>',
+    html:'<h1 class="headline">Every window,<span class="br">right where it belongs.</span></h1>'
+        +'<p class="subhead gridonly">Windows 11 gives you halves and quarters. Griddle gives you a grid —'
+        +' 12 columns by 6 rows out of the box — and lets every window claim whatever rectangle of cells you want.</p>',
     title:'Every window, right where it belongs.',
     detail:'<p class="dbody">Windows 11 gives you halves and quarters. Griddle gives you a real grid — say 12 columns by 6 rows — and lets any window claim any rectangle of cells.</p><p class="dbody">Drag one and an overlay shows exactly where it lands and which neighbours it pushes. <b>Which is what you are doing right now</b> — this page runs the same layout engine the app does.</p>' },
   { id:'foss', app:'License', tier:0, w:3, h:1, hero:1,
@@ -311,7 +375,9 @@ const CARDS=[
     title:'MIT licensed',
     detail:'<p class="dbody">Free and open source under the MIT licence. No account, no paid tier, no telemetry. The full source, the design specs, and the entire commit history are public.</p>' },
   { id:'dek', app:'What it does', tier:0, w:4, h:2, hero:1,
-    html:'<p class="dek">A grid you design yourself — and every window exactly where you meant it to go.</p>',
+    html:'<p class="dek">A grid you design yourself — and every window exactly where you meant it to go.</p>'
+        +'<div class="kv gridonly"><span><b>12 × 6</b> by default</span><span>gap and padding <b>0–64px</b></span>'
+        +'<span>per monitor, or <b>spanning several</b></span></div>',
     title:'What it does',
     detail:'<p class="dbody">Enable a grid on any monitor and every eligible window snaps into it. Save arrangements as <b>templates</b>, pin apps to their usual spot with <b>per-app defaults</b>, and restore your whole desktop at startup with <b>views</b>.</p>' },
   /* No `hero` flag on purpose: the intro is text only. A download button there is
@@ -321,10 +387,36 @@ const CARDS=[
     html:'<a class="cta" href="https://github.com/DadsDoingDesign/GriddleWindowManager/releases/latest" target="_blank" rel="noopener">Download for Windows 11</a><div class="meta">v0.2.0 · 3.1 MB · x64</div>',
     title:'Download',
     detail:'<p class="dbody">Version 0.2.0, 3.1 MB, x64. Installs <b>per-user</b> — no administrator rights needed.</p><p class="dbody">The installer is not code-signed, so SmartScreen warns once: choose <b>More info → Run anyway</b>. That means Windows does not recognise the publisher, not that anything is wrong.</p>' },
-  { id:'vscode', app:'Visual Studio Code', tier:1, w:4, h:3, lines:[76,52,64], accent:'#4A9EDB' },
-  { id:'figma',  app:'Figma',  tier:1, w:4, h:2, lines:[68,46], accent:'#A259FF' },
-  { id:'chrome', app:'Chrome', tier:2, w:3, h:3, lines:[60,40,50], accent:'#F5A623' },
-  { id:'slack',  app:'Slack',  tier:3, w:3, h:1, lines:[62], accent:'#E01E5A' },
+  { id:'modes', app:'Placement', tier:1, w:4, h:3, accent:'#4A9EDB',
+    html:'<div class="feat">'
+      +'<div class="frow"><span class="fkey">Reflow</span><span class="fval">the window lands <b>exactly</b> where you aimed, and the others reorganise around it — as few of them moving as possible</span></div>'
+      +'<div class="frow"><span class="fkey">Push</span><span class="fval">neighbours are shoved aside one shove at a time, and equal-size windows swap</span></div>'
+      +'<div class="frow"><span class="fkey">Stack</span><span class="fval">windows still snap to cells, but may overlap freely</span></div>'
+      +'</div>',
+    title:'Three placement modes',
+    detail:'<p class="dbody">Every grid decides for itself what happens when you drop a window on cells someone else is already using.</p><p class="dbody"><b>Reflow</b> lands the window exactly where you aimed and reorganises the rest, moving as few as it can. Where no arrangement exists it falls back to Push, so Reflow is never worse than Push. <b>Push</b> shoves neighbours aside, and refuses the drop when one has nowhere to go. <b>Stack</b> lets windows overlap, most recently touched on top.</p><p class="dbody">The selector at the bottom of this page drives those same three modes — on this grid, right now.</p>' },
+  { id:'views',  app:'Views',  tier:1, w:4, h:2, accent:'#A259FF',
+    html:'<div class="feat">'
+      +'<div class="frow"><span class="fkey">Save</span><span class="fval">every grid, its spacing, and which program sits where</span></div>'
+      +'<div class="frow"><span class="fkey">Restore</span><span class="fval">your whole desktop reassembles itself after a reboot</span></div>'
+      +'</div>',
+    title:'Views',
+    detail:'<p class="dbody">Where a template saves one grid&rsquo;s slots, a <b>view</b> saves your whole desktop: every enabled grid with its dimensions and spacing, plus which program sits on which cells.</p><p class="dbody">Views store executable names rather than window handles, so they survive reboots. Set one as <b>Load at startup</b> and your desktop comes back the way you left it — even though every window handle is new.</p>' },
+  { id:'templates', app:'Templates', tier:2, w:3, h:3, accent:'#F5A623',
+    html:'<p class="tlead">A gallery per grid. Applying one maps your open windows to its slots.</p><div class="tgal">'
+      +'<div class="tmini" style="grid-template-columns:1fr 1fr"><i></i><i></i></div>'
+      +'<div class="tmini" style="grid-template-columns:repeat(3,1fr)"><i></i><i></i><i></i></div>'
+      +'<div class="tmini" style="grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr"><i></i><i></i><i></i><i></i></div>'
+      +'<div class="tmini" style="grid-template-columns:2fr 1fr"><i></i><i></i></div>'
+      +'<div class="tmini" style="grid-template-rows:1fr 1fr"><i></i><i></i></div>'
+      +'<div class="tmini tnew" aria-hidden="true">+</div>'
+      +'</div><p class="tcap">Two columns, thirds, quarters, main + side, two rows — or capture the arrangement you already have and name it.</p>',
+    title:'Templates',
+    detail:'<p class="dbody">A gallery per grid, with built-ins for two columns, three columns, 2×2 quarters, main + side column, and two rows.</p><p class="dbody">Capture the current arrangement as a named template — <b>slots only</b>, no window identities are stored. Applying one maps your current windows to its slots by recency and places the extras. If a template&rsquo;s dimensions differ from the grid&rsquo;s, the button says so up front.</p>' },
+  { id:'monitors', app:'Monitors', tier:3, w:3, h:1, accent:'#E01E5A',
+    html:'<div class="applabel"><b>One grid across several screens.</b> Or a separate grid on each.</div>',
+    title:'Monitors',
+    detail:'<p class="dbody">Enable a grid on any monitor and choose its columns and rows. Or turn on <b>Span monitors</b> for a single grid across the combined work area of two or more displays.</p><p class="dbody">If that union is L-shaped, the dead space is excluded and windows snap to the nearest usable cells. Spanning grids are the newest feature here and the least field-tested — please report anything odd.</p>' },
   { id:'local', app:'Privacy', tier:3, w:3, h:1,
     html:'<div class="applabel"><b>Stays on your machine.</b> No telemetry, no account.</div>',
     title:'It stays on your machine',
@@ -336,8 +428,8 @@ const CARDS=[
 ];
 /* Download sits directly under the headline: the primary action stays adjacent to
    the claim rather than drifting into the middle of the board. */
-const SEATS={headline:[0,0],vscode:[5,0],chrome:[9,0],cta:[0,3],dek:[4,3],figma:[8,3],
-             foss:[0,5],local:[3,5],safe:[6,5],slack:[9,5]};
+const SEATS={headline:[0,0],modes:[5,0],templates:[9,0],cta:[0,3],dek:[4,3],views:[8,3],
+             foss:[0,5],local:[3,5],safe:[6,5],monitors:[9,5]};
 
 const solveMinimalMoves=GriddleLib.solveMinimalMoves;
 let cols=12,rows=6,gap=10,radius=10,mode='reflow';
@@ -345,7 +437,7 @@ const PAD=24;
 let grid=null,expandedId=null,started=false,didDrag=false,drag=null,rez=null,undoSnap=null;
 const els=new Map();
 const stage=document.getElementById('stage'),gridwrap=document.getElementById('gridwrap'),
-      cellsEl=document.getElementById('cells'),dropzone=document.getElementById('dropzone'),
+      cellsEl=document.getElementById('cells'),preview=document.getElementById('preview'),
       controls=document.getElementById('controls'),scrim=document.getElementById('scrim'),
       hint=document.getElementById('hint'),toast=document.getElementById('toast'),
       toastMsg=document.getElementById('toastMsg'),toastUndo=document.getElementById('toastUndo');
@@ -374,7 +466,7 @@ function build(){
       <span class="tbname">${c.app}</span><button class="closebtn" aria-label="Close">✕</button>`;
     const content=document.createElement('div');
     content.className='content';
-    content.innerHTML=c.html||`<div class="lines">${(c.lines||[]).map(w=>`<div class="ln" style="width:${w}%"></div>`).join('')}</div>`;
+    content.innerHTML=c.html||'';
     const det=document.createElement('div');
     det.className='detail';
     det.innerHTML=`<h2 class="dtitle">${c.title||c.app}</h2>${c.detail||'<p class="dbody">A window managed by Griddle. Drag it anywhere; its neighbours move out of the way.</p>'}`;
@@ -461,6 +553,7 @@ function renderCells(){
   for(let r=0;r<rows;r++)for(let c=0;c<cols;c++)
     s+=`<div class="cell" style="left:${PAD+c*(uw+gap)}px;top:${PAD+r*(uh+gap)}px;width:${uw}px;height:${uh}px"></div>`;
   cellsEl.innerHTML=s;
+  if(drag)drag.shown=null;   // geometry moved; force the next frame to repaint
 }
 function sync(d){
   const seen=new Set();
@@ -617,23 +710,52 @@ function dragStart(e,id){
   const t=grid.getTile(id);if(!t)return;
   const el=els.get(id).el,r=cellRect(t.col,t.row,t.w,t.h);
   didDrag=false;
-  drag={id,t,sx:e.clientX,sy:e.clientY,ox:e.clientX-r.x,oy:e.clientY-r.y,to:{col:t.col,row:t.row}};
+  // `shown` is what the preview is currently painted at; `to` is where a release
+  // would land. They start out of step so the first frame always paints.
+  drag={id,t,sx:e.clientX,sy:e.clientY,ox:e.clientX-r.x,oy:e.clientY-r.y,
+        to:{col:t.col,row:t.row},shown:null};
   el.classList.add('dragging');el.style.setProperty('--dur','0ms');
   el.style.zIndex='50';el.style.boxShadow='var(--shadow-hi)';
   addEventListener('pointermove',dragMove);addEventListener('pointerup',dragEnd,{once:true});
 }
+/* Paint the cells a drop would claim, plus one outline around the whole
+   footprint. Rebuilt only on the frames where the target cell actually changes,
+   so this is a handful of writes per drag, not one per pointer event. */
+function showPreview(col,row,w,h){
+  if(col==null){preview.classList.remove('on');preview.innerHTML='';return;}
+  let s='';
+  for(let r=row;r<row+h;r++)for(let c=col;c<col+w;c++){
+    const q=cellRect(c,r,1,1);
+    s+=`<div class="pcell" style="left:${q.x}px;top:${q.y}px;width:${q.w}px;height:${q.h}px"></div>`;
+  }
+  const z=cellRect(col,row,w,h);
+  s+=`<div class="pzone" style="left:${z.x}px;top:${z.y}px;width:${z.w}px;height:${z.h}px"></div>`;
+  preview.innerHTML=s;
+  preview.classList.add('on');
+}
+/* Pointer events fire faster than the screen refreshes, so writing layout on
+   every one of them does the same work several times before anything is shown.
+   Coalesce into one write per frame: the card tracks the cursor exactly, and the
+   snapped preview is only touched on the frames where the target cell changes. */
+let dragRaf=0,dragPt=null;
 function dragMove(e){
   if(!drag)return;
   if(Math.abs(e.clientX-drag.sx)>3||Math.abs(e.clientY-drag.sy)>3)didDrag=true;
-  const x=e.clientX-drag.ox,y=e.clientY-drag.oy;
+  dragPt={x:e.clientX,y:e.clientY};
+  if(!dragRaf)dragRaf=requestAnimationFrame(dragFrame);
+}
+function dragFrame(){
+  dragRaf=0;
+  if(!drag||!dragPt)return;
+  const x=dragPt.x-drag.ox,y=dragPt.y-drag.oy;
   els.get(drag.id).el.style.transform=`translate(${x}px,${y}px)`;
   const{uw,uh,p}=unit();
   const col=Math.max(0,Math.min(cols-drag.t.w,Math.round((x-p.x-PAD)/(uw+gap))));
   const row=Math.max(0,Math.min(rows-drag.t.h,Math.round((y-p.y-PAD)/(uh+gap))));
-  drag.to={col,row};
-  const dr=cellRect(col,row,drag.t.w,drag.t.h);
-  dropzone.style.cssText=`left:${dr.x-p.x}px;top:${dr.y-p.y}px;width:${dr.w}px;height:${dr.h}px`;
-  dropzone.classList.add('on');
+  if(!drag.shown||col!==drag.shown.col||row!==drag.shown.row){
+    drag.to={col,row};drag.shown={col,row};
+    showPreview(col,row,drag.t.w,drag.t.h);
+  }
 }
 /* ---- reorder + repack ----
    The board is a reading order. A drop pins the dragged tile exactly where it was
@@ -714,7 +836,9 @@ function heal(id){
 function dragEnd(){
   if(!drag)return;
   removeEventListener('pointermove',dragMove);
-  dropzone.classList.remove('on');
+  if(dragRaf){cancelAnimationFrame(dragRaf);dragRaf=0;}
+  dragPt=null;
+  showPreview(null);
   const el=els.get(drag.id).el;
   el.classList.remove('dragging');el.style.zIndex='';el.style.boxShadow='';
   // captured before anything mutates, so Undo restores the whole board and not
