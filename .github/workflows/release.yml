@@ -82,6 +82,10 @@ jobs:
             warn on first run: *More info → Run anyway*. See the README for the
             full explanation, or build from source if you prefer.
 
+            `GriddleWindowManager-x64-setup.exe` is a byte-identical copy of the
+            versioned installer under a name that never changes, so the website
+            can link to it permanently. Either one installs the same thing.
+
             `latest.json` and the `.sig` files are updater artifacts, not
             downloads — the app's opt-in update check consumes them.
           # Must stay false: `releases/latest/download/latest.json` (the updater
@@ -91,3 +95,34 @@ jobs:
           # Generate and upload latest.json, pointing at the NSIS installer.
           includeUpdaterJson: true
           updaterJsonPreferNsis: true
+
+      # The installer's filename carries the version, so no permanent URL can
+      # point at it — and the website needs one. Uploading a second,
+      # byte-identical copy under a fixed name makes
+      # `.../releases/latest/download/GriddleWindowManager-x64-setup.exe`
+      # a link that survives every release, so the site's download button is a
+      # plain <a href> and the site never rebuilds when a release publishes.
+      #
+      # This aliases rather than renames: the versioned asset stays, because
+      # `latest.json` and the smoke-test docs refer to it by its real name.
+      - name: Upload a version-free installer alias for the website
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bundle = 'apps/desktop/src-tauri/target/release/bundle/nsis'
+          $found = @(Get-ChildItem -Path $bundle -Filter '*_x64-setup.exe' -File)
+          # Exactly one, or stop. Guessing which installer the website links to
+          # is worse than a failed release.
+          if ($found.Count -ne 1) {
+            throw "Expected 1 *_x64-setup.exe in $bundle, found $($found.Count). Did the bundle targets or output path change?"
+          }
+          $exe = $found[0]
+          $alias = Join-Path $env:RUNNER_TEMP 'GriddleWindowManager-x64-setup.exe'
+          Copy-Item -LiteralPath $exe.FullName -Destination $alias
+          Write-Host "Aliasing $($exe.Name) -> GriddleWindowManager-x64-setup.exe"
+          gh release upload $env:GITHUB_REF_NAME $alias --clobber
+          if ($LASTEXITCODE -ne 0) {
+            throw "gh release upload failed with exit code $LASTEXITCODE"
+          }
