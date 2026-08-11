@@ -76,7 +76,9 @@ html:not(.ready) .stage,html:not(.ready) .gridwrap,html:not(.ready) .hint{opacit
    scale — never a second copy — so nothing cross-fades or ghosts.
    ============================================================ */
 .card{position:absolute;left:0;top:0;border-radius:var(--card-radius);overflow:hidden;
-  display:flex;flex-direction:column;background:var(--surface);
+  display:flex;flex-direction:column;
+  background:var(--surface);
+  background:color-mix(in srgb,var(--surface) 89%,transparent);
   border:1px solid transparent;will-change:transform,width,height;
   transition:transform var(--dur) var(--ease) var(--delay,0ms),
     width var(--dur) var(--ease) var(--delay,0ms),
@@ -84,6 +86,12 @@ html:not(.ready) .stage,html:not(.ready) .gridwrap,html:not(.ready) .hint{opacit
     opacity 420ms ease var(--delay,0ms),
     background 620ms ease,border-color 620ms ease,box-shadow 620ms ease}
 .card.parked{opacity:0;pointer-events:none}
+
+/* Tiles sit at 89% so the grid reads faintly through them. Whichever one you
+   are touching comes forward to full opacity. The hero rules below outrank
+   this, which is what keeps the intro window solid until you start arranging
+   — after that it is just another tile and follows the same rule. */
+.card:hover,.card.dragging,.card.expanded{background:var(--surface)}
 
 /* hero phase: chrome dissolves, card becomes bare type on the page */
 [data-phase="hero"] .card.inhero{background:transparent;border-color:transparent;box-shadow:none}
@@ -144,7 +152,11 @@ html:not(.ready) .stage,html:not(.ready) .gridwrap,html:not(.ready) .hint{opacit
    the exact inverse of --ground in both themes — so the button lands on the
    widest contrast step the palette has, and the one tile that matters most is
    the one the eye reaches first. */
-[data-phase="grid"] .card[data-id="cta"]{background:var(--ground)}
+[data-phase="grid"] .card[data-id="cta"]{background:var(--ground);
+  background:color-mix(in srgb,var(--ground) 89%,transparent)}
+[data-phase="grid"] .card[data-id="cta"]:hover,
+[data-phase="grid"] .card[data-id="cta"].dragging,
+[data-phase="grid"] .card[data-id="cta"].expanded{background:var(--ground)}
 .card[data-id="cta"] .meta{color:var(--muted)}
 
 .cta{display:inline-flex;align-items:center;justify-content:center;border-radius:8px;
