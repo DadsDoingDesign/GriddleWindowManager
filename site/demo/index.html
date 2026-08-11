@@ -235,6 +235,7 @@ select.mode{font-family:var(--text);font-size:12px;background:var(--surface-2);c
   <div class="ctl tier-0"><label>Grid responsiveness</label>
     <select class="mode" id="modeSel" aria-label="Grid responsiveness">
       <option value="reflow" selected>Reorganize · reflow</option>
+      <option value="griddle">Griddle · library default</option>
       <option value="push">Push · displace neighbours</option>
       <option value="stack">Overlap · windows stack</option>
     </select></div>
@@ -665,6 +666,23 @@ function dragEnd(){
       } else {
         grid.moveTile(drag.id,drag.to);
       }
+    }
+  } else if(mode==='griddle'){
+    /* Griddle's own handling, untouched. Its moveTile places the drop, then its
+       own griddle-v1 reflow tidies the board. No minimal-move solver, no custom
+       repack, no heal and no eviction weighting — this is the library deciding on
+       its own terms, so what this page adds can be judged against it.
+       reflow() throws rather than returning false on an arrangement it cannot
+       express, and the move has already been applied by then, so a failure just
+       leaves the board as moveTile left it. */
+    grid.moveTile(drag.id,drag.to);
+    try{
+      grid.reflow({strategy:'griddle-v1',cols});
+    }catch(err){
+      note.textContent='griddle reflow declined';
+      note.classList.add('on');
+      clearTimeout(dragEnd._t);
+      dragEnd._t=setTimeout(()=>note.classList.remove('on'),2000);
     }
   } else {
     grid.moveTile(drag.id,drag.to);
