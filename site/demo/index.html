@@ -1248,7 +1248,7 @@ function resizeKey(e,id){
   // bounded by the extent, not the visible page — in a scrolling mode a tile is
   // allowed to grow into the spill, same as it is allowed to be dropped there
   const kx=extent();
-  const w=Math.max(1,Math.min(kx.c-t.col,t.w+d[0])),h=Math.max(1,Math.min(kx.r-t.row,t.h+d[1]));
+  const w=Math.max(1,Math.min(cols,kx.c-t.col,t.w+d[0])),h=Math.max(1,Math.min(rows,kx.r-t.row,t.h+d[1]));
   if(w===t.w&&h===t.h)return;
   const snap=grid.toJSON();
   if(!commitResize(id,w,h,snap))return;
@@ -1468,7 +1468,7 @@ function reorderRepack(id,to,size){
      Only a tile that is off the board comes back at its authored size. */
   const reading=CARDS.filter(c=>c.tier<=lim&&c.id!==id).map(c=>{
     const t=onBoard.get(c.id);
-    return{id:c.id,tier:c.tier,w:Math.min(t?t.w:c.w,ex.c),h:Math.min(t?t.h:c.h,ex.r),
+    return{id:c.id,tier:c.tier,w:Math.min(t?t.w:c.w,cols),h:Math.min(t?t.h:c.h,rows),
            row:t?t.row:Infinity,col:t?t.col:Infinity};
   }).sort((a,b)=>a.row-b.row||a.col-b.col||(a.id<b.id?-1:1));
   /* LINEAR, one pass. Reading order, each tile into the first slot that fits;
@@ -1643,7 +1643,7 @@ function applyDims(nc,nr){
   const ex=extent();
   let dropped=0;
   for(const t of snap){
-    const w=Math.min(t.w,ex.c),h=Math.min(t.h,ex.r);
+    const w=Math.min(t.w,cols),h=Math.min(t.h,rows);
     if(!addWithSpill(grid,{id:t.id,col:Math.max(0,Math.min(t.col,ex.c-w)),row:Math.max(0,Math.min(t.row,ex.r-h)),w,h}))dropped++;
   }
   if(mode==='overlap')setFlow(false);   // the rebuild above re-imposed flow
@@ -1699,7 +1699,7 @@ function rebuildForOverflow(){
   grid=newGrid();
   let dropped=0;
   for(const t of tiles){
-    const w=Math.min(t.w,ex.c),h=Math.min(t.h,ex.r);
+    const w=Math.min(t.w,cols),h=Math.min(t.h,rows);
     const col=Math.max(0,Math.min(t.col,ex.c-w)),row=Math.max(0,Math.min(t.row,ex.r-h));
     if(!addWithSpill(grid,{id:t.id,col,row,w,h}))dropped++;
   }
@@ -1780,27 +1780,50 @@ addEventListener('click',e=>{
    scroll-horizontal a vertical wheel is accepted too: almost nobody has a
    horizontal wheel, and a carousel you cannot move is worse than one that
    interprets you generously. */
-let scrollRaf=0;
+let scrollRaf=0,scrollDur=0;
 function applyScroll(){
   scrollRaf=0;
+  const d=scrollDur;scrollDur=0;
+  cellsEl.style.transition=d?`transform ${d}ms var(--ease)`:'none';
   cellsEl.style.transform=`translate(${-offX}px,${-offY}px)`;
-  sync(0);
-  if(expandedId)place(expandedId,expandRect(),0);
+  sync(d);
+  if(expandedId)place(expandedId,expandRect(),d);
 }
-function queueScroll(){if(!scrollRaf)scrollRaf=requestAnimationFrame(applyScroll);}
+function queueScroll(d){
+  scrollDur=Math.max(scrollDur,d||0);
+  if(!scrollRaf)scrollRaf=requestAnimationFrame(applyScroll);
+}
+/* Snap the offset to a whole cell. The board is made of cells, so any resting
+   position between two of them is a position the board does not have — you end
+   up reading half a tile at the top of the screen and half at the bottom. */
+function cellStep(){const{uw,uh}=unit();return{x:uw+gap,y:uh+gap};}
+function snapOff(){
+  const s=cellStep();
+  offX=Math.round(offX/s.x)*s.x;
+  offY=Math.round(offY/s.y)*s.y;
+  clampScroll();
+}
+/* One gesture, one cell. A trackpad emits dozens of wheel events per flick, so
+   without the cooldown a single swipe would fly across the whole extent; with
+   it, the board advances a tile at a time and always lands on one. */
+const WHEEL_LOCK_MS=150;
+let wheelUntil=0;
 addEventListener('wheel',e=>{
   if(!started||expandedId||!scrolls()||!canScroll())return;
+  const now=performance.now();
+  if(now<wheelUntil)return;
   // Shift+wheel is the horizontal convention everywhere (browsers, editors,
   // design tools), and it is the only way to pan sideways on hardware that has
   // no horizontal wheel — which is most hardware.
-  const sideways=e.shiftKey||!scrollsY();
-  if(sideways&&scrollsX())offX+=e.deltaX||e.deltaY;
-  else{
-    if(scrollsY())offY+=e.deltaY;
-    if(scrollsX()&&e.deltaX)offX+=e.deltaX;
-  }
+  const sideways=(e.shiftKey||!scrollsY())&&scrollsX();
+  const raw=sideways?(e.deltaX||e.deltaY):e.deltaY;
+  if(!raw)return;
+  wheelUntil=now+WHEEL_LOCK_MS;
+  const s=cellStep(),dir=raw>0?1:-1;
+  if(sideways)offX=(Math.round(offX/s.x)+dir)*s.x;
+  else offY=(Math.round(offY/s.y)+dir)*s.y;
   clampScroll();
-  queueScroll();
+  queueScroll(reduce?1:260);
 },{passive:true});
 
 /* ---- drag the canvas itself ----
@@ -1825,16 +1848,20 @@ stage.addEventListener('pointerdown',e=>{
 });
 stage.addEventListener('pointermove',e=>{
   if(!pan)return;
+  // follow the hand exactly while it is down — snapping mid-drag would fight the
+  // gesture — then settle onto a cell the moment it lets go
   offX=pan.ox-(e.clientX-pan.x);
   offY=pan.oy-(e.clientY-pan.y);
   clampScroll();
-  queueScroll();
+  queueScroll(0);
 });
 for(const ev of ['pointerup','pointercancel'])stage.addEventListener(ev,e=>{
   if(!pan)return;
   pan=null;
   try{stage.releasePointerCapture(e.pointerId);}catch(err){}
   root.classList.remove('panning');
+  snapOff();
+  queueScroll(reduce?1:280);
 });
 
 /* ---- control bar: tabs, then pages within a tab ----
