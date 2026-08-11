@@ -3,6 +3,7 @@
 <style>
 :root{
   --ground:#FBFBFC; --panel:#F1F1F5; --surface:#FFFFFF; --surface-2:#FAFAFC;
+  --surface-hi:#EFEFF6;
   --ink:#0B0B12; --muted:#6E6E7A; --faint:#9C9CA8;
   --line:#E3E3EA; --line-soft:#EDEDF2;
   --accent:#5B5BD6; --accent-soft:rgba(91,91,214,.10); --accent-line:rgba(91,91,214,.45);
@@ -25,18 +26,21 @@
 }
 @media (prefers-color-scheme:dark){:root{
   --ground:#09090D; --panel:#121218; --surface:#1A1A22; --surface-2:#15151C;
+  --surface-hi:#24242F;
   --ink:#F3F3F7; --muted:#9B9BA9; --faint:#6E6E7E; --line:#282833; --line-soft:#1F1F28;
   --accent:#8C8CF5; --accent-soft:rgba(140,140,245,.14); --accent-line:rgba(140,140,245,.5);
   --shadow-lo:0 1px 2px rgba(0,0,0,.5); --shadow-hi:0 20px 48px -12px rgba(0,0,0,.72),0 4px 12px rgba(0,0,0,.4);
 }}
 :root[data-theme="dark"]{
   --ground:#09090D; --panel:#121218; --surface:#1A1A22; --surface-2:#15151C;
+  --surface-hi:#24242F;
   --ink:#F3F3F7; --muted:#9B9BA9; --faint:#6E6E7E; --line:#282833; --line-soft:#1F1F28;
   --accent:#8C8CF5; --accent-soft:rgba(140,140,245,.14); --accent-line:rgba(140,140,245,.5);
   --shadow-lo:0 1px 2px rgba(0,0,0,.5); --shadow-hi:0 20px 48px -12px rgba(0,0,0,.72),0 4px 12px rgba(0,0,0,.4);
 }
 :root[data-theme="light"]{
   --ground:#FBFBFC; --panel:#F1F1F5; --surface:#FFFFFF; --surface-2:#FAFAFC;
+  --surface-hi:#EFEFF6;
   --ink:#0B0B12; --muted:#6E6E7A; --faint:#9C9CA8; --line:#E3E3EA; --line-soft:#EDEDF2;
   --accent:#5B5BD6; --accent-soft:rgba(91,91,214,.10); --accent-line:rgba(91,91,214,.45);
   --shadow-lo:0 1px 2px rgba(11,11,18,.05); --shadow-hi:0 18px 44px -12px rgba(11,11,18,.26),0 4px 10px rgba(11,11,18,.08);
@@ -69,6 +73,11 @@ body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--text);
    leaving the cards in the root stacking context where the z-index scale means
    what it says. */
 .stage{position:absolute;inset:0;overflow:hidden}
+/* Canvas mode makes the empty board grabbable, the way every infinite-canvas
+   tool does. Tiles keep their own cursors — you grab the canvas, not a window. */
+html.canvasmode .stage{cursor:grab}
+html.canvasmode .card{cursor:auto}
+html.panning .stage,html.panning .card{cursor:grabbing}
 
 /* THE CURTAIN. Laying the hero out takes two passes — a provisional box, then
    the real one measured from rendered text — and both used to be on screen. The
@@ -95,32 +104,33 @@ html:not(.ready) .stage,html:not(.ready) .gridwrap,html:not(.ready) .hint{opacit
     border-color 620ms ease,box-shadow 620ms ease}
 .card.parked{opacity:0;pointer-events:none}
 
-/* Tiles sit at 89% so the grid reads faintly through them, and whichever one you
-   are touching comes forward to full.
-   The surface is its OWN LAYER rather than the tile's background-color, because
-   transitioning a background-color repaints the entire tile on every frame of
-   the fade. Ten large translucent tiles on a 4K display cannot repaint that fast,
-   so the ramp only landed every second or third frame — which is what read as
-   flicker. Opacity on a separate layer is composited: no repaint, no stepping.
-   z-index:-1 keeps it behind the tile's own content, and the card already forms
-   a stacking context (will-change:transform) so it cannot slip out behind the
-   card itself. */
+/* Tiles are ALWAYS fully opaque. Highlight is a colour change, not a fade:
+   a translucent tile reads as unloaded or disabled, and on a busy board ten of
+   them at 89% made the whole grid look washed out. The one you are pointing at
+   lifts to --surface-hi instead.
+   The surface is still its own layer rather than the card's background-color,
+   because the card's content sits above it and a background transition on the
+   card itself repaints every child on every frame of the ramp. */
 .card::before{content:"";position:absolute;inset:0;z-index:-1;
-  background:var(--surface);opacity:.89;pointer-events:none;
-  transition:opacity 340ms cubic-bezier(.4,0,1,1)}          /* leaving: ease-in */
-.card:hover::before,.card.dragging::before,.card.expanded::before{
-  opacity:1;transition:opacity 200ms cubic-bezier(0,0,.2,1)} /* arriving: ease-out */
+  background:var(--surface);pointer-events:none;
+  transition:background 220ms ease}
+.card:hover::before,.card.dragging::before,.card.expanded::before{background:var(--surface-hi)}
 
 /* hero phase: chrome dissolves, card becomes bare type on the page */
 [data-phase="hero"] .card.inhero{border-color:transparent;box-shadow:none}
-[data-phase="hero"] .card.inhero::before{opacity:0}
+[data-phase="hero"] .card.inhero::before{background:transparent}
 [data-phase="grid"] .card{border-color:var(--line);box-shadow:var(--shadow-lo)}
 
 /* ...except the headline, which IS the intro window. It keeps its chrome while
    floating over an empty grid, then minimises into its own tile. The three other
    hero elements ride inside it and fly out to their own seats. */
 [data-phase="hero"] .card.inhero[data-id="headline"]{border-color:var(--line);box-shadow:var(--shadow-hi)}
-[data-phase="hero"] .card.inhero[data-id="headline"]::before{opacity:1}
+[data-phase="hero"] .card.inhero[data-id="headline"]::before{background:var(--surface-hi)}
+/* and it stays highlighted once it becomes a tile, until you touch another one —
+   so there is always exactly one tile showing you what "highlighted" looks like,
+   and the page starts by pointing at the thing worth reading first. `pristine`
+   is dropped the moment any other tile is hovered, dragged or opened. */
+html.pristine[data-phase="grid"] .card[data-id="headline"]::before{background:var(--surface-hi)}
 
 .titlebar{height:30px;flex:none;display:flex;align-items:center;gap:8px;padding:0 11px;
   border-bottom:1px solid transparent;opacity:0;transition:opacity 420ms ease,border-color 620ms ease;
@@ -221,8 +231,24 @@ html:not(.ready) .stage,html:not(.ready) .gridwrap,html:not(.ready) .hint{opacit
 .fval b{color:var(--ink);font-weight:600}
 
 /* template thumbnails: real built-ins, drawn as the layouts they are */
-.tgal{display:grid;grid-template-columns:repeat(3,1fr);gap:clamp(4px,.8vw,10px)}
-.tmini{aspect-ratio:16/11;display:grid;gap:2px;padding:2px;border:1px solid var(--line);
+/* Template thumbnails are BUTTONS in both places — the tile face and the popout
+   — and both render from the same TEMPLATES data, so a thumbnail can never show
+   a layout different from the one it applies. */
+.tgal{display:grid;grid-template-columns:repeat(2,1fr);gap:clamp(4px,.8vw,10px)}
+.tmini,.dtpl{display:flex;flex-direction:column;gap:5px;align-items:stretch;
+  background:none;border:1px solid var(--line);border-radius:7px;padding:5px;
+  cursor:pointer;font:inherit;color:inherit;text-align:center;
+  transition:border-color 160ms ease,background 160ms ease}
+.tmini:hover,.dtpl:hover{border-color:var(--accent-line);background:var(--accent-soft)}
+.tmini:focus-visible,.dtpl:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.tmini svg,.dtpl svg{width:100%;height:auto;display:block}
+.tmini span{font-size:clamp(8px,.68vw,11px);color:var(--muted);font-family:var(--mono);
+  letter-spacing:.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dtpl span{font-size:clamp(9.5px,.8vw,13px);color:var(--ink);font-family:var(--mono);
+  letter-spacing:.03em;font-weight:600}
+.dtpl em{font-style:normal;font-size:clamp(9px,.75vw,12px);color:var(--faint);line-height:1.4;
+  text-wrap:pretty}
+.tmini-unused{aspect-ratio:16/11;display:grid;gap:2px;padding:2px;border:1px solid var(--line);
   border-radius:4px;background:var(--surface-2)}
 .tmini i{display:block;border-radius:2px;background:var(--accent-soft);border:1px solid var(--accent-line)}
 .tnew{border-style:dashed;background:none;place-items:center;color:var(--faint);
@@ -476,10 +502,21 @@ select.mode{font-family:var(--text);font-size:12px;background:var(--surface-2);c
    Gap below 1100px and Corners below 1280px outright — not collapse them, hide
    them — so on a laptop those settings did not exist. Tabs plus the pager cover
    the same ground without ever making a setting unreachable. */
-/* Below this width a cell is too small to aim a 22px corner grip at, and the
-   handle would sit on top of the content it is meant to resize. Dragging tiles
-   still works on touch; only resizing goes away. */
-@media (max-width:899px){.rhandle{display:none}}
+/* TOUCH. A 22px corner grip is a mouse target, not a finger one — the guidance
+   floor is 44px, and this used to give up entirely and hide the handle below
+   900px, so on every phone and most tablets a tile simply could not be resized.
+   Instead: grow the target on coarse pointers, and grow the mark with it.
+   min(44px, 38%) is the compromise that keeps it honest on small tiles — a fixed
+   44px handle on a 90px tile is half the tile, and you would hit resize every
+   time you meant to drag. */
+@media (pointer:coarse){
+  .rhandle{width:min(44px,38%);height:min(44px,38%)}
+  .rhandle::after{right:7px;bottom:7px;width:15px;height:15px;border-width:2px}
+  /* there is no hover on touch, so the affordance has to be visible at rest or
+     it may as well not exist */
+  [data-phase="grid"].tools-on .rhandle::after{border-color:var(--faint)}
+  .rhandle.grabbing::after{border-color:var(--accent);border-width:2.5px}
+}
 
 @media (prefers-reduced-motion:reduce){
   .card,.headline,.dek,.eyebrow,.cta,.meta,.content{transition-duration:1ms !important}
@@ -605,20 +642,47 @@ function modesFig(){
         'nothing moves; A simply lies on top')
     +'</div><p class="dcap">The same drop on the same full board. <b>Reorganize</b> is the only one that both honours your aim and keeps the board tidy.</p></figure>';
 }
-/* The five built-ins, drawn as the layouts they are rather than named in a list. */
+/* Four templates worth actually choosing.
+   Halves, thirds and quarters are what a grid gives you for free by dragging two
+   tiles together — putting them in a gallery is filler. These are the
+   arrangements that are tedious to build by hand and that describe how people
+   really lay a screen out: one thing you are working on and things you are
+   watching, or a centre column flanked by rails.
+   Authored against a 12x6 reference and scaled on apply, so each one means the
+   same thing on a 4x3 board as on a 20x10 one. */
+const TPL_COLS=12,TPL_ROWS=6;
+const TEMPLATES=[
+  {id:'focus',name:'Focus + rail',
+   blurb:'one thing you are working on, three you are watching',
+   slots:[{col:0,row:0,w:8,h:6},{col:8,row:0,w:4,h:2},{col:8,row:2,w:4,h:2},{col:8,row:4,w:4,h:2}]},
+  {id:'cockpit',name:'Cockpit',
+   blurb:'centre column between two full-height rails',
+   slots:[{col:0,row:0,w:3,h:6},{col:3,row:0,w:6,h:4},{col:3,row:4,w:6,h:2},{col:9,row:0,w:3,h:6}]},
+  {id:'dashboard',name:'Dashboard',
+   blurb:'a full-width banner over three equal panels',
+   slots:[{col:0,row:0,w:12,h:2},{col:0,row:2,w:4,h:4},{col:4,row:2,w:4,h:4},{col:8,row:2,w:4,h:4}]},
+  {id:'mosaic',name:'Mosaic',
+   blurb:'a deliberately uneven board — big, tall, and a strip of three',
+   slots:[{col:0,row:0,w:8,h:4},{col:8,row:0,w:4,h:6},{col:0,row:4,w:3,h:2},{col:3,row:4,w:3,h:2},{col:6,row:4,w:2,h:2}]},
+];
+function tplSvg(t,W,H){
+  const cw=W/TPL_COLS,ch=H/TPL_ROWS;
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-hidden="true">`;
+  for(const q of t.slots)
+    s+=`<rect class="dtile lit" x="${q.col*cw+1}" y="${q.row*ch+1}" width="${q.w*cw-2}" height="${q.h*ch-2}" rx="2.5"/>`;
+  return s+'</svg>';
+}
+/* Rendered from the same data in both places, so the thumbnail can never drift
+   from the layout it applies. data-tpl is what the click delegate looks for. */
+function tplButtons(cls,W,H,withBlurb){
+  return TEMPLATES.map(t=>
+    `<button type="button" class="${cls}" data-tpl="${t.id}" title="Apply “${t.name}” to this grid">`
+    +tplSvg(t,W,H)+`<span>${t.name}</span>`
+    +(withBlurb?`<em>${t.blurb}</em>`:'')+'</button>').join('');
+}
 function templatesFig(){
-  const T=[['Two columns',[[0,0,1,2],[1,0,1,2]],2,2],['Thirds',[[0,0,1,2],[1,0,1,2],[2,0,1,2]],3,2],
-           ['Quarters',[[0,0,1,1],[1,0,1,1],[0,1,1,1],[1,1,1,1]],2,2],
-           ['Main + side',[[0,0,2,2],[2,0,1,2]],3,2],['Two rows',[[0,0,2,1],[0,1,2,1]],2,2]];
-  const cells=T.map(([name,tiles,c,r])=>{
-    const W=96,H=68,cw=W/c,ch=H/r;
-    let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-hidden="true">`;
-    for(const [x,y,w,h] of tiles)
-      s+=`<rect class="dtile lit" x="${x*cw+2}" y="${y*ch+2}" width="${w*cw-4}" height="${h*ch-4}" rx="3"/>`;
-    return `<div class="dtpl">${s}</svg><span>${name}</span></div>`;
-  }).join('');
-  return `<figure class="dfig"><div class="dtpls">${cells}</div>`
-    +'<p class="dcap">Built-ins, plus whatever you capture. A template stores <b>slots only</b> — never which program was in them.</p></figure>';
+  return `<figure class="dfig"><div class="dtpls">${tplButtons('dtpl',132,66,1)}</div>`
+    +'<p class="dcap"><b>Click one to lay this grid out with it.</b> A template stores slots only — never which program was in them — so applying one maps whatever you have open onto its shape.</p></figure>';
 }
 /* Two screens of different heights, unioned into one board. The seam is the
    point: it is the part of the feature that surprises people. */
@@ -728,16 +792,10 @@ const CARDS=[
       +'<div class="drow"><span class="dkey">Then stops</span><span class="dval">Claims stay open for two minutes. After that, normal placement resumes — a view restores your desktop without governing it forever.</span></div>'
       +'</div>' },
   { id:'templates', app:'Templates', tier:2, w:3, h:3, accent:'#F5A623',
-    html:'<div class="tgal">'
-      +'<div class="tmini" style="grid-template-columns:1fr 1fr"><i></i><i></i></div>'
-      +'<div class="tmini" style="grid-template-columns:repeat(3,1fr)"><i></i><i></i><i></i></div>'
-      +'<div class="tmini" style="grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr"><i></i><i></i><i></i><i></i></div>'
-      +'<div class="tmini" style="grid-template-columns:2fr 1fr"><i></i><i></i></div>'
-      +'<div class="tmini" style="grid-template-rows:1fr 1fr"><i></i><i></i></div>'
-      +'<div class="tmini tnew" aria-hidden="true">+</div>'
-      +'</div><p class="tcap">Two columns, thirds, quarters, main + side, two rows — or capture the arrangement you already have and name it.</p>',
+    html:'<div class="tgal">'+tplButtons('tmini',96,48,0)+'</div>'
+      +'<p class="tcap gridonly"><b>Click one</b> to lay this grid out with it — right here, on this page.</p>',
     title:'Templates',
-    detail:'<p class="dlead">A gallery per grid: five layouts built in, plus any arrangement you have already made and want to keep.</p>'
+    detail:'<p class="dlead">Four layouts built in, plus any arrangement you have already made and want to keep. Click one and this grid rearranges into it.</p>'
       +'<div class="dsplit"><div class="drows">'
       +'<div class="drow"><span class="dkey">Capture</span><span class="dval">Name the arrangement on screen and it joins the gallery. It stores <b>slots only</b> — no window identities, no program names.</span></div>'
       +'<div class="drow"><span class="dkey">Apply</span><span class="dval">Your open windows map onto the slots <b>by recency</b>, most recent to the first slot. Anything left over is auto-placed by the usual rules.</span></div>'
@@ -795,23 +853,29 @@ const PAD=24;
    carousel costs one subtraction in cellRect rather than a scrolling container,
    a re-parented DOM, and a second coordinate space. */
 let offX=0,offY=0;
-/* How far past the visible page tiles may live, per overflow mode. Two extra
-   screenfuls in each scrolling direction is "infinite" at human scale, and it
-   keeps the Griddle instance a fixed, allocatable size. */
-const SPILL=2;
+/* How far past the visible page tiles may live, per overflow mode.
+   The MIN floor matters more than the multiple: on a 1x1 board, "three times the
+   page" is three cells, which is not a canvas by any reading. A floor of 16
+   guarantees somewhere to explore at any grid size, and 16x16 cells is still a
+   trivial amount of DOM. */
+const SPILL=2,MIN_EXTENT=16;
+function grow(n){return Math.max(n*(1+SPILL),MIN_EXTENT);}
 function extent(){
   switch(ovf){
-    case 'scroll-v':return{c:cols,r:rows*(1+SPILL)};
-    case 'scroll-h':return{c:cols*(1+SPILL),r:rows};
-    case 'canvas':  return{c:cols*(1+SPILL),r:rows*(1+SPILL)};
+    case 'scroll-v':return{c:cols,r:grow(rows)};
+    case 'scroll-h':return{c:grow(cols),r:rows};
+    case 'canvas':  return{c:grow(cols),r:grow(rows)};
     default:        return{c:cols,r:rows};   // drop · restricted stay on the page
   }
 }
 function scrolls(){return ovf==='scroll-v'||ovf==='scroll-h'||ovf==='canvas';}
 function scrollsX(){return ovf==='scroll-h'||ovf==='canvas';}
 function scrollsY(){return ovf==='scroll-v'||ovf==='canvas';}
-/* Never scroll past the last occupied cell — an empty void the user can reach is
-   a bug, not a feature, and it makes the board feel broken rather than large. */
+/* In the two carousels, never scroll past the last occupied cell: reachable
+   empty space there reads as a broken board rather than a large one.
+   Canvas is the deliberate exception. It is meant to feel unbounded, so it lets
+   you go a full page beyond the content in every direction — INCLUDING back past
+   the origin, which is what makes it explorable rather than merely tall. */
 function scrollLimits(){
   const{uw,uh}=unit();
   let maxC=cols,maxR=rows;
@@ -819,14 +883,20 @@ function scrollLimits(){
     if(t.col+t.w>maxC)maxC=t.col+t.w;
     if(t.row+t.h>maxR)maxR=t.row+t.h;
   }
-  return{x:scrollsX()?Math.max(0,(maxC-cols)*(uw+gap)):0,
-         y:scrollsY()?Math.max(0,(maxR-rows)*(uh+gap)):0};
+  const cw=uw+gap,ch=uh+gap;
+  if(ovf==='canvas'){
+    return{minX:-cols*cw,maxX:(maxC-cols)*cw+cols*cw,
+           minY:-rows*ch,maxY:(maxR-rows)*ch+rows*ch};
+  }
+  return{minX:0,maxX:scrollsX()?Math.max(0,(maxC-cols)*cw):0,
+         minY:0,maxY:scrollsY()?Math.max(0,(maxR-rows)*ch):0};
 }
 function clampScroll(){
   const l=scrollLimits();
-  offX=Math.max(0,Math.min(l.x,offX));
-  offY=Math.max(0,Math.min(l.y,offY));
+  offX=Math.max(l.minX,Math.min(l.maxX,offX));
+  offY=Math.max(l.minY,Math.min(l.maxY,offY));
 }
+function canScroll(){const l=scrollLimits();return l.maxX>l.minX||l.maxY>l.minY;}
 let grid=null,expandedId=null,started=false,didDrag=false,drag=null,rez=null,undoSnap=null;
 /* Reset compares against the page as it first arranged itself, not against a
    hardcoded board — the seed depends on viewport tier, so the only honest
@@ -903,11 +973,18 @@ function build(){
     tb.addEventListener('pointerdown',e=>dragStart(e,c.id));
     rh.addEventListener('pointerdown',e=>resizeStart(e,c.id));
     rh.addEventListener('keydown',e=>resizeKey(e,c.id));
+    /* The headline stays highlighted until you show interest in another tile —
+       so the page opens pointing at the thing worth reading first, and the
+       highlight state has been demonstrated before you ever hover anything. */
+    el.addEventListener('pointerenter',()=>{if(c.id!=='headline')root.classList.remove('pristine');});
+    el.addEventListener('pointerdown',()=>{if(c.id!=='headline')root.classList.remove('pristine');});
     el.addEventListener('click',e=>{
       if(e.target.closest('.closebtn')){collapse();return;}
       // the grip lives inside the card, so its click would otherwise expand it
       if(mode==='overlap')raise(c.id);
-      if(!started||didDrag||e.target.closest('a,.rhandle'))return;
+      // [data-tpl] too: clicking a template thumbnail applies it, and must not
+      // also open the tile it happens to be sitting in
+      if(!started||didDrag||e.target.closest('a,.rhandle,[data-tpl]'))return;
       if(expandedId!==c.id)expand(c.id);
     });
   }
@@ -995,6 +1072,16 @@ function renderCells(){
     s+=`<div class="cell" style="left:${PAD+c*(uw+gap)}px;top:${PAD+r*(uh+gap)}px;width:${uw}px;height:${uh}px"></div>`;
   cellsEl.innerHTML=s;
   cellsEl.style.transform=`translate(${-offX}px,${-offY}px)`;
+  /* CLIP THE TILES TO THE BOARD. .gridwrap's overflow:hidden only ever contained
+     the cells — tiles are children of .stage, which clips to the viewport, so a
+     tile scrolled past the edge (or spilled into the carousel) painted across the
+     whole page, over the header and out to the window edge.
+     clip-path on the stage bounds every child at once — tiles, drop preview and
+     all — without re-parenting anything into a second coordinate space. The
+     radius matches .gridwrap so a tile at the edge is cut on the panel's curve
+     rather than on a square corner sticking out past it. */
+  stage.style.clipPath=
+    `inset(${p.y}px ${Math.max(0,innerWidth-p.x-p.w)}px ${Math.max(0,innerHeight-p.y-p.h)}px ${p.x}px round 13px)`;
   if(drag)drag.shown=null;   // geometry moved; force the next frame to repaint
 }
 /* `step` staggers the tiles by reading order, so an arrangement assembles as a
@@ -1250,6 +1337,7 @@ function resetAll(){
   mode=DEFAULTS.mode;ovf=DEFAULTS.ovf;offX=0;offY=0;
   document.getElementById('modeSel').value=mode;
   document.getElementById('ovfSel').value=ovf;
+  root.classList.toggle('canvasmode',ovf==='canvas');
   markOverflowInert();
   root.style.setProperty('--card-radius',radius+'px');
   document.getElementById('colsVal').textContent=cols;
@@ -1554,9 +1642,9 @@ function applyDims(nc,nr){
   renderCells();sync(reduce?1:520);flash(dropped);btns();refreshReset();
 }
 function btns(){
-  document.getElementById('colsDec').disabled=cols<=4;
+  document.getElementById('colsDec').disabled=cols<=1;
   document.getElementById('colsInc').disabled=cols>=20;
-  document.getElementById('rowsDec').disabled=rows<=3;
+  document.getElementById('rowsDec').disabled=rows<=1;
   document.getElementById('rowsInc').disabled=rows>=10;
   document.getElementById('gapDec').disabled=gap<=0;
   document.getElementById('gapInc').disabled=gap>=28;
@@ -1564,9 +1652,9 @@ function btns(){
   document.getElementById('radInc').disabled=radius>=22;
 }
 document.getElementById('colsInc').onclick=()=>applyDims(Math.min(20,cols+1),rows);
-document.getElementById('colsDec').onclick=()=>applyDims(Math.max(4,cols-1),rows);
+document.getElementById('colsDec').onclick=()=>applyDims(Math.max(1,cols-1),rows);
 document.getElementById('rowsInc').onclick=()=>applyDims(cols,Math.min(10,rows+1));
-document.getElementById('rowsDec').onclick=()=>applyDims(cols,Math.max(3,rows-1));
+document.getElementById('rowsDec').onclick=()=>applyDims(cols,Math.max(1,rows-1));
 function setGap(v){gap=v;document.getElementById('gapVal').textContent=gap+'px';renderCells();sync(reduce?1:380);btns();refreshReset();}
 document.getElementById('gapInc').onclick=()=>setGap(Math.min(28,gap+2));
 document.getElementById('gapDec').onclick=()=>setGap(Math.max(0,gap-2));
@@ -1620,9 +1708,62 @@ function markOverflowInert(){
 }
 document.getElementById('ovfSel').onchange=e=>{
   ovf=e.target.value;
+  root.classList.toggle('canvasmode',ovf==='canvas');
   if(started)rebuildForOverflow();else{offX=0;offY=0;}
   refreshReset();
 };
+
+/* ---- apply a template ----
+   Slots are authored at 12x6 and scaled into whatever the grid currently is, so
+   "Cockpit" is still a centre column between two rails on a 6x4 board. Windows
+   map onto the slots in reading order; anything past the last slot auto-places
+   into the first gap that fits, exactly as a newly-appeared window would.
+   The whole board is captured first, so this lands under one Undo. */
+function applyTemplateById(id){
+  const t=TEMPLATES.find(x=>x.id===id);
+  if(!t||!grid||!started)return;
+  const was=grid.toJSON();
+  hideToast();
+  const sx=cols/TPL_COLS,sy=rows/TPL_ROWS;
+  const slots=t.slots.map(s=>{
+    const col=Math.max(0,Math.min(cols-1,Math.round(s.col*sx)));
+    const row=Math.max(0,Math.min(rows-1,Math.round(s.row*sy)));
+    return{col,row,
+           w:Math.max(1,Math.min(cols-col,Math.round(s.w*sx))),
+           h:Math.max(1,Math.min(rows-row,Math.round(s.h*sy)))};
+  });
+  // reading order first, then anything currently off the board — so applying a
+  // template is also a way to get dropped tiles back
+  const on=[...grid.tiles].sort((a,b)=>a.row-b.row||a.col-b.col).map(x=>x.id);
+  const seq=[...on,...CARDS.filter(c=>c.tier<=tierLimit()&&!on.includes(c.id)).map(c=>c.id)];
+
+  offX=0;offY=0;
+  grid=newGrid();
+  let dropped=0;
+  seq.forEach((cid,i)=>{
+    const card=CARDS.find(x=>x.id===cid);
+    if(i<slots.length){
+      const s=slots[i];
+      if(grid.addTileWithDisplacement({id:cid,col:s.col,row:s.row,w:s.w,h:s.h}))return;
+    }
+    const w=Math.min(card?card.w:1,cols),h=Math.min(card?card.h:1,rows);
+    const pos=firstFit(grid.tiles.map(x=>({col:x.col,row:x.row,w:x.w,h:x.h})),w,h);
+    if(pos)grid.addTile({id:cid,col:pos.col,row:pos.row,w,h});else dropped++;
+  });
+  if(mode==='overlap')setFlow(false);   // the rebuild above re-imposed flow
+  renderCells();
+  sync(reduce?1:520,reduce?0:22);
+  if(dropped)flash(dropped,was);else showToast(`applied · ${t.name}`,was);
+  refreshReset();
+}
+/* Delegated, because the buttons live inside card content that is rebuilt, and
+   because the same handler then serves both the tile face and the popout. */
+addEventListener('click',e=>{
+  const b=e.target.closest('[data-tpl]');
+  if(!b)return;
+  e.stopPropagation();
+  applyTemplateById(b.dataset.tpl);
+});
 
 /* ---- carousel input ----
    A wheel over the board slides it in whichever direction the mode scrolls. In
@@ -1638,14 +1779,53 @@ function applyScroll(){
 }
 function queueScroll(){if(!scrollRaf)scrollRaf=requestAnimationFrame(applyScroll);}
 addEventListener('wheel',e=>{
-  if(!started||expandedId||!scrolls())return;
-  const l=scrollLimits();
-  if(l.x<=0&&l.y<=0)return;
-  if(scrollsY())offY+=e.deltaY;
-  if(scrollsX())offX+=scrollsY()?e.deltaX:(e.deltaX||e.deltaY);
+  if(!started||expandedId||!scrolls()||!canScroll())return;
+  // Shift+wheel is the horizontal convention everywhere (browsers, editors,
+  // design tools), and it is the only way to pan sideways on hardware that has
+  // no horizontal wheel — which is most hardware.
+  const sideways=e.shiftKey||!scrollsY();
+  if(sideways&&scrollsX())offX+=e.deltaX||e.deltaY;
+  else{
+    if(scrollsY())offY+=e.deltaY;
+    if(scrollsX()&&e.deltaX)offX+=e.deltaX;
+  }
   clampScroll();
   queueScroll();
 },{passive:true});
+
+/* ---- drag the canvas itself ----
+   Pointer-down on the board background — not on a tile — grabs the canvas and
+   pans it, the way every infinite-canvas tool works. Only in canvas mode: in the
+   two carousels there is one axis and a wheel already covers it, and a grabbable
+   background there would just be a way to lose your place.
+   The listener is on .stage rather than the window so that dragging over the
+   control bar or the header does nothing, and it never competes with a tile drag
+   because a tile's own pointerdown stops this one from ever seeing the event. */
+let pan=null;
+stage.addEventListener('pointerdown',e=>{
+  if(!started||expandedId||ovf!=='canvas'||e.button!==0)return;
+  if(e.target.closest('.card'))return;          // a tile drag, not a canvas pan
+  if(!canScroll())return;
+  pan={x:e.clientX,y:e.clientY,ox:offX,oy:offY};
+  root.classList.add('panning');
+  // capture keeps the pan alive if the pointer leaves the stage mid-drag, but it
+  // throws for a pointer the element never legitimately owned — and a failed
+  // capture must not abort the pan itself
+  try{stage.setPointerCapture(e.pointerId);}catch(err){}
+});
+stage.addEventListener('pointermove',e=>{
+  if(!pan)return;
+  offX=pan.ox-(e.clientX-pan.x);
+  offY=pan.oy-(e.clientY-pan.y);
+  clampScroll();
+  queueScroll();
+});
+for(const ev of ['pointerup','pointercancel'])stage.addEventListener(ev,e=>{
+  if(!pan)return;
+  pan=null;
+  try{stage.releasePointerCapture(e.pointerId);}catch(err){}
+  root.classList.remove('panning');
+});
 
 /* ---- control bar: tabs, then pages within a tab ----
    Nothing is ever dropped for want of width. If a tab's controls do not fit,
@@ -1717,6 +1897,7 @@ let rt;addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(()=>{
 },130);});
 
 root.dataset.phase='hero';
+root.classList.add('pristine');   // the headline holds the highlight until you look elsewhere
 build();
 renderCells();   // the intro floats over a real, empty grid — so it must exist first
 requestAnimationFrame(()=>layoutHeroSettled(()=>{
