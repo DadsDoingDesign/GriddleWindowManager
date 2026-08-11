@@ -349,3 +349,45 @@ readable.
    The dependencies this pulled in are attributed in
    [`THIRD-PARTY-LICENSES.md`](../THIRD-PARTY-LICENSES.md), which was
    regenerated for the same reason.
+
+## Dependency advisories — triage
+
+### RUSTSEC-2024-0429 — `glib` unsoundness (not reachable in shipped builds)
+
+GitHub Dependabot reports one moderate advisory against `glib 0.18.5`:
+unsoundness in the `Iterator`/`DoubleEndedIterator` impls for
+`glib::VariantStrIter`. Affected range is `>=0.15.0, <0.20.0`; the fix landed in
+`0.20.0`.
+
+**Assessment: not reachable in anything this project ships.** `glib` is not in
+the dependency graph for the target we build. On the Windows target `cargo tree`
+prints nothing at all:
+
+```
+cargo tree -i glib --target x86_64-pc-windows-msvc     # nothing to print
+cargo tree -i glib --target x86_64-unknown-linux-gnu   # glib → atk → gtk →
+                                                       # libappindicator →
+                                                       # tray-icon → tauri
+```
+
+The crate arrives solely through GTK's Linux tray stack. This app is Windows 11
+x64 only — the window-tracking half is Win32-specific and there is no Linux
+build — so that code is never compiled, linked or shipped.
+
+**It cannot be fixed here.** `gtk 0.18.2` requires `glib ^0.18`, and that gtk is
+pinned by `tauri 2.11.5`:
+
+```
+cargo update -p glib --precise 0.20.9
+error: failed to select a version for the requirement `glib = "^0.18"`
+required by package `gtk v0.18.2`
+```
+
+A plain `cargo update` does not move it either — there is no semver-compatible
+patched version. Resolving the alert requires Tauri to move its Linux GTK stack
+to `gtk 0.20`, which is upstream work.
+
+**Action:** dismiss the Dependabot alert as *not affected — vulnerable code is
+not present in the shipped artifact*, and re-check when the Tauri minor version
+moves. If a Linux build is ever attempted, this advisory becomes live and must
+be resolved before shipping.
