@@ -257,6 +257,10 @@ html.pristine[data-phase="grid"] .card[data-id="headline"]::before{background:va
   letter-spacing:.03em;font-weight:600}
 .dtpl em{font-style:normal;font-size:clamp(9px,.75vw,12px);color:var(--faint);line-height:1.4;
   text-wrap:pretty}
+/* the dimensions it will set. Stated up front, because clicking one of these
+   changes the grid under you and that should never be a surprise. */
+.dtpl i{font-style:normal;font-family:var(--mono);font-size:clamp(8.5px,.7vw,11px);
+  color:var(--accent);letter-spacing:.06em;margin-top:1px}
 .tmini-unused{aspect-ratio:16/11;display:grid;gap:2px;padding:2px;border:1px solid var(--line);
   border-radius:4px;background:var(--surface-2)}
 .tmini i{display:block;border-radius:2px;background:var(--accent-soft);border:1px solid var(--accent-line)}
@@ -660,23 +664,30 @@ function modesFig(){
    watching, or a centre column flanked by rails.
    Authored against a 12x6 reference and scaled on apply, so each one means the
    same thing on a 4x3 board as on a 20x10 one. */
-const TPL_COLS=12,TPL_ROWS=6;
+/* Each template carries ITS OWN dimensions, and applying one re-dimensions the
+   grid to match. A template is a shape, not a set of proportions — squeezing
+   "Cockpit" into whatever cols x rows happened to be set would round its rails
+   to something that is no longer a cockpit. This is also what the desktop app
+   does, and what the copy on this tile already promised. */
 const TEMPLATES=[
-  {id:'focus',name:'Focus + rail',
+  {id:'focus',name:'Focus + rail',cols:12,rows:6,
    blurb:'one thing you are working on, three you are watching',
    slots:[{col:0,row:0,w:8,h:6},{col:8,row:0,w:4,h:2},{col:8,row:2,w:4,h:2},{col:8,row:4,w:4,h:2}]},
-  {id:'cockpit',name:'Cockpit',
+  {id:'cockpit',name:'Cockpit',cols:14,rows:6,
    blurb:'centre column between two full-height rails',
-   slots:[{col:0,row:0,w:3,h:6},{col:3,row:0,w:6,h:4},{col:3,row:4,w:6,h:2},{col:9,row:0,w:3,h:6}]},
-  {id:'dashboard',name:'Dashboard',
+   slots:[{col:0,row:0,w:3,h:6},{col:3,row:0,w:8,h:4},{col:3,row:4,w:8,h:2},{col:11,row:0,w:3,h:6}]},
+  {id:'dashboard',name:'Dashboard',cols:12,rows:5,
    blurb:'a full-width banner over three equal panels',
-   slots:[{col:0,row:0,w:12,h:2},{col:0,row:2,w:4,h:4},{col:4,row:2,w:4,h:4},{col:8,row:2,w:4,h:4}]},
-  {id:'mosaic',name:'Mosaic',
-   blurb:'a deliberately uneven board — big, tall, and a strip of three',
-   slots:[{col:0,row:0,w:8,h:4},{col:8,row:0,w:4,h:6},{col:0,row:4,w:3,h:2},{col:3,row:4,w:3,h:2},{col:6,row:4,w:2,h:2}]},
+   slots:[{col:0,row:0,w:12,h:1},{col:0,row:1,w:4,h:4},{col:4,row:1,w:4,h:4},{col:8,row:1,w:4,h:4}]},
+  {id:'mosaic',name:'Mosaic',cols:10,rows:5,
+   blurb:'a deliberately uneven board — big, tall, and a pair beneath',
+   slots:[{col:0,row:0,w:6,h:3},{col:6,row:0,w:4,h:5},{col:0,row:3,w:3,h:2},{col:3,row:3,w:3,h:2}]},
 ];
-function tplSvg(t,W,H){
-  const cw=W/TPL_COLS,ch=H/TPL_ROWS;
+/* Height follows the template's own aspect, so a 14x6 thumbnail is visibly wider
+   than a 10x5 one — the gallery shows you the re-dimension before you click. */
+function tplSvg(t,W){
+  const H=Math.round(W*t.rows/t.cols);
+  const cw=W/t.cols,ch=H/t.rows;
   let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-hidden="true">`;
   for(const q of t.slots)
     s+=`<rect class="dtile lit" x="${q.col*cw+1}" y="${q.row*ch+1}" width="${q.w*cw-2}" height="${q.h*ch-2}" rx="2.5"/>`;
@@ -684,15 +695,16 @@ function tplSvg(t,W,H){
 }
 /* Rendered from the same data in both places, so the thumbnail can never drift
    from the layout it applies. data-tpl is what the click delegate looks for. */
-function tplButtons(cls,W,H,withBlurb){
+function tplButtons(cls,W,withBlurb){
   return TEMPLATES.map(t=>
-    `<button type="button" class="${cls}" data-tpl="${t.id}" title="Apply “${t.name}” to this grid">`
-    +tplSvg(t,W,H)+`<span>${t.name}</span>`
-    +(withBlurb?`<em>${t.blurb}</em>`:'')+'</button>').join('');
+    `<button type="button" class="${cls}" data-tpl="${t.id}" `
+    +`title="Apply “${t.name}” — sets this grid to ${t.cols} × ${t.rows}">`
+    +tplSvg(t,W)+`<span>${t.name}</span>`
+    +(withBlurb?`<em>${t.blurb}</em><i>${t.cols} × ${t.rows}</i>`:'')+'</button>').join('');
 }
 function templatesFig(){
-  return `<figure class="dfig"><div class="dtpls">${tplButtons('dtpl',132,66,1)}</div>`
-    +'<p class="dcap"><b>Click one to lay this grid out with it.</b> A template stores slots only — never which program was in them — so applying one maps whatever you have open onto its shape.</p></figure>';
+  return `<figure class="dfig"><div class="dtpls">${tplButtons('dtpl',132,1)}</div>`
+    +'<p class="dcap"><b>Click one to lay this grid out with it.</b> Each carries its own dimensions and re-dimensions the grid to match — a template is a shape, not a set of proportions. It stores slots only, never which program was in them.</p></figure>';
 }
 /* Two screens of different heights, unioned into one board. The seam is the
    point: it is the part of the feature that surprises people. */
@@ -802,14 +814,14 @@ const CARDS=[
       +'<div class="drow"><span class="dkey">Then stops</span><span class="dval">Claims stay open for two minutes. After that, normal placement resumes — a view restores your desktop without governing it forever.</span></div>'
       +'</div>' },
   { id:'templates', app:'Templates', tier:2, w:3, h:3, accent:'#F5A623',
-    html:'<div class="tgal">'+tplButtons('tmini',96,48,0)+'</div>'
+    html:'<div class="tgal">'+tplButtons('tmini',96,0)+'</div>'
       +'<p class="tcap gridonly"><b>Click one</b> to lay this grid out with it — right here, on this page.</p>',
     title:'Templates',
     detail:'<p class="dlead">Four layouts built in, plus any arrangement you have already made and want to keep. Click one and this grid rearranges into it.</p>'
       +'<div class="dsplit"><div class="drows">'
       +'<div class="drow"><span class="dkey">Capture</span><span class="dval">Name the arrangement on screen and it joins the gallery. It stores <b>slots only</b> — no window identities, no program names.</span></div>'
       +'<div class="drow"><span class="dkey">Apply</span><span class="dval">Your open windows map onto the slots <b>by recency</b>, most recent to the first slot. Anything left over is auto-placed by the usual rules.</span></div>'
-      +'<div class="drow"><span class="dkey">Resize</span><span class="dval">A template whose dimensions differ from the grid&rsquo;s re-dimensions it on apply — and the button says so up front rather than surprising you.</span></div>'
+      +'<div class="drow"><span class="dkey">Re-dimension</span><span class="dval">Each template carries <b>its own columns and rows</b>, and applying one sets the grid to them. A shape needs its own axes — squeezing Cockpit into a 6&times;4 board would round its rails into something that is no longer a cockpit. Every thumbnail states the dimensions it will set.</span></div>'
       +'</div>'+templatesFig()+'</div>' },
   { id:'monitors', app:'Monitors', tier:3, w:3, h:1, accent:'#E01E5A',
     html:'<div class="applabel"><b>One grid across several screens.</b> Or a separate grid on each.</div>',
@@ -1724,29 +1736,33 @@ document.getElementById('ovfSel').onchange=e=>{
 };
 
 /* ---- apply a template ----
-   Slots are authored at 12x6 and scaled into whatever the grid currently is, so
-   "Cockpit" is still a centre column between two rails on a 6x4 board. Windows
-   map onto the slots in reading order; anything past the last slot auto-places
-   into the first gap that fits, exactly as a newly-appeared window would.
-   The whole board is captured first, so this lands under one Undo. */
+   The template's dimensions win: the grid is RE-DIMENSIONED to the template's
+   cols x rows and the slots are used verbatim. Scaling them into whatever the
+   grid happened to be would round the rails of "Cockpit" into something that is
+   no longer a cockpit — a template describes a shape, and a shape needs its own
+   axes. This is what the desktop app does with a mismatched template, and what
+   the copy on this tile already claimed.
+   Windows map onto the slots in reading order; anything past the last slot
+   auto-places into the first gap that fits, exactly as a newly-appeared window
+   would. The whole board is captured first, so it lands under one Undo. */
 function applyTemplateById(id){
   const t=TEMPLATES.find(x=>x.id===id);
   if(!t||!grid||!started)return;
   const was=grid.toJSON();
+  const wasDims=cols+' × '+rows;
   hideToast();
-  const sx=cols/TPL_COLS,sy=rows/TPL_ROWS;
-  const slots=t.slots.map(s=>{
-    const col=Math.max(0,Math.min(cols-1,Math.round(s.col*sx)));
-    const row=Math.max(0,Math.min(rows-1,Math.round(s.row*sy)));
-    return{col,row,
-           w:Math.max(1,Math.min(cols-col,Math.round(s.w*sx))),
-           h:Math.max(1,Math.min(rows-row,Math.round(s.h*sy)))};
-  });
+  const slots=t.slots.map(s=>({col:s.col,row:s.row,w:s.w,h:s.h}));
+
   // reading order first, then anything currently off the board — so applying a
   // template is also a way to get dropped tiles back
   const on=[...grid.tiles].sort((a,b)=>a.row-b.row||a.col-b.col).map(x=>x.id);
   const seq=[...on,...CARDS.filter(c=>c.tier<=tierLimit()&&!on.includes(c.id)).map(c=>c.id)];
 
+  const redimmed=cols!==t.cols||rows!==t.rows;
+  cols=t.cols;rows=t.rows;
+  document.getElementById('colsVal').textContent=cols;
+  document.getElementById('rowsVal').textContent=rows;
+  btns();
   offX=0;offY=0;
   grid=newGrid();
   let dropped=0;
@@ -1763,7 +1779,15 @@ function applyTemplateById(id){
   if(mode==='overlap')setFlow(false);   // the rebuild above re-imposed flow
   renderCells();
   sync(reduce?1:520,reduce?0:22);
-  if(dropped)flash(dropped,was);else showToast(`applied · ${t.name}`,was);
+  /* Undo survives only when the dimensions did not change. The snapshot holds a
+     board sized for the OLD grid, and restoring it into a re-dimensioned one
+     would put tiles outside the board — the same reason applyDims retires it.
+     So a re-dimensioning apply says what it did instead of offering a way back
+     it cannot honour. */
+  const undoable=redimmed?null:was;
+  if(dropped)flash(dropped,undoable);
+  else if(redimmed)showToast(`${t.name} · grid now ${cols} × ${rows} (was ${wasDims})`);
+  else showToast(`applied · ${t.name}`,was);
   refreshReset();
 }
 /* Delegated, because the buttons live inside card content that is rebuilt, and
