@@ -387,6 +387,18 @@ A plain `cargo update` does not move it either — there is no semver-compatible
 patched version. Resolving the alert requires Tauri to move its Linux GTK stack
 to `gtk 0.20`, which is upstream work.
 
+Dependabot reaches the same conclusion by itself and says so on the alert:
+*"Dependabot cannot update glib to a non-vulnerable version. The latest possible
+version of glib that can be installed is 0.18.5. The earliest fixed version is
+0.20.0."* So there is no automated remediation to wait for either.
+
+For completeness on severity: the defect is a NULL-pointer dereference, not
+memory corruption. `VariantStrIter::impl_get` passed `&p` where the variadic C
+function `g_variant_get_child` mutates the pointer in place, so recent rustc
+versions discard the write and `CStr::from_ptr` is handed NULL. The blast radius
+is a crash while iterating GVariant strings — on Linux, in code this project
+does not build.
+
 **Action:** dismiss the Dependabot alert as *not affected — vulnerable code is
 not present in the shipped artifact*, and re-check when the Tauri minor version
 moves. If a Linux build is ever attempted, this advisory becomes live and must
