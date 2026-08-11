@@ -120,7 +120,7 @@ html:not(.ready) .stage,html:not(.ready) .gridwrap,html:not(.ready) .hint{opacit
 
 /* padding tracks viewport height so single-row tiles never crop their text */
 .content{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;
-  gap:clamp(4px,.8vh,8px);padding:clamp(12px,2.6vh,28px) clamp(20px,2.2vw,28px);
+  gap:clamp(4px,.8vh,8px);padding:var(--padY,16px) var(--padX,20px);
   overflow:hidden;transition:padding var(--dur) var(--ease)}
 [data-phase="hero"] .card.inhero .content{padding:0;align-items:center;text-align:center;gap:0}
 /* The intro group is centred as a whole, not hung off a centred headline, so the
@@ -199,13 +199,12 @@ html:not(.ready) .stage,html:not(.ready) .gridwrap,html:not(.ready) .hint{opacit
 
 /* template thumbnails: real built-ins, drawn as the layouts they are */
 .tgal{display:grid;grid-template-columns:repeat(3,1fr);gap:clamp(4px,.8vw,10px)}
-.tmini{aspect-ratio:4/3;display:grid;gap:2px;padding:2px;border:1px solid var(--line);
+.tmini{aspect-ratio:16/11;display:grid;gap:2px;padding:2px;border:1px solid var(--line);
   border-radius:4px;background:var(--surface-2)}
 .tmini i{display:block;border-radius:2px;background:var(--accent-soft);border:1px solid var(--accent-line)}
 .tnew{border-style:dashed;background:none;place-items:center;color:var(--faint);
   font-size:14px;line-height:1;font-family:var(--mono)}
-.tlead{font-size:clamp(10.5px,.95vw,16.5px);color:var(--ink);line-height:1.5;margin:0 0 clamp(8px,1.4vh,16px);text-wrap:pretty;font-weight:500}
-.tcap{font-size:clamp(9.5px,.8vw,14px);color:var(--muted);line-height:1.5;margin:clamp(6px,1.2vh,14px) 0 0;text-wrap:pretty}
+.tcap{font-size:clamp(9.5px,.78vw,13px);color:var(--muted);line-height:1.45;margin:clamp(5px,.9vh,10px) 0 0;text-wrap:pretty}
 
 /* a compact stat strip for the short tiles */
 .kv{display:flex;flex-wrap:wrap;gap:clamp(3px,.8vh,8px) clamp(14px,1.4vw,26px);
@@ -443,7 +442,7 @@ const CARDS=[
     title:'Views',
     detail:'<p class="dbody">Where a template saves one grid&rsquo;s slots, a <b>view</b> saves your whole desktop: every enabled grid with its dimensions and spacing, plus which program sits on which cells.</p><p class="dbody">Views store executable names rather than window handles, so they survive reboots. Set one as <b>Load at startup</b> and your desktop comes back the way you left it — even though every window handle is new.</p>' },
   { id:'templates', app:'Templates', tier:2, w:3, h:3, accent:'#F5A623',
-    html:'<p class="tlead">A gallery per grid. Applying one maps your open windows to its slots.</p><div class="tgal">'
+    html:'<div class="tgal">'
       +'<div class="tmini" style="grid-template-columns:1fr 1fr"><i></i><i></i></div>'
       +'<div class="tmini" style="grid-template-columns:repeat(3,1fr)"><i></i><i></i><i></i></div>'
       +'<div class="tmini" style="grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr"><i></i><i></i><i></i><i></i></div>'
@@ -537,7 +536,16 @@ function build(){
 function place(id,r,d){const e=els.get(id);if(!e)return;
   if(d!==undefined)e.el.style.setProperty('--dur',d+'ms');
   e.el.style.transform=`translate(${r.x}px,${r.y}px)`;
-  e.el.style.width=r.w+'px';e.el.style.height=r.h+'px';}
+  e.el.style.width=r.w+'px';e.el.style.height=r.h+'px';
+  padFor(e.el,r.w,r.h);}
+/* Padding reaches 80px on the big tiles and scales down on the small ones. A
+   flat 80px is taller than a one-row tile is in total, so a single number here
+   is not a style choice, it is an overflow. Proportional to the tile, capped at
+   the number that was asked for. */
+function padFor(el,w,h){
+  el.style.setProperty('--padY',Math.round(Math.min(80,Math.max(10,(h-30)*.22)))+'px');
+  el.style.setProperty('--padX',Math.round(Math.min(80,Math.max(14,w*.10)))+'px');
+}
 
 /* Hero geometry is DERIVED. The headline card IS the intro window: it is sized to
    a real rectangle of the grid it is about to fall into, so the transition to its
@@ -678,71 +686,70 @@ toastUndo.addEventListener('click',()=>{
   showToast('reverted');
   refreshReset();
 });
-/* Candidate sizes are always evaluated against the board as it stood when the
-   drag began, never against the previous frame's result. Griddle's resize pushes
-   neighbours, and compounding those pushes frame by frame would let the board
-   drift further with every wobble of the hand. From a fixed baseline the gesture
-   is reversible: drag back out and the neighbours come back with you. */
-function tryResize(w,h){
-  grid.loadJSON(rez.snap);
-  let ok=grid.resizeTile(rez.id,{w,h});
-  /* The seeded board is exactly full — ten tiles tiling 12x6 with not one spare
-     cell — and resizeTile can only PUSH neighbours, never displace them off the
-     board. So on a fresh page every attempt to grow is correctly refused, and
-     the gesture would look broken while behaving perfectly.
-     The drop path already has an answer for this exact shape of problem: when the
-     minimal-move solver finds no exact re-tiling, it repacks the whole board with
-     the dragged tile pinned. Reuse it, pinning the new footprint instead of a new
-     position. In 'griddle' mode do NOT — that mode exists to show the library's
-     unaided answer, and quietly rescuing a refusal is the one thing that would
-     make it a lie. */
+/* Commit a resize. Griddle answers first; the whole-board repack is the same
+   fallback the drop path uses, for the same reason — the seeded board is exactly
+   full, so resizeTile, which can only push, correctly refuses every growth. */
+function commitResize(id,w,h,snap){
+  let ok=grid.resizeTile(id,{w,h});
   if(!ok&&mode!=='griddle'&&mode!=='overlap'){
-    grid.loadJSON(rez.snap);
-    const rr=reorderRepack(rez.id,{col:rez.col,row:rez.row},{w,h});
+    grid.loadJSON(snap);
+    const t=grid.getTile(id);
+    const rr=t&&reorderRepack(id,{col:t.col,row:t.row},{w,h});
     if(rr){applyLayout(rr.placed);ok=true;}
   }
-  // `best` is a whole board, not a size: a repack cannot be re-applied by calling
-  // resizeTile again, so a rejected candidate has to rewind to a saved layout.
-  if(ok){rez.w=w;rez.h=h;rez.best=grid.toJSON();}
-  else grid.loadJSON(rez.best);
-  sync(0);
-  // hold: no dismissal timer while the hand is still on the grip, and no Undo
-  // offered for a gesture that has not finished happening
-  showToast(`${rez.w} × ${rez.h} cells`,null,true);
+  if(!ok)grid.loadJSON(snap);
+  return ok;
 }
 function resizeStart(e,id){
   if(!started||expandedId)return;
   const t=grid.getTile(id);if(!t)return;
   e.preventDefault();e.stopPropagation();
   const grip=e.currentTarget,el=els.get(id).el;
-  const snap=grid.toJSON();
-  rez={id,col:t.col,row:t.row,w:t.w,h:t.h,snap,best:snap};
+  /* The grip drags in FREE PIXELS, exactly like the titlebar drags the tile in
+     free pixels — the grid is not a constraint during the gesture, it is the
+     thing you are aiming at. The purple overlay shows the cells the current size
+     rounds to, and the release snaps to them. Nothing touches the board until
+     then, so neighbours do not thrash about while the hand is still moving. */
+  rez={id,col:t.col,row:t.row,w:t.w,h:t.h,snap:grid.toJSON()};
   grip.setPointerCapture(e.pointerId);
   grip.classList.add('grabbing');
+  el.style.setProperty('--dur','0ms');
+  el.style.setProperty('--delay','0ms');   // see dragStart: never lag the hand
   el.style.zIndex='50';el.style.boxShadow='var(--shadow-hi)';
+  showPreview(t.col,t.row,t.w,t.h);
   showToast(`${t.w} × ${t.h} cells`,null,true);
   const move=ev=>{
     if(!rez)return;
     const{uw,uh,p}=unit();
-    /* the pointer sits at the tile's far corner, so the distance from its origin
-       IS the span; +gap because a w-cell tile carries w-1 gutters inside it */
     const x0=p.x+PAD+rez.col*(uw+gap),y0=p.y+PAD+rez.row*(uh+gap);
-    const w=Math.max(1,Math.min(cols-rez.col,Math.round((ev.clientX-x0+gap)/(uw+gap))));
-    const h=Math.max(1,Math.min(rows-rez.row,Math.round((ev.clientY-y0+gap)/(uh+gap))));
-    if(w!==rez.w||h!==rez.h)tryResize(w,h);
+    // free size, bounded by one cell and by the edge of the board
+    const spanW=cols-rez.col,spanH=rows-rez.row;
+    const maxW=uw*spanW+gap*(spanW-1),maxH=uh*spanH+gap*(spanH-1);
+    const pw=Math.max(uw,Math.min(maxW,ev.clientX-x0));
+    const ph=Math.max(uh,Math.min(maxH,ev.clientY-y0));
+    el.style.width=pw+'px';el.style.height=ph+'px';
+    padFor(el,pw,ph);
+    const w=Math.max(1,Math.min(spanW,Math.round((pw+gap)/(uw+gap))));
+    const h=Math.max(1,Math.min(spanH,Math.round((ph+gap)/(uh+gap))));
+    if(w!==rez.w||h!==rez.h){
+      rez.w=w;rez.h=h;
+      showPreview(rez.col,rez.row,w,h);
+      showToast(`${w} × ${h} cells`,null,true);
+    }
   };
   const up=()=>{
     grip.removeEventListener('pointermove',move);
     grip.classList.remove('grabbing');
     if(!rez)return;
     const{w,h,snap}=rez;rez=null;
+    showPreview(null);
     el.style.zIndex='';el.style.boxShadow='';
-    // a grow on a full board can cost a tile; the same heal the drop path runs
-    // gives it a route back once there is room again
+    const ok=commitResize(id,w,h,snap);
     heal(id);
-    sync(reduce?1:380);
+    sync(reduce?1:380);   // the free-dragged box snaps back onto the grid here
     const lost=CARDS.filter(c=>c.tier<=tierLimit()&&!grid.getTile(c.id)).length;
-    if(lost)flash(lost,snap);else showToast(`resized to ${w} × ${h}`,snap);
+    if(lost)flash(lost,snap);
+    else showToast(ok?`resized to ${w} × ${h}`:'no room for that size',ok?snap:null);
     refreshReset();
   };
   grip.addEventListener('pointermove',move);
@@ -759,13 +766,7 @@ function resizeKey(e,id){
   const w=Math.max(1,Math.min(cols-t.col,t.w+d[0])),h=Math.max(1,Math.min(rows-t.row,t.h+d[1]));
   if(w===t.w&&h===t.h)return;
   const snap=grid.toJSON();
-  let ok=grid.resizeTile(id,{w,h});
-  if(!ok&&mode!=='griddle'&&mode!=='overlap'){
-    grid.loadJSON(snap);
-    const rr=reorderRepack(id,{col:t.col,row:t.row},{w,h});
-    if(rr){applyLayout(rr.placed);ok=true;}
-  }
-  if(!ok){grid.loadJSON(snap);return;}
+  if(!commitResize(id,w,h,snap))return;
   heal(id);
   sync(reduce?1:220);
   const lost=CARDS.filter(c=>c.tier<=tierLimit()&&!grid.getTile(c.id)).length;
@@ -884,6 +885,10 @@ function dragStart(e,id){
   drag={id,t,sx:e.clientX,sy:e.clientY,ox:e.clientX-r.x,oy:e.clientY-r.y,
         to:{col:t.col,row:t.row},shown:null};
   el.classList.add('dragging');el.style.setProperty('--dur','0ms');
+  // The arrival stagger is still on this card until the next sync rewrites it,
+  // and a transition-delay makes a live gesture lag the pointer by that much.
+  // A hand on the mouse is never staggered.
+  el.style.setProperty('--delay','0ms');
   el.style.zIndex='50';el.style.boxShadow='var(--shadow-hi)';
   addEventListener('pointermove',dragMove);addEventListener('pointerup',dragEnd,{once:true});
 }
