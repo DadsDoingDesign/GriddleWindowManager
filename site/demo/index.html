@@ -93,7 +93,11 @@ body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--text);
   gap:clamp(4px,.8vh,8px);padding:clamp(6px,1.3vh,14px) clamp(10px,1.1vw,14px);
   overflow:hidden;transition:padding var(--dur) var(--ease)}
 [data-phase="hero"] .card.inhero .content{padding:0;align-items:center;text-align:center;gap:0}
-[data-phase="hero"] .card.inhero[data-id="headline"] .content{padding:0 clamp(16px,3vw,48px)}
+/* The intro group is centred as a whole, not hung off a centred headline, so the
+   space above the eyebrow and below the description stays balanced. JS measures
+   the real text and sets --hero-top. */
+[data-phase="hero"] .card.inhero[data-id="headline"] .content{
+  justify-content:flex-start;padding:var(--hero-top,0px) clamp(16px,3vw,48px) 0}
 
 /* Type scales between phases on the SAME nodes — no duplicate text. */
 .headline{font-family:var(--sans);font-weight:800;letter-spacing:-.042em;line-height:1.0;
@@ -272,7 +276,10 @@ const CARDS=[
     html:'<p class="dek">A grid you design yourself — and every window exactly where you meant it to go.</p>',
     title:'What it does',
     detail:'<p class="dbody">Enable a grid on any monitor and every eligible window snaps into it. Save arrangements as <b>templates</b>, pin apps to their usual spot with <b>per-app defaults</b>, and restore your whole desktop at startup with <b>views</b>.</p>' },
-  { id:'cta', app:'Download', tier:0, w:4, h:2, hero:1,
+  /* No `hero` flag on purpose: the intro is text only. A download button there is
+     dead UI — any key or click starts the arrangement and carries it off, so it
+     can never be clicked. It arrives as a real tile once the grid has landed. */
+  { id:'cta', app:'Download', tier:0, w:4, h:2,
     html:'<a class="cta" href="https://github.com/DadsDoingDesign/GriddleWindowManager/releases/latest" target="_blank" rel="noopener">Download for Windows 11</a><div class="meta">v0.2.0 · 3.1 MB · x64</div>',
     title:'Download',
     detail:'<p class="dbody">Version 0.2.0, 3.1 MB, x64. Installs <b>per-user</b> — no administrator rights needed.</p><p class="dbody">The installer is not code-signed, so SmartScreen warns once: choose <b>More info → Run anyway</b>. That means Windows does not recognise the publisher, not that anything is wrong.</p>' },
@@ -382,17 +389,27 @@ function layoutHero(){
     place(c.id,{x:ix+iw/2-120,y:iy+ih+80,w:240,h:140},0);
   }
 
+  /* Heights are measured, never assumed: the description wraps to a different
+     number of lines at every width, and a fixed height cropped it. */
+  const EB=18, G1=26, G2=28;
+  /* scrollHeight, not the bounding box: .dek and .headline are clipped by the very
+     card we are sizing from them, so the box would feed its own clipped height
+     back in and the text would stay cropped. A generous provisional height lets
+     the copy lay out unclipped before it is measured. */
+  const H=el=>Math.ceil(Math.max(el.getBoundingClientRect().height||0, el.scrollHeight||0));
   const put=()=>{
-    const hEl=els.get('headline').el.querySelector('.headline');
-    if(!hEl)return;
-    const r=hEl.getBoundingClientRect();
-    const inner=iw-64, dekW=Math.min(560,inner), ctaW=Math.min(400,inner);
-    let dekY=r.bottom+22, ctaY=dekY+56+18;
-    const overflow=(ctaY+88)-(iy+ih-14);
-    if(overflow>0){dekY-=overflow;ctaY-=overflow;}
-    place('foss',{x:ix+32,y:Math.max(iy+38,r.top-34),w:inner,h:18},0);
-    place('dek',{x:ix+(iw-dekW)/2,y:dekY,w:dekW,h:56},0);
-    place('cta',{x:ix+(iw-ctaW)/2,y:ctaY,w:ctaW,h:88},0);
+    const headEl=els.get('headline').el, hEl=headEl.querySelector('.headline');
+    const dEl=els.get('dek').el.querySelector('.dek');
+    if(!hEl||!dEl)return;
+    const inner=iw-64, dekW=Math.min(560,inner);
+    place('dek',{x:ix+(iw-dekW)/2,y:iy+30,w:dekW,h:240},0);
+    const hh=H(hEl);
+    const dh=Math.max(20,H(dEl))+2;
+    const contentH=ih-30, groupH=EB+G1+hh+G2+dh;
+    const top=Math.max(16,(contentH-groupH)/2);
+    headEl.style.setProperty('--hero-top',(top+EB+G1)+'px');
+    place('foss',{x:ix+32,y:iy+30+top,w:inner,h:EB},0);
+    place('dek',{x:ix+(iw-dekW)/2,y:iy+30+top+EB+G1+hh+G2,w:dekW,h:dh},0);
   };
   put();requestAnimationFrame(put);
 }
