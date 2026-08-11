@@ -234,10 +234,19 @@ html.pristine[data-phase="grid"] .card[data-id="headline"]::before{background:va
 /* Template thumbnails are BUTTONS in both places — the tile face and the popout
    — and both render from the same TEMPLATES data, so a thumbnail can never show
    a layout different from the one it applies. */
-.tgal{display:grid;grid-template-columns:repeat(2,1fr);gap:clamp(4px,.8vw,10px)}
+/* CAPPED, not fluid. A template thumbnail carries no more information at 700px
+   than at 100px, so letting it grow with its tile is pure waste — and when a
+   template hands the Templates tile a 6x4 slot, "grow with the tile" meant four
+   700px diagrams bursting out of a card that could not show them. The gallery
+   gets a ceiling and the columns reflow inside it; auto-fit means one column on
+   a narrow tile and four on a wide one, with the thumbnails the same size in
+   both. min-height:0 lets it be clipped rather than forcing the card taller. */
+.tgal{display:grid;gap:clamp(4px,.7vw,9px);align-self:center;min-height:0;
+  width:100%;max-width:clamp(190px,24vw,430px);
+  grid-template-columns:repeat(auto-fit,minmax(clamp(66px,6.4vw,98px),1fr))}
 .tmini,.dtpl{display:flex;flex-direction:column;gap:5px;align-items:stretch;
   background:none;border:1px solid var(--line);border-radius:7px;padding:5px;
-  cursor:pointer;font:inherit;color:inherit;text-align:center;
+  cursor:pointer;font:inherit;color:inherit;text-align:center;min-width:0;
   transition:border-color 160ms ease,background 160ms ease}
 .tmini:hover,.dtpl:hover{border-color:var(--accent-line);background:var(--accent-soft)}
 .tmini:focus-visible,.dtpl:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
@@ -343,11 +352,12 @@ html.pristine[data-phase="grid"] .card[data-id="headline"]::before{background:va
 .dmnote{font-size:clamp(10px,.85vw,14px);line-height:1.45;color:var(--muted);text-wrap:pretty}
 
 /* template gallery, at a size where the layout each one describes is readable */
-.dtpls{display:grid;grid-template-columns:repeat(auto-fit,minmax(78px,1fr));
-  gap:clamp(8px,1vw,14px)}
-.dtpl{display:flex;flex-direction:column;gap:6px}
-.dtpl span{font-size:clamp(9px,.76vw,12px);color:var(--muted);font-family:var(--mono);
-  letter-spacing:.04em}
+/* Same ceiling reasoning as .tgal. The popout is the whole board now, so an
+   uncapped auto-fit would stretch four thumbnails across a 2000px screen.
+   (The stale .dtpl / .dtpl span rules that used to sit here were overriding the
+   real ones further up — the name rendered muted and small instead of solid.) */
+.dtpls{display:grid;gap:clamp(8px,1vw,14px);width:100%;max-width:660px;
+  grid-template-columns:repeat(auto-fit,minmax(clamp(104px,10vw,150px),1fr))}
 
 /* overflow:hidden is what makes the carousel a carousel — cells (and, being
    clipped by .stage, tiles) past the visible page are drawn but not shown until
