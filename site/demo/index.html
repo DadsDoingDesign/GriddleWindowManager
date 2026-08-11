@@ -11,7 +11,17 @@
   --sans:"Segoe UI Variable Display","Segoe UI",-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
   --text:"Segoe UI Variable Text","Segoe UI",-apple-system,system-ui,sans-serif;
   --mono:"Cascadia Code","Cascadia Mono",Consolas,ui-monospace,monospace;
-  --ease:cubic-bezier(.22,1,.36,1); --dur:820ms;
+  /* A plain ease — CSS's own default curve, written out so every transition
+     shares one value. Both control-point Y values sit inside 0..1, so a tile
+     never travels past the cell it is heading for.
+     It replaces easeOutQuint (.22,1,.36,1), which also never overshot but was
+     violently front-loaded: 40% of the distance in the first 10% of the time
+     and 92% by 40%, then a crawl through the last few percent. That tail is
+     what read as a tile arriving and then still creeping.
+     --dur is the fallback only. sync() writes an inline --dur per interaction
+     (drop 440ms, hero handover 820ms, resize 380ms…), so it is those numbers,
+     not this one, that set the pace of anything you can trigger. */
+  --ease:cubic-bezier(.25,.1,.25,1); --dur:820ms;
 }
 @media (prefers-color-scheme:dark){:root{
   --ground:#09090D; --panel:#121218; --surface:#1A1A22; --surface-2:#15151C;
@@ -166,6 +176,14 @@ html:not(.ready) .stage,html:not(.ready) .gridwrap,html:not(.ready) .hint{opacit
     font-size var(--dur) var(--ease),filter 160ms ease}
 [data-phase="hero"] .cta{height:50px;padding:0 24px;font-size:14.5px}
 [data-phase="grid"] .cta{height:34px;padding:0 14px;font-size:12.5px}
+/* The detail layer covers the card face, so expanding the Download tile would
+   otherwise hide the one button on this page that matters. The popout carries
+   its own copy of the button — larger, since it now has a whole board to sit on
+   — and it outranks the grid-phase sizing above. */
+[data-phase="grid"] .detail .cta{align-self:flex-start;height:clamp(40px,3.4vw,54px);
+  padding:0 clamp(18px,1.9vw,32px);font-size:clamp(13px,1.12vw,17.5px)}
+.dbuy{display:flex;flex-direction:column;gap:clamp(6px,.9vh,10px);align-items:flex-start}
+.dbuy .meta{text-align:left;font-size:clamp(9.5px,.8vw,13px)}
 .cta:hover{filter:brightness(1.15)}
 .meta{font-family:var(--mono);color:var(--faint);white-space:nowrap;overflow:hidden;
   text-overflow:ellipsis;text-align:center;transition:font-size var(--dur) var(--ease)}
@@ -213,18 +231,98 @@ html:not(.ready) .stage,html:not(.ready) .gridwrap,html:not(.ready) .hint{opacit
 .kv b{color:var(--ink);font-weight:600}
 
 /* detail layer — genuinely different content, so it is an overlay that
-   fades in over the same card rather than replacing anything */
-.detail{position:absolute;inset:0;background:var(--surface);padding:24px 28px;
-  display:flex;flex-direction:column;gap:12px;overflow-y:auto;opacity:0;pointer-events:none;
+   fades in over the same card rather than replacing anything.
+   The expanded card is now the size of the whole board, so this layer has room
+   to be a document rather than a tooltip: a title, one lead sentence, structured
+   key/value rows in the same language the tile faces use, and a figure. Every
+   size is a clamp against the viewport, so the same markup is a full-bleed sheet
+   on a phone and a two-column spread on a 27". */
+.detail{position:absolute;inset:0;background:var(--surface);
+  padding:clamp(18px,2.4vw,46px) clamp(20px,2.8vw,54px);
+  display:flex;flex-direction:column;gap:clamp(12px,1.7vh,24px);
+  overflow-y:auto;opacity:0;pointer-events:none;
   transition:opacity 280ms ease}
 .card.expanded .detail{opacity:1;pointer-events:auto}
 .card.expanded{z-index:90;box-shadow:var(--shadow-hi)}
 .card.expanded .titlebar{cursor:default}
-.dtitle{font-family:var(--sans);font-size:21px;font-weight:750;letter-spacing:-.025em;margin:0}
-.dbody{font-size:14px;line-height:1.6;color:var(--muted);margin:0}
+.dtitle{font-family:var(--sans);font-size:clamp(21px,2.15vw,36px);font-weight:750;
+  letter-spacing:-.025em;margin:0;line-height:1.12;text-wrap:balance}
+/* the one sentence that has to land: --ink, not --muted, and set larger than
+   the rows beneath it so the eye starts in the right place */
+.dlead{font-size:clamp(14px,1.25vw,21px);line-height:1.5;color:var(--ink);
+  margin:0;max-width:44em;text-wrap:pretty;font-weight:500}
+.dbody{font-size:clamp(13px,1.05vw,17px);line-height:1.6;color:var(--muted);margin:0;
+  max-width:52em;text-wrap:pretty}
 .dbody b{color:var(--ink);font-weight:600}
+/* a second heading inside one popout — the tile covers two settings now, and
+   running them together as undifferentiated paragraphs made both harder to find */
+.dsub{font-family:var(--sans);font-size:clamp(14px,1.25vw,21px);font-weight:700;
+  letter-spacing:-.015em;color:var(--ink);margin:clamp(6px,1vh,14px) 0 0;line-height:1.25}
 
-.gridwrap{position:absolute;border-radius:13px;background:var(--panel);opacity:0;
+/* text beside figure. One column until there is genuinely room for two — a
+   cramped 2-up is worse than a stack, and the figures are the first thing to
+   suffer from it. */
+.dsplit{display:grid;grid-template-columns:minmax(0,1fr);
+  gap:clamp(16px,2vw,38px);align-items:start}
+@media (min-width:1000px){.dsplit{grid-template-columns:minmax(0,1.05fr) minmax(0,1fr)}}
+.dsplit.wide{grid-template-columns:minmax(0,1fr)}
+
+/* the tile faces speak in key/value rows; the popout speaks the same language,
+   just louder. Rules between rows, not boxes around them — this is a spec sheet,
+   not a set of cards inside a card. */
+.drows{display:flex;flex-direction:column}
+.drow{display:grid;grid-template-columns:clamp(78px,7vw,124px) minmax(0,1fr);
+  gap:clamp(10px,1.1vw,18px);align-items:baseline;
+  padding:clamp(9px,1.3vh,16px) 0;border-top:1px solid var(--line-soft)}
+.drow:first-child{border-top:0;padding-top:0}
+.dkey{font-family:var(--mono);font-size:clamp(9px,.76vw,13px);color:var(--accent);
+  text-transform:uppercase;letter-spacing:.08em;font-weight:600;line-height:1.5}
+.dval{font-size:clamp(12.5px,1.02vw,17px);line-height:1.55;color:var(--muted);text-wrap:pretty}
+.dval b{color:var(--ink);font-weight:600}
+
+/* figures sit on --surface-2 so a diagram drawn in --line/--accent reads as a
+   specimen under glass rather than as more page furniture */
+.dfig{margin:0;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);
+  padding:clamp(11px,1.3vw,20px);display:flex;flex-direction:column;gap:clamp(8px,1vh,14px)}
+.dfig svg,.dfig img{width:100%;height:auto;display:block;border-radius:6px}
+.dfig img{border:1px solid var(--line)}
+/* Diagram parts are classed rather than filled inline: presentation attributes
+   and var() are a browser-support coin-toss, and a stylesheet gets both themes
+   from one declaration anyway. */
+.dfig .dcell{fill:none;stroke:var(--line);stroke-dasharray:2 3}
+.dfig .dtile{fill:var(--surface);stroke:var(--line)}
+.dfig .dtile.lit{fill:var(--accent-soft);stroke:var(--accent)}
+.dfig .dtile.ghost{fill:none;stroke:var(--faint);stroke-dasharray:3 2}
+.dfig .ddead{fill:var(--line-soft);stroke:var(--line)}
+.dfig text{font-family:var(--mono);font-size:10px;fill:var(--muted)}
+.dfig text.lit{fill:var(--accent)}
+.dfig text.cap{fill:var(--faint);font-size:9px;letter-spacing:.06em}
+.dfig .darrow{stroke:var(--faint);fill:none;stroke-width:1}
+.dcap{font-size:clamp(10px,.82vw,13.5px);line-height:1.5;color:var(--faint);
+  margin:0;text-wrap:pretty}
+.dcap b{color:var(--muted);font-weight:600}
+
+/* the three-mode comparison: label, board, consequence — stacked, so the four
+   boards line up in a column and the differences read down the page */
+.dmodes{display:flex;flex-direction:column;gap:clamp(9px,1.3vh,16px)}
+.dmode{display:grid;grid-template-columns:clamp(60px,5.4vw,92px) minmax(80px,1.5fr) minmax(0,1.6fr);
+  gap:clamp(8px,1vw,16px);align-items:center}
+@media (max-width:640px){.dmode{grid-template-columns:1fr;gap:5px}}
+.dmlabel{font-family:var(--mono);font-size:clamp(8.5px,.72vw,12px);color:var(--ink);
+  text-transform:uppercase;letter-spacing:.07em;font-weight:600}
+.dmnote{font-size:clamp(10px,.85vw,14px);line-height:1.45;color:var(--muted);text-wrap:pretty}
+
+/* template gallery, at a size where the layout each one describes is readable */
+.dtpls{display:grid;grid-template-columns:repeat(auto-fit,minmax(78px,1fr));
+  gap:clamp(8px,1vw,14px)}
+.dtpl{display:flex;flex-direction:column;gap:6px}
+.dtpl span{font-size:clamp(9px,.76vw,12px);color:var(--muted);font-family:var(--mono);
+  letter-spacing:.04em}
+
+/* overflow:hidden is what makes the carousel a carousel — cells (and, being
+   clipped by .stage, tiles) past the visible page are drawn but not shown until
+   you scroll to them */
+.gridwrap{position:absolute;border-radius:13px;background:var(--panel);opacity:0;overflow:hidden;
   transition:opacity 620ms ease;pointer-events:none}
 [data-phase="grid"] .gridwrap{opacity:1}
 /* the intro floats over the empty grid rather than a blank page — it has to be
@@ -282,6 +380,42 @@ html:not(.ready) .stage,html:not(.ready) .gridwrap,html:not(.ready) .hint{opacit
 .ctl{display:flex;align-items:center;gap:6px;padding:3px 7px}
 .ctl+.ctl{border-left:1px solid var(--line-soft)}
 .ctl label{font-size:9.5px;color:var(--faint);font-family:var(--mono);letter-spacing:.09em;text-transform:uppercase}
+
+/* ---- tabs + pager ----
+   Two groups, one visible at a time; and if a group is still too wide for the
+   viewport, it pages rather than dropping anything. Reset sits OUTSIDE both, so
+   the escape hatch is never a tab away — a demo that can strand you in a state
+   you cannot undo is worse than one with a crowded bar. */
+.tabs{display:flex;gap:2px;padding:2px;background:var(--surface-2);border-radius:8px;flex:none}
+.tab{font-family:var(--text);font-size:11px;font-weight:600;color:var(--faint);
+  background:none;border:0;border-radius:6px;padding:4px 9px;cursor:pointer;line-height:1.3;
+  transition:color 160ms ease,background 160ms ease}
+.tab:hover{color:var(--ink)}
+.tab.on{color:var(--ink);background:var(--surface);box-shadow:var(--shadow-lo)}
+.tab:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.panes{display:flex;align-items:center;min-width:0}
+.pane{display:none;align-items:center;gap:3px}
+.pane.on{display:flex}
+/* a control the pager has scrolled past is hidden, not removed: removing it
+   would let the bar's width jump around as you page */
+.pane .ctl[data-off]{display:none}
+.pane .ctl[data-first]{border-left:0}
+.pager{display:flex;align-items:center;gap:2px;flex:none;padding-left:3px;
+  border-left:1px solid var(--line-soft)}
+.pager[hidden]{display:none}
+.pager button{width:20px;height:22px;border:1px solid var(--line);background:var(--surface-2);
+  color:var(--muted);border-radius:6px;cursor:pointer;font-size:12px;line-height:1;padding:0;
+  display:grid;place-items:center}
+.pager button:hover:not(:disabled){color:var(--ink);border-color:var(--accent-line)}
+.pager button:disabled{opacity:.34;cursor:default}
+.pgnum{font-family:var(--mono);font-size:10px;color:var(--faint);min-width:22px;text-align:center;
+  font-variant-numeric:tabular-nums}
+.ctl.reset{border-left:1px solid var(--line-soft)}
+/* Overflow is meaningless under Overlap — tiles never contest space, so nothing
+   can ever fail to fit. Say so by disabling it rather than leaving a live-looking
+   control that does nothing. */
+.ctl.inert{opacity:.4}
+.ctl.inert select{pointer-events:none}
 .step{display:flex;align-items:center;gap:1px}
 .step button{width:22px;height:22px;border:1px solid var(--line);background:var(--surface-2);
   color:var(--muted);border-radius:6px;cursor:pointer;font-size:13px;line-height:1;padding:0;display:grid;place-items:center}
@@ -334,10 +468,10 @@ select.mode{font-family:var(--text);font-size:12px;background:var(--surface-2);c
   cursor:pointer;padding:8px 12px;transition:opacity 300ms ease}
 .hint.gone{opacity:0;pointer-events:none}
 
-/* Controls earn their place by width. Mode/Columns/Rows are informative and always
-   present; Gap and Corners are the fun ones and arrive last. */
-@media (max-width:1279px){.ctl.tier-3{display:none}}
-@media (max-width:1099px){.ctl.tier-2{display:none}}
+/* No control is ever dropped for want of width any more. Two rules used to hide
+   Gap below 1100px and Corners below 1280px outright — not collapse them, hide
+   them — so on a laptop those settings did not exist. Tabs plus the pager cover
+   the same ground without ever making a setting unreachable. */
 /* Below this width a cell is too small to aim a 22px corner grip at, and the
    handle would sit on top of the content it is meant to resize. Dragging tiles
    still works on touch; only resizing goes away. */
@@ -365,27 +499,54 @@ select.mode{font-family:var(--text);font-size:12px;background:var(--surface-2);c
 <button class="hint" id="hint">press any key to arrange &rarr;</button>
 <div class="scrim" id="scrim"></div>
 
+<!-- Two tabs, and within a tab a pager rather than a drop. Nothing in here is
+     ever unreachable at any width: that was the old bar's real bug, not its
+     width — Gap and Corners were display:none below 1100px, so on a laptop you
+     simply could not change them. -->
 <div class="controls" id="controls" role="group" aria-label="Grid controls">
-  <div class="ctl tier-0"><label>Grid responsiveness</label>
-    <select class="mode" id="modeSel" aria-label="Grid responsiveness">
-      <option value="reflow" selected>Reorganize</option>
-      <option value="griddle">Griddle default</option>
-      <option value="shove">Tile shoving</option>
-      <option value="overlap">Overlap</option>
-    </select></div>
-  <div class="ctl tier-0"><label>Columns</label><div class="step">
-    <button id="colsDec" aria-label="Fewer columns">−</button><span class="val" id="colsVal">12</span>
-    <button id="colsInc" aria-label="More columns">+</button></div></div>
-  <div class="ctl tier-0"><label>Rows</label><div class="step">
-    <button id="rowsDec" aria-label="Fewer rows">−</button><span class="val" id="rowsVal">6</span>
-    <button id="rowsInc" aria-label="More rows">+</button></div></div>
-  <div class="ctl tier-2"><label>Gap</label><div class="step">
-    <button id="gapDec" aria-label="Less gap">−</button><span class="val" id="gapVal">10px</span>
-    <button id="gapInc" aria-label="More gap">+</button></div></div>
-  <div class="ctl tier-3"><label>Corners</label><div class="step">
-    <button id="radDec" aria-label="Squarer corners">−</button><span class="val" id="radVal">10px</span>
-    <button id="radInc" aria-label="Rounder corners">+</button></div></div>
-  <div class="ctl tier-0"><button class="resetbtn" id="resetBtn" type="button" disabled>Reset</button></div>
+  <div class="tabs" role="tablist" aria-label="Setting group">
+    <button class="tab on" type="button" role="tab" aria-selected="true" data-tab="layout">Layout</button>
+    <button class="tab" type="button" role="tab" aria-selected="false" data-tab="behaviour">Behaviour</button>
+  </div>
+  <div class="panes" id="panes">
+    <div class="pane on" data-pane="layout" role="tabpanel">
+      <div class="ctl"><label>Columns</label><div class="step">
+        <button id="colsDec" aria-label="Fewer columns">−</button><span class="val" id="colsVal">12</span>
+        <button id="colsInc" aria-label="More columns">+</button></div></div>
+      <div class="ctl"><label>Rows</label><div class="step">
+        <button id="rowsDec" aria-label="Fewer rows">−</button><span class="val" id="rowsVal">6</span>
+        <button id="rowsInc" aria-label="More rows">+</button></div></div>
+      <div class="ctl"><label>Gap</label><div class="step">
+        <button id="gapDec" aria-label="Less gap">−</button><span class="val" id="gapVal">10px</span>
+        <button id="gapInc" aria-label="More gap">+</button></div></div>
+      <div class="ctl"><label>Corners</label><div class="step">
+        <button id="radDec" aria-label="Squarer corners">−</button><span class="val" id="radVal">10px</span>
+        <button id="radInc" aria-label="Rounder corners">+</button></div></div>
+    </div>
+    <div class="pane" data-pane="behaviour" role="tabpanel">
+      <div class="ctl"><label>Re-order logic</label>
+        <select class="mode" id="modeSel" aria-label="Re-order logic">
+          <option value="reflow" selected>Reorganize</option>
+          <option value="shove">Linear shove</option>
+          <option value="griddle">Default</option>
+          <option value="overlap">Overlap</option>
+        </select></div>
+      <div class="ctl"><label>Tile overflow</label>
+        <select class="mode" id="ovfSel" aria-label="Tile overflow">
+          <option value="drop" selected>Tiles drop</option>
+          <option value="restrict">Restricted</option>
+          <option value="scroll-v">Scroll vertical</option>
+          <option value="scroll-h">Scroll horizontal</option>
+          <option value="canvas">Canvas</option>
+        </select></div>
+    </div>
+  </div>
+  <div class="pager" id="pager" hidden>
+    <button id="pgPrev" type="button" aria-label="Previous settings">‹</button>
+    <span class="pgnum" id="pgNum">1/1</span>
+    <button id="pgNext" type="button" aria-label="More settings">›</button>
+  </div>
+  <div class="ctl reset"><button class="resetbtn" id="resetBtn" type="button" disabled>Reset</button></div>
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite">
@@ -402,6 +563,74 @@ const Grid=GriddleLib.Grid;
 const reduce=matchMedia('(prefers-reduced-motion:reduce)').matches;
 const root=document.documentElement;
 
+/* ---- detail figures ----
+   Drawn, not photographed. A diagram of a grid has to stay sharp at every size
+   the popout can be (it is now the whole board, so that range is large) and has
+   to follow the theme; a bitmap does neither. Every part is classed and coloured
+   from the stylesheet, so light and dark cost one declaration, not two assets. */
+
+/* The 4×1 fixture the placement-mode tests actually use: A(1 cell), B(2), C(1),
+   on a board with exactly nothing to spare. That is the smallest board on which
+   the three modes visibly disagree, which is the whole reason to draw it. */
+function board4(tiles){
+  const W=180,H=52,cw=W/4;
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-hidden="true">`;
+  for(let c=0;c<4;c++)s+=`<rect class="dcell" x="${c*cw+.5}" y=".5" width="${cw-1}" height="${H-1}" rx="3"/>`;
+  for(const t of tiles){
+    const x=t.col*cw+2.5,w=t.span*cw-5,dy=t.dy||0;
+    s+=`<rect class="dtile${t.lit?' lit':''}" x="${x}" y="${2.5+dy}" width="${w}" height="${H-5}" rx="3"/>`
+      +`<text class="${t.lit?'lit':''}" x="${x+w/2}" y="${H/2+3.5+dy}" text-anchor="middle">${t.name}</text>`;
+  }
+  return s+'</svg>';
+}
+function modeRow(label,tiles,note){
+  return `<div class="dmode"><span class="dmlabel">${label}</span>${board4(tiles)}`
+    +`<span class="dmnote">${note}</span></div>`;
+}
+/* One drop — A dragged onto B's left half — resolved three ways. Same board,
+   same gesture, three outcomes: that comparison is the entire feature. */
+function modesFig(){
+  return '<figure class="dfig"><div class="dmodes">'
+    +modeRow('Before',[{col:0,span:1,name:'A'},{col:1,span:2,name:'B'},{col:3,span:1,name:'C'}],
+        'A is dragged onto B&rsquo;s left half')
+    +modeRow('Reorganize',[{col:0,span:1,name:'C'},{col:1,span:1,name:'A',lit:1},{col:2,span:2,name:'B'}],
+        'A takes the cell exactly; B and C reorganise')
+    +modeRow('Tile shoving',[{col:0,span:1,name:'A',lit:1},{col:1,span:2,name:'B'},{col:3,span:1,name:'C'}],
+        'B has nowhere to be shoved — the drop is refused')
+    +modeRow('Overlap',[{col:0,span:1,name:'C',dy:0},{col:1,span:2,name:'B'},{col:1,span:1,name:'A',lit:1,dy:5}],
+        'nothing moves; A simply lies on top')
+    +'</div><p class="dcap">The same drop on the same full board. <b>Reorganize</b> is the only one that both honours your aim and keeps the board tidy.</p></figure>';
+}
+/* The five built-ins, drawn as the layouts they are rather than named in a list. */
+function templatesFig(){
+  const T=[['Two columns',[[0,0,1,2],[1,0,1,2]],2,2],['Thirds',[[0,0,1,2],[1,0,1,2],[2,0,1,2]],3,2],
+           ['Quarters',[[0,0,1,1],[1,0,1,1],[0,1,1,1],[1,1,1,1]],2,2],
+           ['Main + side',[[0,0,2,2],[2,0,1,2]],3,2],['Two rows',[[0,0,2,1],[0,1,2,1]],2,2]];
+  const cells=T.map(([name,tiles,c,r])=>{
+    const W=96,H=68,cw=W/c,ch=H/r;
+    let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-hidden="true">`;
+    for(const [x,y,w,h] of tiles)
+      s+=`<rect class="dtile lit" x="${x*cw+2}" y="${y*ch+2}" width="${w*cw-4}" height="${h*ch-4}" rx="3"/>`;
+    return `<div class="dtpl">${s}</svg><span>${name}</span></div>`;
+  }).join('');
+  return `<figure class="dfig"><div class="dtpls">${cells}</div>`
+    +'<p class="dcap">Built-ins, plus whatever you capture. A template stores <b>slots only</b> — never which program was in them.</p></figure>';
+}
+/* Two screens of different heights, unioned into one board. The seam is the
+   point: it is the part of the feature that surprises people. */
+function monitorsFig(){
+  return '<figure class="dfig"><svg viewBox="0 0 200 96" role="img" aria-hidden="true">'
+    +'<rect class="dcell" x="1" y="1" width="118" height="94" rx="3"/>'
+    +'<rect class="dcell" x="123" y="1" width="76" height="62" rx="3"/>'
+    +'<rect class="ddead" x="123" y="67" width="76" height="28" rx="3"/>'
+    +'<text class="cap" x="60" y="14" text-anchor="middle">2560 × 1440</text>'
+    +'<text class="cap" x="161" y="14" text-anchor="middle">1920 × 1080</text>'
+    +'<text class="cap" x="161" y="84" text-anchor="middle">dead space</text>'
+    +'<rect class="dtile lit" x="8" y="24" width="52" height="62" rx="3"/>'
+    +'<rect class="dtile lit" x="66" y="24" width="47" height="30" rx="3"/>'
+    +'<rect class="dtile lit" x="129" y="24" width="64" height="30" rx="3"/>'
+    +'</svg><p class="dcap">One grid over the <b>union</b> of both work areas. Where the union is L-shaped, the cells no screen covers are excluded and windows snap to the nearest usable ones.</p></figure>';
+}
 /* Content authored ONCE, for the grid. The hero reuses these very nodes. */
 const CARDS=[
   { id:'headline', app:'Griddle Window Manager', tier:0, w:5, h:3, hero:1,
@@ -409,39 +638,91 @@ const CARDS=[
         +'<p class="subhead gridonly">Windows 11 gives you halves and quarters. Griddle gives you a grid —'
         +' 12 columns by 6 rows out of the box — and lets every window claim whatever rectangle of cells you want.</p>',
     title:'Every window, right where it belongs.',
-    detail:'<p class="dbody">Windows 11 gives you halves and quarters. Griddle gives you a real grid — say 12 columns by 6 rows — and lets any window claim any rectangle of cells.</p><p class="dbody">Drag one and an overlay shows exactly where it lands and which neighbours it pushes. <b>Which is what you are doing right now</b> — this page runs the same layout engine the app does.</p>' },
+    detail:'<p class="dlead">Windows 11 gives you halves and quarters. Griddle gives you a real grid — say 12 columns by 6 rows — and lets any window claim any rectangle of cells.</p>'
+      +'<div class="drows">'
+      +'<div class="drow"><span class="dkey">Any size</span><span class="dval">A window&rsquo;s size is a <b>cell count</b>, not a preset. One cell, a column, an L of the board — whatever rectangle you want.</span></div>'
+      +'<div class="drow"><span class="dkey">Preview</span><span class="dval">Drag one and an overlay shows exactly where it will land and which neighbours will move, <b>before</b> you let go.</span></div>'
+      +'<div class="drow"><span class="dkey">Same engine</span><span class="dval"><b>Which is what you are doing right now.</b> This page is not a mockup — the solver arranging these tiles is the same file the desktop app ships.</span></div>'
+      +'</div>' },
   { id:'foss', app:'License', tier:0, w:3, h:1, hero:1,
     html:'<div class="eyebrow">Free · Open source · Windows 11</div>',
     title:'MIT licensed',
-    detail:'<p class="dbody">Free and open source under the MIT licence. No account, no paid tier, no telemetry. The full source, the design specs, and the entire commit history are public.</p>' },
+    detail:'<p class="dlead">Free and open source under the MIT licence. No account, no paid tier, no trial.</p>'
+      +'<div class="drows">'
+      +'<div class="drow"><span class="dkey">Licence</span><span class="dval">MIT — use it, fork it, ship it inside something else. Attribution is the only condition.</span></div>'
+      +'<div class="drow"><span class="dkey">Public</span><span class="dval">The full source, the design specs, and the <b>entire commit history</b> — including how it was built and what was rejected.</span></div>'
+      +'<div class="drow"><span class="dkey">Windows 11</span><span class="dval">Built for Windows 11 on x64. It is not cross-platform and does not pretend to be.</span></div>'
+      +'</div>' },
   { id:'dek', app:'What it does', tier:0, w:4, h:2, hero:1,
     html:'<p class="dek">A grid you design yourself — and every window exactly where you meant it to go.</p>'
         +'<div class="kv gridonly"><span><b>12 × 6</b> by default</span><span>gap and padding <b>0–64px</b></span>'
         +'<span>per monitor, or <b>spanning several</b></span></div>',
     title:'What it does',
-    detail:'<p class="dbody">Enable a grid on any monitor and every eligible window snaps into it. Save arrangements as <b>templates</b>, pin apps to their usual spot with <b>per-app defaults</b>, and restore your whole desktop at startup with <b>views</b>.</p>' },
+    detail:'<p class="dlead">Enable a grid on any monitor and every eligible window snaps into it. Everything after that is about not having to arrange it twice.</p>'
+      +'<div class="drows">'
+      +'<div class="drow"><span class="dkey">Templates</span><span class="dval">Save an arrangement of slots and apply it to whatever is open.</span></div>'
+      +'<div class="drow"><span class="dkey">Per-app</span><span class="dval">Pin a program to its usual spot, so it opens where it belongs without being dragged there.</span></div>'
+      +'<div class="drow"><span class="dkey">Views</span><span class="dval">Restore the whole desktop — every grid, every program — at startup.</span></div>'
+      +'<div class="drow"><span class="dkey">Spacing</span><span class="dval">Gap between cells and padding around the board, <b>0–64px</b> each, per grid.</span></div>'
+      +'</div>' },
   /* No `hero` flag on purpose: the intro is text only. A download button there is
      dead UI — any key or click starts the arrangement and carries it off, so it
      can never be clicked. It arrives as a real tile once the grid has landed. */
   { id:'cta', app:'Download', tier:0, w:4, h:2,
     html:'<a class="cta" href="https://github.com/DadsDoingDesign/GriddleWindowManager/releases/latest" target="_blank" rel="noopener">Download for Windows 11</a><div class="meta">v0.2.0 · 3.1 MB · x64</div>',
     title:'Download',
-    detail:'<p class="dbody">Version 0.2.0, 3.1 MB, x64. Installs <b>per-user</b> — no administrator rights needed.</p><p class="dbody">The installer is not code-signed, so SmartScreen warns once: choose <b>More info → Run anyway</b>. That means Windows does not recognise the publisher, not that anything is wrong.</p>' },
+    detail:'<p class="dlead">Version 0.2.0 — 3.1 MB, x64, and it installs for you alone.</p>'
+      +'<div class="dbuy"><a class="cta" href="https://github.com/DadsDoingDesign/GriddleWindowManager/releases/latest" target="_blank" rel="noopener">Download for Windows 11</a>'
+      +'<div class="meta">v0.2.0 · 3.1 MB · x64 · Windows 11</div></div>'
+      +'<div class="drows">'
+      +'<div class="drow"><span class="dkey">Install</span><span class="dval"><b>Per-user</b>, so no administrator rights are needed and nothing is written outside your profile.</span></div>'
+      +'<div class="drow"><span class="dkey">SmartScreen</span><span class="dval">The installer is not code-signed, so Windows warns once: choose <b>More info → Run anyway</b>. That means Windows does not recognise the publisher — not that anything is wrong.</span></div>'
+      +'<div class="drow"><span class="dkey">Updates</span><span class="dval">Checked against GitHub Releases only if you ask. The setting is <b>off by default</b>.</span></div>'
+      +'</div>' },
   { id:'modes', app:'Placement', tier:1, w:4, h:3, accent:'#4A9EDB',
     html:'<div class="feat">'
       +'<div class="frow"><span class="fkey">Reorganize</span><span class="fval">the window lands <b>exactly</b> where you aimed, and the others reorganise around it — as few of them moving as possible</span></div>'
-      +'<div class="frow"><span class="fkey">Shoving</span><span class="fval">neighbours are shoved aside one shove at a time, and equal-size windows swap</span></div>'
+      +'<div class="frow"><span class="fkey">Linear shove</span><span class="fval">neighbours are shoved aside one shove at a time, and equal-size windows swap</span></div>'
       +'<div class="frow"><span class="fkey">Overlap</span><span class="fval">windows stop contesting space entirely and lie over one another, most recent on top</span></div>'
+      +'<div class="frow gridonly"><span class="fkey">Overflow</span><span class="fval">and separately: when the board runs out of room, tiles either <b>drop</b>, are <b>refused</b>, or carry on <b>past the edge</b> for you to scroll to</span></div>'
       +'</div>',
-    title:'Placement modes',
-    detail:'<p class="dbody">Every grid decides for itself what happens when you drop a window on cells someone else is already using.</p><p class="dbody"><b>Reorganize</b> lands the window exactly where you aimed and reorganises the rest, moving as few as it can. <b>Tile shoving</b> shoves neighbours aside one shove at a time, and refuses the drop when one has nowhere to go. <b>Overlap</b> drops the contest for space altogether — tiles lie over each other, stretch anywhere in the grid, and the one you touched last comes to the top.</p><p class="dbody">The selector at the bottom of this page drives all of them on this grid, right now — including <b>Griddle default</b>, which hands the decision to the layout library unaided.</p>' },
+    title:'Placement &amp; overflow',
+    detail:'<p class="dlead">Every grid decides for itself what happens when you drop a window on cells someone else is already using.</p>'
+      +'<div class="dsplit"><div class="drows">'
+      +'<div class="drow"><span class="dkey">Reorganize</span><span class="dval">The window lands <b>exactly</b> where you aimed. The others reorganise around it, chosen so that <b>as few as possible</b> move — and among those, so they travel the shortest distance.</span></div>'
+      +'<div class="drow"><span class="dkey">Tile shoving</span><span class="dval">Neighbours are shoved aside one shove at a time, and equal-size windows swap. When a neighbour has nowhere to go the drop is <b>refused</b> and the window snaps back.</span></div>'
+      +'<div class="drow"><span class="dkey">Overlap</span><span class="dval">Windows stop contesting space entirely: they lie over one another, stretch anywhere in the grid, and the one you touched last sits on top.</span></div>'
+      +'<div class="drow"><span class="dkey">Default</span><span class="dval">The layout library&rsquo;s own answer, with nothing added. Explained below.</span></div>'
+      +'</div>'+modesFig()+'</div>'
+      +'<p class="dbody">Reorganize is never the worse choice: when no exact re-tiling exists, it falls back to shoving rather than refusing outright — and the drag preview falls back with it, so the ghosts you watch are always the moves you get.</p>'
+      +'<h3 class="dsub">What &ldquo;Default&rdquo; actually does</h3>'
+      +'<p class="dbody">The other three are Griddle&rsquo;s rules. <b>Default</b> is the layout library left to decide on its own, and it works in two steps: it drops your window where you let go, then re-packs the <b>entire board</b> in reading order — top-left to bottom-right, each tile into the first gap it fits.</p>'
+      +'<p class="dbody">The visible difference is how far things travel. Reorganize asks &ldquo;what is the <b>smallest</b> number of windows I can move?&rdquo; Default never asks — it rebuilds the whole board every time, so a window at the far corner you have not touched in ten minutes can jump across the screen because a gap opened up earlier in the reading order.</p>'
+      +'<p class="dbody">It is here as the <b>baseline</b>: it is what you get with no minimal-move solver, no repack of its own, and no rescue when an arrangement cannot be expressed — in that last case it gives up mid-way and leaves the board wherever the drop put it. Everything the other three modes do is visible as the difference between them and this. It is also the honest reason the desktop app does not ship it.</p>'
+      +'<h3 class="dsub">Tile overflow: when the board runs out of room</h3>'
+      +'<p class="dlead">Re-order logic decides <b>how</b> the board rearranges. Tile overflow decides what happens when that rearrangement needs more room than there is. They are separate settings because they answer separate questions.</p>'
+      +'<div class="drows">'
+      +'<div class="drow"><span class="dkey">Tiles drop</span><span class="dval">Whatever no longer fits falls off the board, in plain reading order — the tiles at the end are the ones that go. Nothing clever, nothing weighted, so you can predict which one it will be. They come back on their own once room opens up.</span></div>'
+      +'<div class="drow"><span class="dkey">Restricted</span><span class="dval">Nothing is ever allowed to fall off. If a move would cost a tile, the move is <b>refused</b> instead and the window snaps back. The board can only ever hold what fits.</span></div>'
+      +'<div class="drow"><span class="dkey">Scroll vertical</span><span class="dval">Nothing falls off and nothing is refused — tiles that do not fit are pushed <b>past the bottom edge</b>, and you scroll down to them, like a carousel. The grid you can see keeps exactly the same columns, rows and tile proportions.</span></div>'
+      +'<div class="drow"><span class="dkey">Scroll horizontal</span><span class="dval">The same, sideways: the spill goes off the right edge and you scroll across to it.</span></div>'
+      +'<div class="drow"><span class="dkey">Canvas</span><span class="dval">Both at once. The board keeps going down <b>and</b> across, and you scroll wherever you like — the closest thing here to an endless desk.</span></div>'
+      +'</div>'
+      +'<p class="dbody">Scrolling deliberately does <b>not</b> add rows or columns to the grid you are looking at. Squeezing more cells into the same space would change every tile&rsquo;s shape, so instead the grid keeps its dimensions and the board simply continues past the edge of the screen.</p>'
+      +'<p class="dbody">Under <b>Overlap</b> the whole question disappears — windows never compete for space, so nothing can fail to fit. The overflow control switches itself off and says so.</p>' },
   { id:'views',  app:'Views',  tier:1, w:4, h:2, accent:'#A259FF',
     html:'<div class="feat">'
       +'<div class="frow"><span class="fkey">Save</span><span class="fval">every grid, its spacing, and which program sits where</span></div>'
       +'<div class="frow"><span class="fkey">Restore</span><span class="fval">your whole desktop reassembles itself after a reboot</span></div>'
       +'</div>',
     title:'Views',
-    detail:'<p class="dbody">Where a template saves one grid&rsquo;s slots, a <b>view</b> saves your whole desktop: every enabled grid with its dimensions and spacing, plus which program sits on which cells.</p><p class="dbody">Views store executable names rather than window handles, so they survive reboots. Set one as <b>Load at startup</b> and your desktop comes back the way you left it — even though every window handle is new.</p>' },
+    detail:'<p class="dlead">Where a template saves one grid&rsquo;s slots, a <b>view</b> saves your whole desktop — every enabled grid, and which program sits on which cells.</p>'
+      +'<div class="drows">'
+      +'<div class="drow"><span class="dkey">Saves</span><span class="dval">Each enabled grid with its dimensions, gap and padding, plus every tiled window&rsquo;s program and slot.</span></div>'
+      +'<div class="drow"><span class="dkey">Survives</span><span class="dval">A view stores <b>program names, not window handles</b>. Handles die with a reboot; programs come back — which is what lets a view outlive one.</span></div>'
+      +'<div class="drow"><span class="dkey">At startup</span><span class="dval">Mark one <b>Load at startup</b> and the desktop reassembles itself as programs launch, each claiming the slot it had.</span></div>'
+      +'<div class="drow"><span class="dkey">Then stops</span><span class="dval">Claims stay open for two minutes. After that, normal placement resumes — a view restores your desktop without governing it forever.</span></div>'
+      +'</div>' },
   { id:'templates', app:'Templates', tier:2, w:3, h:3, accent:'#F5A623',
     html:'<p class="tlead">A gallery per grid. Applying one maps your open windows to its slots.</p><div class="tgal">'
       +'<div class="tmini" style="grid-template-columns:1fr 1fr"><i></i><i></i></div>'
@@ -452,19 +733,41 @@ const CARDS=[
       +'<div class="tmini tnew" aria-hidden="true">+</div>'
       +'</div><p class="tcap">Two columns, thirds, quarters, main + side, two rows — or capture the arrangement you already have and name it.</p>',
     title:'Templates',
-    detail:'<p class="dbody">A gallery per grid, with built-ins for two columns, three columns, 2×2 quarters, main + side column, and two rows.</p><p class="dbody">Capture the current arrangement as a named template — <b>slots only</b>, no window identities are stored. Applying one maps your current windows to its slots by recency and places the extras. If a template&rsquo;s dimensions differ from the grid&rsquo;s, the button says so up front.</p>' },
+    detail:'<p class="dlead">A gallery per grid: five layouts built in, plus any arrangement you have already made and want to keep.</p>'
+      +'<div class="dsplit"><div class="drows">'
+      +'<div class="drow"><span class="dkey">Capture</span><span class="dval">Name the arrangement on screen and it joins the gallery. It stores <b>slots only</b> — no window identities, no program names.</span></div>'
+      +'<div class="drow"><span class="dkey">Apply</span><span class="dval">Your open windows map onto the slots <b>by recency</b>, most recent to the first slot. Anything left over is auto-placed by the usual rules.</span></div>'
+      +'<div class="drow"><span class="dkey">Resize</span><span class="dval">A template whose dimensions differ from the grid&rsquo;s re-dimensions it on apply — and the button says so up front rather than surprising you.</span></div>'
+      +'</div>'+templatesFig()+'</div>' },
   { id:'monitors', app:'Monitors', tier:3, w:3, h:1, accent:'#E01E5A',
     html:'<div class="applabel"><b>One grid across several screens.</b> Or a separate grid on each.</div>',
     title:'Monitors',
-    detail:'<p class="dbody">Enable a grid on any monitor and choose its columns and rows. Or turn on <b>Span monitors</b> for a single grid across the combined work area of two or more displays.</p><p class="dbody">If that union is L-shaped, the dead space is excluded and windows snap to the nearest usable cells. Spanning grids are the newest feature here and the least field-tested — please report anything odd.</p>' },
+    detail:'<p class="dlead">A grid per monitor, each with its own dimensions, spacing and placement mode — or one grid stretched across several screens at once.</p>'
+      +'<div class="dsplit"><div class="drows">'
+      +'<div class="drow"><span class="dkey">Per screen</span><span class="dval">Enable a grid on any monitor and choose its columns and rows. Screens you leave alone are never touched.</span></div>'
+      +'<div class="drow"><span class="dkey">Spanning</span><span class="dval">Turn on <b>Span monitors</b> and one grid covers the combined work area of two or more displays.</span></div>'
+      +'<div class="drow"><span class="dkey">Dead space</span><span class="dval">When screens differ in size the union is L-shaped. The cells no screen actually covers are <b>excluded</b>, and windows snap to the nearest usable ones instead of straddling nothing.</span></div>'
+      +'<div class="drow"><span class="dkey">Unplugging</span><span class="dval">A spanning grid whose member is gone goes inert rather than guessing, and revives when the screen comes back.</span></div>'
+      +'</div>'+monitorsFig()+'</div>'
+      +'<p class="dbody">Spanning grids are the newest feature here and the least field-tested — please report anything odd.</p>' },
   { id:'local', app:'Privacy', tier:3, w:3, h:1,
     html:'<div class="applabel"><b>Stays on your machine.</b> No telemetry, no account.</div>',
     title:'It stays on your machine',
-    detail:'<p class="dbody">No telemetry, no analytics, no account. Your window titles never leave your machine. The one network feature is an update check — <b>opt-in and off by default</b>.</p>' },
+    detail:'<p class="dlead">No telemetry, no analytics, no account. Your window titles never leave your machine.</p>'
+      +'<div class="drows">'
+      +'<div class="drow"><span class="dkey">Local</span><span class="dval">Grids, templates, views and rules live in one JSON file in your own profile. You can read it, edit it, or delete it.</span></div>'
+      +'<div class="drow"><span class="dkey">Network</span><span class="dval">Exactly one feature can make an outbound request — the update check — and it is <b>opt-in and off by default</b>.</span></div>'
+      +'<div class="drow"><span class="dkey">Titles</span><span class="dval">Window titles are read to show you a list. They are never stored, never sent, and never written to a log.</span></div>'
+      +'</div>' },
   { id:'safe', app:'Reversible', tier:3, w:3, h:1,
     html:'<div class="applabel"><b>Nothing is destroyed.</b> Turn a grid off, windows stay put.</div>',
     title:'Nothing is destroyed',
-    detail:'<p class="dbody">Turn a grid off and every window stays exactly where it is. There is also a <b>Pause</b> switch in the tray — the panic button — which stops all tracking instantly.</p>' },
+    detail:'<p class="dlead">Nothing Griddle does is destructive. Every way of stopping it leaves your windows exactly where they are.</p>'
+      +'<div class="drows">'
+      +'<div class="drow"><span class="dkey">Turn off</span><span class="dval">Disable a grid and its windows <b>stay put</b>. Nothing is un-arranged, moved home, or closed.</span></div>'
+      +'<div class="drow"><span class="dkey">Pause</span><span class="dval">The panic button, in the tray. It stops all tracking instantly — nothing is moved again until you resume.</span></div>'
+      +'<div class="drow"><span class="dkey">Excluded</span><span class="dval">Any program can be excluded by name, and non-resizable windows are never resized by anything.</span></div>'
+      +'</div>' },
 ];
 /* Download sits directly under the headline: the primary action stays adjacent to
    the claim rather than drifting into the middle of the board. */
@@ -472,13 +775,59 @@ const SEATS={headline:[0,0],modes:[5,0],templates:[9,0],cta:[0,3],dek:[4,3],view
              foss:[0,5],local:[3,5],safe:[6,5],monitors:[9,5]};
 
 const solveMinimalMoves=GriddleLib.solveMinimalMoves;
-let cols=12,rows=6,gap=10,radius=10,mode='reflow';
+/* `mode` is the RE-ORDER LOGIC — how the board rearranges around a drop.
+   `ovf` is TILE OVERFLOW — what happens when that rearrangement needs room the
+   board does not have. They are genuinely independent: every pair means
+   something, except under Overlap, where nothing ever fails to fit. */
+let cols=12,rows=6,gap=10,radius=10,mode='reflow',ovf='drop';
 const PAD=24;
+
+/* ---- the carousel ----
+   Scrolling here does NOT add rows or columns to the visible page. Cell size is
+   still (panel ÷ cols × rows), so a tile's proportions never change — which is
+   the whole reason not to grow the grid inside the same viewport. Instead the
+   board keeps its cell metrics and extends PAST the edge, and this offset slides
+   it. Tiles that spill simply translate off-screen and .stage clips them, so the
+   carousel costs one subtraction in cellRect rather than a scrolling container,
+   a re-parented DOM, and a second coordinate space. */
+let offX=0,offY=0;
+/* How far past the visible page tiles may live, per overflow mode. Two extra
+   screenfuls in each scrolling direction is "infinite" at human scale, and it
+   keeps the Griddle instance a fixed, allocatable size. */
+const SPILL=2;
+function extent(){
+  switch(ovf){
+    case 'scroll-v':return{c:cols,r:rows*(1+SPILL)};
+    case 'scroll-h':return{c:cols*(1+SPILL),r:rows};
+    case 'canvas':  return{c:cols*(1+SPILL),r:rows*(1+SPILL)};
+    default:        return{c:cols,r:rows};   // drop · restricted stay on the page
+  }
+}
+function scrolls(){return ovf==='scroll-v'||ovf==='scroll-h'||ovf==='canvas';}
+function scrollsX(){return ovf==='scroll-h'||ovf==='canvas';}
+function scrollsY(){return ovf==='scroll-v'||ovf==='canvas';}
+/* Never scroll past the last occupied cell — an empty void the user can reach is
+   a bug, not a feature, and it makes the board feel broken rather than large. */
+function scrollLimits(){
+  const{uw,uh}=unit();
+  let maxC=cols,maxR=rows;
+  if(grid)for(const t of grid.tiles){
+    if(t.col+t.w>maxC)maxC=t.col+t.w;
+    if(t.row+t.h>maxR)maxR=t.row+t.h;
+  }
+  return{x:scrollsX()?Math.max(0,(maxC-cols)*(uw+gap)):0,
+         y:scrollsY()?Math.max(0,(maxR-rows)*(uh+gap)):0};
+}
+function clampScroll(){
+  const l=scrollLimits();
+  offX=Math.max(0,Math.min(l.x,offX));
+  offY=Math.max(0,Math.min(l.y,offY));
+}
 let grid=null,expandedId=null,started=false,didDrag=false,drag=null,rez=null,undoSnap=null;
 /* Reset compares against the page as it first arranged itself, not against a
    hardcoded board — the seed depends on viewport tier, so the only honest
    baseline is the one this visitor actually got. */
-const DEFAULTS={cols:12,rows:6,gap:10,radius:10,mode:'reflow'};
+const DEFAULTS={cols:12,rows:6,gap:10,radius:10,mode:'reflow',ovf:'drop'};
 let seedKey='';
 const els=new Map();
 const stage=document.getElementById('stage'),gridwrap=document.getElementById('gridwrap'),
@@ -498,8 +847,33 @@ function tierLimit(){const w=innerWidth,h=innerHeight;
 function unit(){const p=panelRect();
   return{uw:(p.w-PAD*2-gap*(cols-1))/cols,uh:(p.h-PAD*2-gap*(rows-1))/rows,p};}
 
+/* The ONLY place the carousel offset is applied. Everything that positions
+   anything — tiles, cells, the drop preview, the expanded popout — goes through
+   here, so the whole board slides together and nothing can drift out of register
+   with the cells behind it. */
 function cellRect(c,r,w,h){const{uw,uh,p}=unit();
-  return{x:p.x+PAD+c*(uw+gap),y:p.y+PAD+r*(uh+gap),w:uw*w+gap*(w-1),h:uh*h+gap*(h-1)};}
+  return{x:p.x+PAD+c*(uw+gap)-offX,y:p.y+PAD+r*(uh+gap)-offY,
+         w:uw*w+gap*(w-1),h:uh*h+gap*(h-1)};}
+
+/* Every Griddle instance is built at the EXTENT, not at the visible page, so a
+   scrolling mode has real cells to put spilled tiles in. Cell pixel size still
+   comes from cols × rows against the panel — that is what keeps a tile's
+   proportions identical whether it is on screen or two screens down. */
+function newGrid(){const{uw,uh}=unit(),ex=extent();
+  return new Grid({cols:ex.c,rows:ex.r,unitWidth:Math.max(1,uw),unitHeight:Math.max(1,uh)});}
+
+/* Put a tile on a grid being rebuilt, honouring the overflow setting.
+   Displacement alone is not enough in a scrolling mode: it only ever tries to
+   resolve the collision in place, so a tile that cannot fit the visible page was
+   simply lost — dropped by a mode whose entire promise is that nothing drops.
+   When displacement fails and the board scrolls, fall through to the spill area,
+   which is exactly where firstFit sends things once the page is full. */
+function addWithSpill(g,t){
+  if(g.addTileWithDisplacement({id:t.id,col:t.col,row:t.row,w:t.w,h:t.h}))return true;
+  if(!scrolls())return false;
+  const pos=firstFit(g.tiles.map(x=>({col:x.col,row:x.row,w:x.w,h:x.h})),t.w,t.h);
+  return !!pos&&!!g.addTile({id:t.id,col:pos.col,row:pos.row,w:t.w,h:t.h});
+}
 
 function build(){
   for(const c of CARDS){
@@ -589,8 +963,7 @@ function layoutHeroSettled(done){
   requestAnimationFrame(()=>{layoutHero();if(done)done();});
 }
 function seedGrid(){
-  const{uw,uh}=unit();
-  grid=new Grid({cols,rows,unitWidth:Math.max(1,uw),unitHeight:Math.max(1,uh)});
+  grid=newGrid();
   const lim=tierLimit();
   for(const c of CARDS){
     if(c.tier>lim)continue;
@@ -602,10 +975,13 @@ function seedGrid(){
 function renderCells(){
   const p=panelRect();
   gridwrap.style.cssText=`left:${p.x}px;top:${p.y}px;width:${p.w}px;height:${p.h}px`;
-  const{uw,uh}=unit();let s='';
-  for(let r=0;r<rows;r++)for(let c=0;c<cols;c++)
+  const{uw,uh}=unit();const ex=extent();let s='';
+  // the whole extent is drawn, not just the visible page — the cells past the
+  // edge are what you scroll to, and .gridwrap clips them until you do
+  for(let r=0;r<ex.r;r++)for(let c=0;c<ex.c;c++)
     s+=`<div class="cell" style="left:${PAD+c*(uw+gap)}px;top:${PAD+r*(uh+gap)}px;width:${uw}px;height:${uh}px"></div>`;
   cellsEl.innerHTML=s;
+  cellsEl.style.transform=`translate(${-offX}px,${-offY}px)`;
   if(drag)drag.shown=null;   // geometry moved; force the next frame to repaint
 }
 /* `step` staggers the tiles by reading order, so an arrangement assembles as a
@@ -638,7 +1014,9 @@ function start(){
   sync(reduce?1:820,reduce?0:38);
   /* the panel and the resize grips are tools for a grid that exists — they wait
      until the arrangement has fully landed (--dur is 820ms) */
-  setTimeout(()=>{controls.classList.add('on');root.classList.add('tools-on');refreshReset();},reduce?10:1180);
+  setTimeout(()=>{controls.classList.add('on');root.classList.add('tools-on');
+    // pages can only be measured once the bar is laid out, so this waits for it
+    markOverflowInert();layoutPager();refreshReset();},reduce?10:1180);
 }
 
 /* ---- tile resize (Griddle's resizeTile, snapped to whole cells) ----
@@ -699,7 +1077,7 @@ function tryResize(w,h){
   if(!ok&&mode!=='griddle'&&mode!=='overlap'){
     grid.loadJSON(rez.snap);
     const rr=reorderRepack(rez.id,{col:rez.col,row:rez.row},{w,h});
-    if(rr){applyLayout(rr.placed);ok=true;}
+    if(repackAllowed(rr)){applyLayout(rr.placed);ok=true;}
   }
   // `best` is a whole board, not a size: a repack cannot be re-applied by calling
   // resizeTile again, so a rejected candidate has to rewind to a saved layout.
@@ -763,7 +1141,7 @@ function resizeKey(e,id){
   if(!ok&&mode!=='griddle'&&mode!=='overlap'){
     grid.loadJSON(snap);
     const rr=reorderRepack(id,{col:t.col,row:t.row},{w,h});
-    if(rr){applyLayout(rr.placed);ok=true;}
+    if(repackAllowed(rr)){applyLayout(rr.placed);ok=true;}
   }
   if(!ok){grid.loadJSON(snap);return;}
   heal(id);
@@ -845,7 +1223,8 @@ function boardKey(){
 function dirty(){
   if(!started)return false;
   return cols!==DEFAULTS.cols||rows!==DEFAULTS.rows||gap!==DEFAULTS.gap||
-         radius!==DEFAULTS.radius||mode!==DEFAULTS.mode||boardKey()!==seedKey;
+         radius!==DEFAULTS.radius||mode!==DEFAULTS.mode||ovf!==DEFAULTS.ovf||
+         boardKey()!==seedKey;
 }
 function refreshReset(){resetBtn.disabled=!dirty();}
 function resetAll(){
@@ -856,8 +1235,11 @@ function resetAll(){
   const dimsSame=cols===DEFAULTS.cols&&rows===DEFAULTS.rows;
   const was=dimsSame&&grid?grid.toJSON():null;
   hideToast();
-  cols=DEFAULTS.cols;rows=DEFAULTS.rows;gap=DEFAULTS.gap;radius=DEFAULTS.radius;mode=DEFAULTS.mode;
+  cols=DEFAULTS.cols;rows=DEFAULTS.rows;gap=DEFAULTS.gap;radius=DEFAULTS.radius;
+  mode=DEFAULTS.mode;ovf=DEFAULTS.ovf;offX=0;offY=0;
   document.getElementById('modeSel').value=mode;
+  document.getElementById('ovfSel').value=ovf;
+  markOverflowInert();
   root.style.setProperty('--card-radius',radius+'px');
   document.getElementById('colsVal').textContent=cols;
   document.getElementById('rowsVal').textContent=rows;
@@ -919,8 +1301,12 @@ function dragFrame(){
   const x=dragPt.x-drag.ox,y=dragPt.y-drag.oy;
   els.get(drag.id).el.style.transform=`translate(${x}px,${y}px)`;
   const{uw,uh,p}=unit();
-  const col=Math.max(0,Math.min(cols-drag.t.w,Math.round((x-p.x-PAD)/(uw+gap))));
-  const row=Math.max(0,Math.min(rows-drag.t.h,Math.round((y-p.y-PAD)/(uh+gap))));
+  // + the carousel offset, or every drop would land one scroll-distance away
+  // from the cell the cursor is actually over. Clamped to the EXTENT, not to the
+  // visible page: in a scrolling mode you are allowed to aim past the edge.
+  const ex=extent();
+  const col=Math.max(0,Math.min(ex.c-drag.t.w,Math.round((x+offX-p.x-PAD)/(uw+gap))));
+  const row=Math.max(0,Math.min(ex.r-drag.t.h,Math.round((y+offY-p.y-PAD)/(uh+gap))));
   if(!drag.shown||col!==drag.shown.col||row!==drag.shown.row){
     drag.to={col,row};drag.shown={col,row};
     showPreview(col,row,drag.t.w,drag.t.h);
@@ -935,20 +1321,32 @@ function dragFrame(){
    travel: a tile that no longer fits the gap it used to hold gets leapfrogged by
    a smaller one. */
 function overlaps(a,b){return a.col<b.col+b.w&&a.col+a.w>b.col&&a.row<b.row+b.h&&a.row+a.h>b.row;}
+/* Page-major, not extent-major. A plain row-by-row scan across the whole extent
+   would run the first row three screens to the right before ever starting the
+   second — so the visible page would look half-empty while tiles piled up
+   off-screen. Fill the page you can see first, then spill to the next one. */
 function firstFit(placed,w,h){
-  for(let r=0;r<=rows-h;r++)for(let c=0;c<=cols-w;c++){
+  const ex=extent(),free=(c,r)=>{
     const rect={col:c,row:r,w,h};
-    if(!placed.some(p=>overlaps(rect,p)))return{col:c,row:r};
+    return !placed.some(p=>overlaps(rect,p));
+  };
+  const pw=scrollsX()?cols:ex.c,ph=scrollsY()?rows:ex.r;
+  for(let r0=0;r0<ex.r;r0+=ph)for(let c0=0;c0<ex.c;c0+=pw){
+    const rEnd=Math.min(r0+ph,ex.r)-h,cEnd=Math.min(c0+pw,ex.c)-w;
+    for(let r=r0;r<=rEnd;r++)for(let c=c0;c<=cEnd;c++)if(free(c,r))return{col:c,row:r};
   }
+  // A tile taller or wider than one page fits no page, but may still fit the
+  // extent across a page boundary — so fall back to a plain scan before giving up.
+  for(let r=0;r<=ex.r-h;r++)for(let c=0;c<=ex.c-w;c++)if(free(c,r))return{col:c,row:r};
   return null;
 }
 function reorderRepack(id,to,size){
-  const lim=tierLimit();
+  const lim=tierLimit(),ex=extent();
   const onBoard=new Map(grid.tiles.map(t=>[t.id,{...t}]));
   const me=onBoard.get(id);
   if(!me)return null;
   const pinned={...me,col:to.col,row:to.row,...(size||{})};
-  if(pinned.col<0||pinned.row<0||pinned.col+pinned.w>cols||pinned.row+pinned.h>rows)return null;
+  if(pinned.col<0||pinned.row<0||pinned.col+pinned.w>ex.c||pinned.row+pinned.h>ex.r)return null;
   /* The roster is every card that belongs on the board at this size, not just the
      ones currently placed. Without that, an evicted tile is gone for good: the
      headline is 15 cells and will never find a 5x3 hole again once it is off.
@@ -957,33 +1355,33 @@ function reorderRepack(id,to,size){
      Only a tile that is off the board comes back at its authored size. */
   const reading=CARDS.filter(c=>c.tier<=lim&&c.id!==id).map(c=>{
     const t=onBoard.get(c.id);
-    return{id:c.id,tier:c.tier,w:Math.min(t?t.w:c.w,cols),h:Math.min(t?t.h:c.h,rows),
+    return{id:c.id,tier:c.tier,w:Math.min(t?t.w:c.w,ex.c),h:Math.min(t?t.h:c.h,ex.r),
            row:t?t.row:Infinity,col:t?t.col:Infinity};
   }).sort((a,b)=>a.row-b.row||a.col-b.col||(a.id<b.id?-1:1));
-  const pack=order=>{
-    const placed=[pinned], evicted=[];
-    for(const t of order){
-      const pos=firstFit(placed,t.w,t.h);
-      if(pos)placed.push({...t,...pos});else evicted.push(t.id);
-    }
-    return{placed,evicted};
-  };
-  // First-fit in reading order is predictable but a poor packer, and a bad fit
-  // costs a whole tile. Try other orderings and keep the least damaging result.
-  // Cost is weighted, not counted: tier 0 is the page's actual content, so losing
-  // the headline is never an acceptable price for keeping two decorative tiles.
-  const a=pack(reading);
-  if(!a.evicted.length)return a;
-  const tierOf=tid=>{const c=CARDS.find(x=>x.id===tid);return c?c.tier:9;};
-  const cost=r=>r.evicted.reduce((s,eid)=>s+(tierOf(eid)===0?100:1),0);
-  const cands=[a,
-    pack(reading.slice().sort((x,y)=>y.w*y.h-x.w*x.h)),
-    pack(reading.slice().sort((x,y)=>tierOf(x.id)-tierOf(y.id)||y.w*y.h-x.w*x.h))];
-  return cands.reduce((best,c)=>cost(c)<cost(best)?c:best);
+  /* LINEAR, one pass. Reading order, each tile into the first slot that fits;
+     whatever is still unplaced when the board runs out is dropped, in that same
+     order. So the tiles at the END of the board are the ones that go — which is
+     what anyone watching predicts.
+     This replaces a packer that tried three different orderings and kept
+     whichever evicted the least "valuable" tiles. It packed better and behaved
+     unpredictably: the same drop could cost you a different tile depending on
+     sizes elsewhere on the board. Predictability is worth more than density in a
+     thing whose whole job is to be understood. */
+  const placed=[pinned],evicted=[];
+  for(const t of reading){
+    const pos=firstFit(placed,t.w,t.h);
+    if(pos)placed.push({...t,...pos});else evicted.push(t.id);
+  }
+  return{placed,evicted};
 }
+/* Restricted means no tile may ever leave the board, so an arrangement that
+   would cost one is refused outright and the caller rolls back. Every other
+   overflow mode accepts the repack — under the scrolling modes `evicted` is
+   almost always empty anyway, because the extent gave the packer somewhere to
+   put the spill. */
+function repackAllowed(rr){return !!rr&&!(ovf==='restrict'&&rr.evicted.length>0);}
 function applyLayout(placed){
-  const{uw,uh}=unit();
-  const g=new Grid({cols,rows,unitWidth:Math.max(1,uw),unitHeight:Math.max(1,uh)});
+  const g=newGrid();
   for(const t of placed)g.addTile({id:t.id,col:t.col,row:t.row,w:t.w,h:t.h});
   grid=g;
 }
@@ -999,7 +1397,7 @@ function heal(id){
   const t=grid.getTile(id);
   if(!t)return;
   const rr=reorderRepack(id,{col:t.col,row:t.row});
-  if(rr)applyLayout(rr.placed);
+  if(repackAllowed(rr))applyLayout(rr.placed);
 }
 
 function dragEnd(){
@@ -1043,10 +1441,15 @@ function dragEnd(){
       // case, not the exception. Reflow instead, so the drop always lands.
       const before=new Map(grid.tiles.map(t=>[t.id,t.col+','+t.row]));
       const rr=reorderRepack(drag.id,drag.to);
-      if(rr){
+      if(repackAllowed(rr)){
         applyLayout(rr.placed);
         flashMoved(rr.placed.filter(t=>t.id!==drag.id&&before.get(t.id)!==t.col+','+t.row).length,wasBoard);
         flash(rr.evicted.filter(eid=>!grid.getTile(eid)).length,wasBoard);
+      } else if(rr&&ovf==='restrict'){
+        // Restricted: the arrangement existed, it just cost a tile. Refuse it and
+        // say why, rather than dropping something and hoping it is not noticed.
+        grid.moveTile(drag.id,drag.to);
+        showToast('no room · nothing dropped',wasBoard);
       } else {
         grid.moveTile(drag.id,drag.to);
       }
@@ -1072,14 +1475,30 @@ function dragEnd(){
   drag=null;sync(reduce?1:440);refreshReset();
   setTimeout(()=>{didDrag=false;},60);
 }
+/* An expanded tile claims EVERY CELL of the grid — cellRect(0,0,cols,rows) is
+   literally the whole board — rather than floating at some fixed pixel size of
+   its own. Three things fall out of that for free:
+     · it is still a window, sitting exactly where a window can sit, so the page
+       never breaks into "grid" and "modal" as two different kinds of surface;
+     · it is responsive without a single breakpoint, because the board already
+       tracks the viewport (panelRect) — on a phone the same call yields a
+       full-bleed sheet;
+     · the geometry transition is the same translate+resize every other tile
+       runs, so opening a tile is the motion the page has been teaching all along.
+   Nothing here hardcodes a size, so changing cols/rows/gap/padding cannot leave
+   the popout misaligned with the board behind it.
+   The carousel offset is added BACK, deliberately: an expanded tile covers the
+   visible page, never the whole scrolled extent. Otherwise reading a tile two
+   screens down would open a sheet that starts off-screen. */
+function expandRect(){const r=cellRect(0,0,cols,rows);
+  return{x:r.x+offX,y:r.y+offY,w:r.w,h:r.h};}
 function expand(id){
   if(!grid.getTile(id))return;
   if(expandedId)collapse(true);
   expandedId=id;
   const el=els.get(id).el;
   el.classList.add('expanded');
-  const W=innerWidth,H=innerHeight,w=Math.min(600,W-56),h=Math.min(400,H-120);
-  place(id,{x:(W-w)/2,y:(H-h)/2,w,h},reduce?1:460);
+  place(id,expandRect(),reduce?1:460);
   scrim.classList.add('on');
 }
 function collapse(quiet){
@@ -1106,12 +1525,13 @@ function applyDims(nc,nr){
   hideToast();
   const snap=grid.tiles.map(t=>({...t}));
   cols=nc;rows=nr;
-  const{uw,uh}=unit();
-  grid=new Grid({cols,rows,unitWidth:Math.max(1,uw),unitHeight:Math.max(1,uh)});
+  offX=0;offY=0;   // the page just changed size; any carousel position is stale
+  grid=newGrid();
+  const ex=extent();
   let dropped=0;
   for(const t of snap){
-    const w=Math.min(t.w,cols),h=Math.min(t.h,rows);
-    if(!grid.addTileWithDisplacement({id:t.id,col:Math.max(0,Math.min(t.col,cols-w)),row:Math.max(0,Math.min(t.row,rows-h)),w,h}))dropped++;
+    const w=Math.min(t.w,ex.c),h=Math.min(t.h,ex.r);
+    if(!addWithSpill(grid,{id:t.id,col:Math.max(0,Math.min(t.col,ex.c-w)),row:Math.max(0,Math.min(t.row,ex.r-h)),w,h}))dropped++;
   }
   if(mode==='overlap')setFlow(false);   // the rebuild above re-imposed flow
   document.getElementById('colsVal').textContent=cols;
@@ -1148,8 +1568,116 @@ document.getElementById('modeSel').onchange=e=>{
       if(lost)flash(lost);
     }
   }
+  markOverflowInert();
   refreshReset();
 };
+
+/* ---- tile overflow ----
+   Changing it changes the EXTENT, and the extent is baked into the Griddle
+   instance at construction, so the board is rebuilt rather than mutated. Tiles
+   are clamped into whatever the new extent allows: going from a scrolling mode
+   back to a paged one has to bring the spill home, or tiles would sit forever in
+   cells that no longer exist. */
+function rebuildForOverflow(){
+  if(!grid)return;
+  const tiles=grid.tiles.map(t=>({...t}));
+  const ex=extent();
+  offX=0;offY=0;
+  grid=newGrid();
+  let dropped=0;
+  for(const t of tiles){
+    const w=Math.min(t.w,ex.c),h=Math.min(t.h,ex.r);
+    const col=Math.max(0,Math.min(t.col,ex.c-w)),row=Math.max(0,Math.min(t.row,ex.r-h));
+    if(!addWithSpill(grid,{id:t.id,col,row,w,h}))dropped++;
+  }
+  if(mode==='overlap')setFlow(false);   // the rebuild above re-imposed flow
+  renderCells();sync(reduce?1:420);flash(dropped);refreshReset();
+}
+/* Overlap never contests space, so nothing can ever fail to fit and the whole
+   overflow question stops existing. Show that rather than leaving a live-looking
+   control that silently does nothing. */
+function markOverflowInert(){
+  const c=document.getElementById('ovfSel').closest('.ctl');
+  const inert=mode==='overlap';
+  c.classList.toggle('inert',inert);
+  document.getElementById('ovfSel').disabled=inert;
+  c.title=inert?'Overlap never runs out of room, so overflow does not apply':'';
+}
+document.getElementById('ovfSel').onchange=e=>{
+  ovf=e.target.value;
+  if(started)rebuildForOverflow();else{offX=0;offY=0;}
+  refreshReset();
+};
+
+/* ---- carousel input ----
+   A wheel over the board slides it in whichever direction the mode scrolls. In
+   scroll-horizontal a vertical wheel is accepted too: almost nobody has a
+   horizontal wheel, and a carousel you cannot move is worse than one that
+   interprets you generously. */
+let scrollRaf=0;
+function applyScroll(){
+  scrollRaf=0;
+  cellsEl.style.transform=`translate(${-offX}px,${-offY}px)`;
+  sync(0);
+  if(expandedId)place(expandedId,expandRect(),0);
+}
+function queueScroll(){if(!scrollRaf)scrollRaf=requestAnimationFrame(applyScroll);}
+addEventListener('wheel',e=>{
+  if(!started||expandedId||!scrolls())return;
+  const l=scrollLimits();
+  if(l.x<=0&&l.y<=0)return;
+  if(scrollsY())offY+=e.deltaY;
+  if(scrollsX())offX+=scrollsY()?e.deltaX:(e.deltaX||e.deltaY);
+  clampScroll();
+  queueScroll();
+},{passive:true});
+
+/* ---- control bar: tabs, then pages within a tab ----
+   Nothing is ever dropped for want of width. If a tab's controls do not fit,
+   they page; the pager appears only when there is a second page to reach. */
+const panesEl=document.getElementById('panes'),pagerEl=document.getElementById('pager'),
+      pgNumEl=document.getElementById('pgNum'),pgPrevEl=document.getElementById('pgPrev'),
+      pgNextEl=document.getElementById('pgNext');
+let ctlPage=0;
+function layoutPager(){
+  const pane=panesEl.querySelector('.pane.on');
+  if(!pane)return;
+  const ctls=[...pane.children];
+  for(const c of ctls){c.removeAttribute('data-off');c.removeAttribute('data-first');}
+  const widths=ctls.map(c=>c.getBoundingClientRect().width);
+  // everything in the bar that is not the pane, plus the pager's own footprint
+  // (reserved as a constant so showing it cannot shrink the budget that decided
+  // to show it — that feedback loop oscillates)
+  const fixed=[...document.querySelectorAll('.controls .tabs,.controls .ctl.reset')]
+    .reduce((s,e)=>s+e.getBoundingClientRect().width,0);
+  const budget=Math.max(90,innerWidth-28-fixed-78);
+  let per=0,acc=0;
+  for(const w of widths){if(acc+w>budget&&per>0)break;acc+=w;per++;}
+  per=Math.max(1,per);
+  const pages=Math.ceil(ctls.length/per);
+  ctlPage=Math.max(0,Math.min(ctlPage,pages-1));
+  ctls.forEach((c,i)=>{
+    if(i<ctlPage*per||i>=(ctlPage+1)*per)c.setAttribute('data-off','');
+  });
+  const first=ctls.find(c=>!c.hasAttribute('data-off'));
+  if(first)first.setAttribute('data-first','');
+  pagerEl.hidden=pages<2;
+  pgNumEl.textContent=`${ctlPage+1}/${pages}`;
+  pgPrevEl.disabled=ctlPage===0;
+  pgNextEl.disabled=ctlPage>=pages-1;
+}
+function showTab(name){
+  ctlPage=0;
+  for(const b of document.querySelectorAll('.controls .tab')){
+    const on=b.dataset.tab===name;
+    b.classList.toggle('on',on);b.setAttribute('aria-selected',on?'true':'false');
+  }
+  for(const p of panesEl.querySelectorAll('.pane'))p.classList.toggle('on',p.dataset.pane===name);
+  layoutPager();
+}
+for(const b of document.querySelectorAll('.controls .tab'))b.onclick=()=>showTab(b.dataset.tab);
+pgPrevEl.onclick=()=>{ctlPage--;layoutPager();};
+pgNextEl.onclick=()=>{ctlPage++;layoutPager();};
 document.getElementById('themeBtn').onclick=()=>{
   const cur=root.getAttribute('data-theme');
   const sys=matchMedia('(prefers-color-scheme:dark)').matches;
@@ -1164,9 +1692,12 @@ hint.addEventListener('click',start);
 stage.addEventListener('click',e=>{if(!started&&!e.target.closest('a,button'))start();});
 let rt;addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(()=>{
   if(!started){renderCells();layoutHeroSettled();return;}
+  clampScroll();   // a wider viewport can shrink the scrollable range to nothing
   renderCells();
-  if(expandedId){const W=innerWidth,H=innerHeight,w=Math.min(600,W-56),h=Math.min(400,H-120);
-    place(expandedId,{x:(W-w)/2,y:(H-h)/2,w,h},1);}
+  layoutPager();
+  // sync() below deliberately skips the expanded tile, so its new board-sized
+  // rect has to be written here or a resize would leave it at the old one
+  if(expandedId)place(expandedId,expandRect(),1);
   sync(1);
 },130);});
 
