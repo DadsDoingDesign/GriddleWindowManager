@@ -6,6 +6,7 @@
   --line:#E3E3EA; --line-soft:#EDEDF2;
   --accent:#5B5BD6; --accent-soft:rgba(91,91,214,.10); --accent-line:rgba(91,91,214,.45);
   --shadow-lo:0 1px 2px rgba(11,11,18,.05); --shadow-hi:0 18px 44px -12px rgba(11,11,18,.26),0 4px 10px rgba(11,11,18,.08);
+  --card-radius:10px;
   --sans:"Segoe UI Variable Display","Segoe UI",-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
   --text:"Segoe UI Variable Text","Segoe UI",-apple-system,system-ui,sans-serif;
   --mono:"Cascadia Code","Cascadia Mono",Consolas,ui-monospace,monospace;
@@ -54,7 +55,7 @@ body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--text);
    The hero is the same nodes with different geometry and type
    scale — never a second copy — so nothing cross-fades or ghosts.
    ============================================================ */
-.card{position:absolute;left:0;top:0;border-radius:10px;overflow:hidden;
+.card{position:absolute;left:0;top:0;border-radius:var(--card-radius);overflow:hidden;
   display:flex;flex-direction:column;background:var(--surface);
   border:1px solid transparent;will-change:transform,width,height;
   transition:transform var(--dur) var(--ease),width var(--dur) var(--ease),
@@ -66,11 +67,19 @@ body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--text);
 [data-phase="hero"] .card.inhero{background:transparent;border-color:transparent;box-shadow:none}
 [data-phase="grid"] .card{border-color:var(--line);box-shadow:var(--shadow-lo)}
 
+/* ...except the headline, which IS the intro window. It keeps its chrome while
+   floating over an empty grid, then minimises into its own tile. The three other
+   hero elements ride inside it and fly out to their own seats. */
+[data-phase="hero"] .card.inhero[data-id="headline"]{background:var(--surface);
+  border-color:var(--line);box-shadow:var(--shadow-hi)}
+
 .titlebar{height:30px;flex:none;display:flex;align-items:center;gap:8px;padding:0 11px;
   border-bottom:1px solid transparent;opacity:0;transition:opacity 420ms ease,border-color 620ms ease;
   cursor:grab;user-select:none;touch-action:none}
 [data-phase="grid"] .titlebar{opacity:1;border-bottom-color:var(--line-soft)}
 [data-phase="hero"] .card.inhero .titlebar{height:0;overflow:hidden}
+[data-phase="hero"] .card.inhero[data-id="headline"] .titlebar{height:30px;overflow:visible;
+  opacity:1;border-bottom-color:var(--line-soft)}
 .card.dragging .titlebar{cursor:grabbing}
 .dot{width:7px;height:7px;border-radius:50%;flex:none;background:var(--faint)}
 .tbname{font-size:11.5px;color:var(--muted);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -84,11 +93,13 @@ body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--text);
   gap:clamp(4px,.8vh,8px);padding:clamp(6px,1.3vh,14px) clamp(10px,1.1vw,14px);
   overflow:hidden;transition:padding var(--dur) var(--ease)}
 [data-phase="hero"] .card.inhero .content{padding:0;align-items:center;text-align:center;gap:0}
+[data-phase="hero"] .card.inhero[data-id="headline"] .content{padding:0 clamp(16px,3vw,48px)}
 
 /* Type scales between phases on the SAME nodes — no duplicate text. */
 .headline{font-family:var(--sans);font-weight:800;letter-spacing:-.042em;line-height:1.0;
   margin:0;text-wrap:balance;transition:font-size var(--dur) var(--ease),line-height var(--dur) var(--ease)}
-[data-phase="hero"] .headline{font-size:clamp(30px,5.6vw,76px);line-height:.95;letter-spacing:-.048em}
+/* vh term keeps the intro type from outgrowing the window on short viewports */
+[data-phase="hero"] .headline{font-size:clamp(30px,min(5.6vw,11.5vh),76px);line-height:.95;letter-spacing:-.048em}
 [data-phase="grid"] .headline{font-size:clamp(15px,1.85vw,27px);line-height:1.08}
 .headline .br{display:block}
 
@@ -135,7 +146,26 @@ body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--text);
 .gridwrap{position:absolute;border-radius:13px;background:var(--panel);opacity:0;
   transition:opacity 620ms ease;pointer-events:none}
 [data-phase="grid"] .gridwrap{opacity:1}
+/* the intro floats over the empty grid rather than a blank page — it has to be
+   legible enough to read as a grid, or the morph has nothing to land in */
+[data-phase="hero"] .gridwrap{opacity:.85}
 .cell{position:absolute;border-radius:5px;border:1px dashed var(--line);opacity:.5}
+/* in the grid phase every cell is covered by a card, so --line is enough contrast.
+   In the intro the empty grid is the point, so it gets a brighter dash. */
+[data-phase="hero"] .cell{border-color:var(--faint);opacity:.45}
+
+/* column-boundary handles: drag to redistribute column width as fr ratios */
+/* inside .gridwrap on purpose: cards paint above, so a boundary is only grabbable
+   in the gutter where it is actually visible, and never over a card's titlebar */
+.handles{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity 300ms ease}
+.handles.on{opacity:1}
+.chandle{position:absolute;pointer-events:auto;cursor:col-resize;touch-action:none;
+  border-radius:6px;background:transparent}
+.chandle::after{content:"";position:absolute;left:50%;top:0;width:2px;height:100%;
+  transform:translateX(-50%);background:var(--accent);border-radius:2px;
+  opacity:0;transition:opacity 140ms ease}
+.chandle:hover::after,.chandle:focus-visible::after,.chandle.grabbing::after{opacity:1}
+.chandle:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .dropzone{position:absolute;border-radius:7px;background:var(--accent-soft);
   border:1.5px solid var(--accent-line);opacity:0;transition:opacity 130ms ease;pointer-events:none}
 .dropzone.on{opacity:1}
@@ -169,8 +199,15 @@ select.mode{font-family:var(--text);font-size:12px;background:var(--surface-2);c
   cursor:pointer;padding:8px 12px;transition:opacity 300ms ease}
 .hint.gone{opacity:0;pointer-events:none}
 
+/* Controls earn their place by width. Mode/Columns/Rows are informative and always
+   present; Gap and Corners are the fun ones and arrive last. */
+@media (max-width:1279px){.ctl.tier-3{display:none}}
+@media (max-width:1099px){.ctl.tier-2{display:none}}
+@media (max-width:899px){.handles{display:none}}
+
 @media (prefers-reduced-motion:reduce){
   .card,.headline,.dek,.eyebrow,.cta,.meta,.content{transition-duration:1ms !important}
+  .handles{transition-duration:1ms !important}
 }
 </style>
 
@@ -183,28 +220,32 @@ select.mode{font-family:var(--text);font-size:12px;background:var(--surface-2);c
 </header>
 
 <main class="stage" id="stage">
-  <div class="gridwrap" id="gridwrap"><div id="cells"></div><div class="dropzone" id="dropzone"></div></div>
+  <div class="gridwrap" id="gridwrap"><div id="cells"></div><div class="dropzone" id="dropzone"></div>
+    <div class="handles" id="handles" role="group" aria-label="Column width handles"></div></div>
 </main>
 
 <button class="hint" id="hint">press any key to arrange &rarr;</button>
 <div class="scrim" id="scrim"></div>
 
 <div class="controls" id="controls" role="group" aria-label="Grid controls">
-  <div class="ctl"><label>Mode</label>
-    <select class="mode" id="modeSel" aria-label="Placement mode">
-      <option value="reflow" selected>Reflow · fewest moves</option>
+  <div class="ctl tier-0"><label>Grid responsiveness</label>
+    <select class="mode" id="modeSel" aria-label="Grid responsiveness">
+      <option value="reflow" selected>Reorganize · fewest moves</option>
       <option value="push">Push · displace neighbours</option>
-      <option value="stack">Stack · allow overlap</option>
+      <option value="stack">Overlap · windows stack</option>
     </select></div>
-  <div class="ctl"><label>Cols</label><div class="step">
+  <div class="ctl tier-0"><label>Columns</label><div class="step">
     <button id="colsDec" aria-label="Fewer columns">−</button><span class="val" id="colsVal">12</span>
     <button id="colsInc" aria-label="More columns">+</button></div></div>
-  <div class="ctl"><label>Rows</label><div class="step">
+  <div class="ctl tier-0"><label>Rows</label><div class="step">
     <button id="rowsDec" aria-label="Fewer rows">−</button><span class="val" id="rowsVal">6</span>
     <button id="rowsInc" aria-label="More rows">+</button></div></div>
-  <div class="ctl"><label>Gap</label><div class="step">
-    <button id="gapDec" aria-label="Less gap">−</button><span class="val" id="gapVal">10</span>
+  <div class="ctl tier-2"><label>Gap</label><div class="step">
+    <button id="gapDec" aria-label="Less gap">−</button><span class="val" id="gapVal">10px</span>
     <button id="gapInc" aria-label="More gap">+</button></div></div>
+  <div class="ctl tier-3"><label>Corners</label><div class="step">
+    <button id="radDec" aria-label="Squarer corners">−</button><span class="val" id="radVal">10px</span>
+    <button id="radInc" aria-label="Rounder corners">+</button></div></div>
   <span class="note" id="note"></span>
 </div>
 
@@ -248,27 +289,47 @@ const CARDS=[
     title:'Nothing is destroyed',
     detail:'<p class="dbody">Turn a grid off and every window stays exactly where it is. There is also a <b>Pause</b> switch in the tray — the panic button — which stops all tracking instantly.</p>' },
 ];
-const SEATS={headline:[0,0],vscode:[5,0],chrome:[9,0],dek:[0,3],cta:[4,3],figma:[8,3],
+/* Download sits directly under the headline: the primary action stays adjacent to
+   the claim rather than drifting into the middle of the board. */
+const SEATS={headline:[0,0],vscode:[5,0],chrome:[9,0],cta:[0,3],dek:[4,3],figma:[8,3],
              foss:[0,5],local:[3,5],safe:[6,5],slack:[9,5]};
 
 const solveMinimalMoves=GriddleLib.solveMinimalMoves;
-let cols=12,rows=6,gap=10,mode='reflow';
+let cols=12,rows=6,gap=10,radius=10,mode='reflow';
+let colFr=Array.from({length:cols},()=>1);
 const PAD=24;
 let grid=null,expandedId=null,started=false,didDrag=false,drag=null;
 const els=new Map();
 const stage=document.getElementById('stage'),gridwrap=document.getElementById('gridwrap'),
       cellsEl=document.getElementById('cells'),dropzone=document.getElementById('dropzone'),
       controls=document.getElementById('controls'),scrim=document.getElementById('scrim'),
-      hint=document.getElementById('hint'),note=document.getElementById('note');
+      hint=document.getElementById('hint'),note=document.getElementById('note'),
+      handles=document.getElementById('handles');
 
 function panelRect(){const w=innerWidth,h=innerHeight,mx=Math.max(16,Math.min(64,w*.045));
   const top=68,bot=Math.min(86,h*.11);return{x:mx,y:top,w:w-mx*2,h:h-top-bot};}
 function tierLimit(){const w=innerWidth,h=innerHeight;
   if(w<760||h<520)return 0; if(w<1060)return 1; if(w<1400)return 2; return 3;}
+/* uw is the MEAN column width. It seeds the engine (which wants one number) and
+   nothing else — real column widths come from the fr ratios below. */
 function unit(){const p=panelRect();
   return{uw:(p.w-PAD*2-gap*(cols-1))/cols,uh:(p.h-PAD*2-gap*(rows-1))/rows,p};}
-function cellRect(c,r,w,h){const{uw,uh,p}=unit();
-  return{x:p.x+PAD+c*(uw+gap),y:p.y+PAD+r*(uh+gap),w:uw*w+gap*(w-1),h:uh*h+gap*(h-1)};}
+
+/* Columns are fr ratios, not pixels. Dragging a boundary trades weight between
+   exactly two neighbours and conserves their sum, so the total is invariant —
+   dragging every boundary repeatedly cannot inflate the grid. Each column is
+   additionally clamped around a mean of 1. */
+const MIN_FR=.35, MAX_FR=3;
+function frTotal(){const t=colFr.reduce((a,b)=>a+b,0);return t>0?t:cols;}
+function colWidths(){const p=panelRect();
+  const inner=p.w-PAD*2-gap*(cols-1),t=frTotal();
+  return colFr.map(f=>inner*f/t);}
+function colOffsets(){const ws=colWidths(),xs=[];let x=0;
+  for(let i=0;i<cols;i++){xs.push(x);x+=ws[i]+gap;}
+  return xs;}
+function cellRect(c,r,w,h){const{uh,p}=unit(),ws=colWidths(),xs=colOffsets();
+  let width=0;for(let i=c;i<c+w&&i<cols;i++)width+=ws[i];
+  return{x:p.x+PAD+xs[c],y:p.y+PAD+r*(uh+gap),w:width+gap*(w-1),h:uh*h+gap*(h-1)};}
 
 function build(){
   for(const c of CARDS){
@@ -301,25 +362,39 @@ function place(id,r,d){const e=els.get(id);if(!e)return;
   e.el.style.transform=`translate(${r.x}px,${r.y}px)`;
   e.el.style.width=r.w+'px';e.el.style.height=r.h+'px';}
 
-/* Hero geometry is DERIVED: same cards, laid out as a centred stack. */
+/* Hero geometry is DERIVED. The headline card IS the intro window: it is sized to
+   a real rectangle of the grid it is about to fall into, so the transition to its
+   seat is a pure geometry change rather than a swap. The other three hero elements
+   are laid inside it, chromeless, and fly out to their own seats when the grid
+   takes over. The stack is measured off the rendered headline box, so the type can
+   scale freely without ever colliding with what sits under it. */
 function layoutHero(){
-  const W=innerWidth,H=innerHeight;
-  const cw=Math.min(940,W-48);
-  const rowsH={foss:18,headline:Math.min(200,H*.30),dek:Math.min(72,H*.11),cta:Math.min(92,H*.14)};
-  const gaps={foss:20,headline:22,dek:26};
-  const order=['foss','headline','dek','cta'];
-  const total=order.reduce((s,id)=>s+rowsH[id]+(gaps[id]||0),0);
-  let y=Math.max(70,(H-total)/2);
-  for(const id of order){
-    const w=id==='dek'?Math.min(640,cw):id==='cta'?Math.min(400,cw):cw;
-    place(id,{x:(W-w)/2,y,w,h:rowsH[id]},0);
-    y+=rowsH[id]+(gaps[id]||0);
-  }
+  const{uh,p}=unit(),ws=colWidths(),xs=colOffsets();
+  const c0=cols>=8?1:0, c1=cols>=8?cols-2:cols-1, rspan=Math.min(rows,5);
+  let iw=0;for(let i=c0;i<=c1;i++)iw+=ws[i];
+  iw+=gap*(c1-c0);
+  const ix=p.x+PAD+xs[c0], iy=p.y+PAD, ih=uh*rspan+gap*(rspan-1);
+  place('headline',{x:ix,y:iy,w:iw,h:ih},0);
+
   for(const c of CARDS){
     if(c.hero)continue;
     els.get(c.id).el.classList.add('parked');
-    place(c.id,{x:W/2-120,y:H+60,w:240,h:140},0);
+    place(c.id,{x:ix+iw/2-120,y:iy+ih+80,w:240,h:140},0);
   }
+
+  const put=()=>{
+    const hEl=els.get('headline').el.querySelector('.headline');
+    if(!hEl)return;
+    const r=hEl.getBoundingClientRect();
+    const inner=iw-64, dekW=Math.min(560,inner), ctaW=Math.min(400,inner);
+    let dekY=r.bottom+22, ctaY=dekY+56+18;
+    const overflow=(ctaY+88)-(iy+ih-14);
+    if(overflow>0){dekY-=overflow;ctaY-=overflow;}
+    place('foss',{x:ix+32,y:Math.max(iy+38,r.top-34),w:inner,h:18},0);
+    place('dek',{x:ix+(iw-dekW)/2,y:dekY,w:dekW,h:56},0);
+    place('cta',{x:ix+(iw-ctaW)/2,y:ctaY,w:ctaW,h:88},0);
+  };
+  put();requestAnimationFrame(put);
 }
 function seedGrid(){
   const{uw,uh}=unit();
@@ -335,10 +410,11 @@ function seedGrid(){
 function renderCells(){
   const p=panelRect();
   gridwrap.style.cssText=`left:${p.x}px;top:${p.y}px;width:${p.w}px;height:${p.h}px`;
-  const{uw,uh}=unit();let s='';
+  const{uh}=unit(),ws=colWidths(),xs=colOffsets();let s='';
   for(let r=0;r<rows;r++)for(let c=0;c<cols;c++)
-    s+=`<div class="cell" style="left:${PAD+c*(uw+gap)}px;top:${PAD+r*(uh+gap)}px;width:${uw}px;height:${uh}px"></div>`;
+    s+=`<div class="cell" style="left:${PAD+xs[c]}px;top:${PAD+r*(uh+gap)}px;width:${ws[c]}px;height:${uh}px"></div>`;
   cellsEl.innerHTML=s;
+  placeHandles();
 }
 function sync(d){
   const seen=new Set();
@@ -356,8 +432,85 @@ function start(){
   seedGrid();renderCells();
   root.dataset.phase='grid';
   sync(reduce?1:820);
-  setTimeout(()=>controls.classList.add('on'),reduce?10:560);
+  /* the panel and the column handles are tools for a grid that exists — they wait
+     until the arrangement has fully landed (--dur is 820ms) */
+  setTimeout(()=>{controls.classList.add('on');handles.classList.add('on');},reduce?10:900);
 }
+
+/* ---- column width redistribution (fr, clamped, sum-conserving) ---- */
+/* Handle nodes are reused, never re-created. Rebuilding them on every render would
+   destroy the node the pointer has captured (or the keyboard has focused) halfway
+   through the very interaction that triggered the render. */
+function placeHandles(){
+  if(!started){handles.innerHTML='';return;}
+  if(handles.children.length!==cols-1){
+    let s='';
+    for(let i=0;i<cols-1;i++)
+      s+=`<div class="chandle" role="separator" tabindex="0" data-i="${i}"`
+        +` aria-label="Width between column ${i+1} and column ${i+2}"></div>`;
+    handles.innerHTML=s;
+  }
+  const p=panelRect(),xs=colOffsets(),hit=Math.max(12,gap+8);
+  [...handles.children].forEach((el,i)=>{
+    el.style.left=(PAD+xs[i+1]-gap/2-hit/2)+'px';
+    el.style.top=PAD+'px';
+    el.style.width=hit+'px';
+    el.style.height=(p.h-PAD*2)+'px';
+    el.setAttribute('aria-valuenow',colFr[i].toFixed(2));
+  });
+}
+function nudgeFr(i,delta){
+  const a=colFr[i],b=colFr[i+1],sum=a+b;
+  // clamping the pair AND conserving their sum is what stops repeated drags
+  // from ratcheting the ratios upward
+  const lo=Math.max(MIN_FR,sum-MAX_FR), hi=Math.min(MAX_FR,sum-MIN_FR);
+  const na=Math.min(hi,Math.max(lo,a+delta));
+  if(na===a)return false;
+  colFr[i]=na;colFr[i+1]=sum-na;
+  return true;
+}
+function frReadout(i){
+  note.textContent=`${colFr[i].toFixed(2)}fr · ${colFr[i+1].toFixed(2)}fr`;
+  note.classList.add('on');
+}
+handles.addEventListener('pointerdown',e=>{
+  const h=e.target.closest('.chandle');if(!h)return;
+  e.preventDefault();
+  const i=+h.dataset.i, startX=e.clientX, a0=colFr[i], b0=colFr[i+1];
+  const inner=panelRect().w-PAD*2-gap*(cols-1), perPx=frTotal()/Math.max(1,inner);
+  h.setPointerCapture(e.pointerId);h.classList.add('grabbing');
+  frReadout(i);
+  const move=ev=>{
+    const want=a0+(ev.clientX-startX)*perPx;
+    colFr[i]=a0;colFr[i+1]=b0;
+    if(nudgeFr(i,want-a0)){renderCells();sync(0);}
+    frReadout(i);
+  };
+  const up=()=>{
+    h.removeEventListener('pointermove',move);
+    h.classList.remove('grabbing');
+    note.classList.remove('on');
+    sync(reduce?1:200);
+  };
+  h.addEventListener('pointermove',move);
+  h.addEventListener('pointerup',up,{once:true});
+  h.addEventListener('pointercancel',up,{once:true});
+});
+handles.addEventListener('keydown',e=>{
+  const h=e.target.closest('.chandle');if(!h)return;
+  const i=+h.dataset.i;
+  if(e.key==='ArrowLeft'||e.key==='ArrowRight'){
+    e.preventDefault();
+    if(nudgeFr(i,e.key==='ArrowRight'?.08:-.08)){renderCells();sync(reduce?1:160);frReadout(i);
+      setTimeout(()=>note.classList.remove('on'),1400);}
+  }
+});
+handles.addEventListener('dblclick',e=>{
+  const h=e.target.closest('.chandle');if(!h)return;
+  const i=+h.dataset.i, sum=colFr[i]+colFr[i+1];
+  colFr[i]=colFr[i+1]=sum/2;
+  renderCells();sync(reduce?1:220);
+});
 
 function dragStart(e,id){
   if(!started||expandedId)return;
@@ -375,7 +528,10 @@ function dragMove(e){
   const x=e.clientX-drag.ox,y=e.clientY-drag.oy;
   els.get(drag.id).el.style.transform=`translate(${x}px,${y}px)`;
   const{uw,uh,p}=unit();
-  const col=Math.max(0,Math.min(cols-drag.t.w,Math.round((x-p.x-PAD)/(uw+gap))));
+  // columns are no longer uniform, so snap to the nearest column offset
+  const xs=colOffsets(),rel=x-p.x-PAD;
+  let col=0,best=Infinity;
+  for(let i=0;i<=cols-drag.t.w;i++){const d=Math.abs(xs[i]-rel);if(d<best){best=d;col=i;}}
   const row=Math.max(0,Math.min(rows-drag.t.h,Math.round((y-p.y-PAD)/(uh+gap))));
   drag.to={col,row};
   const dr=cellRect(col,row,drag.t.w,drag.t.h);
@@ -449,7 +605,10 @@ function flash(n){
 }
 function applyDims(nc,nr){
   const snap=grid.tiles.map(t=>({...t}));
+  const prevFr=colFr;
   cols=nc;rows=nr;
+  // keep the ratios the user set for the columns that survive; new columns join at 1fr
+  colFr=Array.from({length:cols},(_,i)=>prevFr[i]!==undefined?prevFr[i]:1);
   const{uw,uh}=unit();
   grid=new Grid({cols,rows,unitWidth:Math.max(1,uw),unitHeight:Math.max(1,uh)});
   let dropped=0;
@@ -468,13 +627,20 @@ function btns(){
   document.getElementById('rowsInc').disabled=rows>=10;
   document.getElementById('gapDec').disabled=gap<=0;
   document.getElementById('gapInc').disabled=gap>=28;
+  document.getElementById('radDec').disabled=radius<=0;
+  document.getElementById('radInc').disabled=radius>=22;
 }
 document.getElementById('colsInc').onclick=()=>applyDims(Math.min(20,cols+1),rows);
 document.getElementById('colsDec').onclick=()=>applyDims(Math.max(4,cols-1),rows);
 document.getElementById('rowsInc').onclick=()=>applyDims(cols,Math.min(10,rows+1));
 document.getElementById('rowsDec').onclick=()=>applyDims(cols,Math.max(3,rows-1));
-document.getElementById('gapInc').onclick=()=>{gap=Math.min(28,gap+2);document.getElementById('gapVal').textContent=gap;renderCells();sync(reduce?1:380);btns();};
-document.getElementById('gapDec').onclick=()=>{gap=Math.max(0,gap-2);document.getElementById('gapVal').textContent=gap;renderCells();sync(reduce?1:380);btns();};
+function setGap(v){gap=v;document.getElementById('gapVal').textContent=gap+'px';renderCells();sync(reduce?1:380);btns();}
+document.getElementById('gapInc').onclick=()=>setGap(Math.min(28,gap+2));
+document.getElementById('gapDec').onclick=()=>setGap(Math.max(0,gap-2));
+function setRadius(v){radius=v;root.style.setProperty('--card-radius',radius+'px');
+  document.getElementById('radVal').textContent=radius+'px';btns();}
+document.getElementById('radInc').onclick=()=>setRadius(Math.min(22,radius+2));
+document.getElementById('radDec').onclick=()=>setRadius(Math.max(0,radius-2));
 document.getElementById('modeSel').onchange=e=>{mode=e.target.value;};
 document.getElementById('themeBtn').onclick=()=>{
   const cur=root.getAttribute('data-theme');
@@ -489,7 +655,7 @@ addEventListener('keydown',e=>{
 hint.addEventListener('click',start);
 stage.addEventListener('click',e=>{if(!started&&!e.target.closest('a,button'))start();});
 let rt;addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(()=>{
-  if(!started){layoutHero();return;}
+  if(!started){renderCells();layoutHero();return;}
   renderCells();
   if(expandedId){const W=innerWidth,H=innerHeight,w=Math.min(600,W-56),h=Math.min(400,H-120);
     place(expandedId,{x:(W-w)/2,y:(H-h)/2,w,h},1);}
@@ -498,6 +664,7 @@ let rt;addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(()=>{
 
 root.dataset.phase='hero';
 build();
+renderCells();   // the intro floats over a real, empty grid — so it must exist first
 requestAnimationFrame(()=>{layoutHero();
   requestAnimationFrame(()=>{for(const[,e]of els)e.el.style.removeProperty('--dur');});});
 btns();
