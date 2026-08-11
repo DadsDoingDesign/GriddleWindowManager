@@ -9,7 +9,9 @@ none of this conversation's context.
 I want to build a landing page for **Griddle Window Manager**, a free
 open-source grid-based window manager for Windows 11. The repository is
 `DadsDoingDesign/GriddleWindowManager` and you are in it now. The page will
-live in `site/` in this same repository and deploy to GitHub Pages.
+live in `site/` in this same repository and deploy to Vercel. `site/README.md`
+documents the project settings and the deploy config already in place — read it
+before changing anything about how the site ships.
 
 **Before you write anything, use the `superpowers:brainstorming` skill**, then
 `superpowers:writing-plans`. Do not skip to implementation. This project earned
@@ -42,13 +44,15 @@ degrades to a static image if JS fails. It must never block LCP.
 
 ## Required elements
 
-- **Primary CTA: download the installer.** Resolve the actual asset from the
-  latest GitHub release at *build* time, not with a client-side API call — the
-  page must make no runtime network requests. Rebuild the site when a release
-  publishes (`on: release: [published]`). Fall back to the `/releases/latest`
-  page if resolution fails. The asset is currently
-  `Griddle Window Manager_0.2.0_x64-setup.exe`; the version changes every
-  release, so never hardcode it.
+- **Primary CTA: download the installer.** Link it directly to
+  `https://github.com/DadsDoingDesign/GriddleWindowManager/releases/latest/download/GriddleWindowManager-x64-setup.exe`.
+  `release.yml` publishes that version-free alias alongside the versioned
+  installer, so the URL is permanent and the page makes no network request to
+  resolve it — at build time or at runtime. Never hardcode the versioned
+  filename (`Griddle Window Manager_0.2.0_x64-setup.exe`); it changes every
+  release. If you want to show the version number beside the button, read it at
+  build time from `releases/latest/download/latest.json` and omit the label
+  when the fetch fails. See `site/README.md`.
 - **Secondary CTA: the GitHub repository.** Visually subordinate to download,
   but easy to find — for this audience the repo link builds trust.
 - **Honest framing.** Windows 11 only. The binary is unsigned, so SmartScreen
@@ -119,13 +123,15 @@ Mirror the workflow that built this app — it is why the app is good:
 
 ## Constraints
 
-- Static output only — GitHub Pages has no server. Choose the stack in
+- Static output only. Vercel can run a server, but nothing here needs one, and
+  a page with no runtime dependencies cannot break at 2am. Choose the stack in
   brainstorming; SvelteKit with `adapter-static` is the obvious candidate since
   `@griddle/svelte` is already a dependency here, but argue it rather than
-  assuming it.
+  assuming it. Whatever you pick, set the Build Command and Output Directory in
+  the Vercel dashboard to match, and update the table in `site/README.md`.
 - Do not disturb the app: `packages/brain`, `apps/desktop`, and the existing
   `.github/workflows/ci.yml` and `release.yml` must keep passing untouched.
-  The site gets its own workflow.
+  Vercel builds the site; it needs no workflow of its own.
 - Self-host all fonts and assets. No CDNs, no analytics, no trackers — the
   product promises no telemetry and the site should keep that promise.
 - The site is MIT like the rest of the repo.
@@ -136,27 +142,29 @@ Start by reading the repository, then brainstorm with me.
 
 ## Repo guidance (my recommendation: same repo)
 
-**Keep the site in this repository, in `site/`, deployed to GitHub Pages by its
-own workflow.**
+**Keep the site in this repository, in `site/`, deployed to Vercel with the
+project's Root Directory set to `site`.**
 
 Reasons, strongest first:
 
-1. **The download button stays correct by itself.** The button must point at
-   the newest release asset, whose filename carries the version. In the same
-   repo, a workflow triggered by `release: published` rebuilds the page with
-   the right URL. Across repos you would need a cross-repo token and a
-   dispatch — more machinery, and it silently rots the day it breaks.
+1. **One pull request changes the product and the page it describes.** A
+   release that renames a feature can update the copy in the same diff, and
+   Vercel attaches a preview URL to that pull request, so the reviewer sees the
+   claim and the thing it claims about together. Across repos this becomes two
+   pull requests that merge at different times, and the site is wrong in
+   between.
 2. **Stars and traffic stay in one place.** For a FOSS project, stars on the
    code repository are the credibility signal. A separate site repo splits
    attention and accumulates none.
 3. **The site cannot drift from the product.** Screenshots, version numbers,
-   and feature copy live beside the code they describe, and the same pull
-   request can change both.
-4. **One CI story.** Existing `ci.yml` and `release.yml` stay untouched; the
-   site adds `pages.yml`. Path filters keep each from triggering the others.
+   and feature copy live beside the code they describe.
+4. **The download link depends on a workflow in this repo.** `release.yml`
+   publishes the version-free installer alias the button points at. Same repo,
+   that dependency is visible and testable; across repos it is invisible until
+   it breaks.
 
-Use `site/`, not `docs/` — `docs/` already holds the design specs, and pointing
-Pages at it would publish them as a website by accident.
+Use `site/`, not `docs/` — `docs/` holds the design specs, and they are not a
+website.
 
 **When a separate repo would win:** if the site becomes a multi-product
 marketing property, if you want a genuinely different tech stack and release
@@ -164,4 +172,5 @@ cadence, or if you later hand the site to someone who should not have commit
 rights to the app. None of these apply today, and moving a static site between
 repositories later is an afternoon's work.
 
-A custom domain works identically either way — add a `CNAME` and point DNS.
+A custom domain is DNS pointed at Vercel — see `site/README.md`. Do not add a
+`CNAME` file; that is a GitHub Pages mechanism and means nothing here.

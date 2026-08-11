@@ -51,7 +51,24 @@ body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--text);
   border-radius:8px;background:var(--surface);color:var(--muted);cursor:pointer;font-size:12px;padding:0}
 .iconbtn:hover{color:var(--ink);border-color:var(--accent-line)}
 
-.stage{position:fixed;inset:0;overflow:hidden}
+/* absolute, NOT fixed. position:fixed creates a stacking context, which trapped
+   every card inside it — so .card.expanded's z-index:90 was competing with its
+   siblings rather than with .scrim's 80, and the scrim painted over the expanded
+   card no matter how high its z-index went. html/body are height:100% with
+   overflow:hidden, so absolute inset:0 lands in exactly the same place while
+   leaving the cards in the root stacking context where the z-index scale means
+   what it says. */
+.stage{position:absolute;inset:0;overflow:hidden}
+
+/* THE CURTAIN. Laying the hero out takes two passes — a provisional box, then
+   the real one measured from rendered text — and both used to be on screen. The
+   page painted ten unpositioned cards stacked at the origin at full opacity for
+   ~125ms, then snapped the description into place, then threw it back to its
+   provisional box and crawled it 400px down THROUGH the headline over a second.
+   Measuring under opacity:0 keeps every measurement valid (unlike display:none)
+   while showing none of it. Nothing is revealed until the layout has settled. */
+html:not(.ready) .stage,html:not(.ready) .gridwrap,html:not(.ready) .hint{opacity:0}
+.stage{transition:opacity 520ms ease}
 
 /* ============================================================
    ONE component per card. Content is authored once, for the GRID.
@@ -61,8 +78,10 @@ body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--text);
 .card{position:absolute;left:0;top:0;border-radius:var(--card-radius);overflow:hidden;
   display:flex;flex-direction:column;background:var(--surface);
   border:1px solid transparent;will-change:transform,width,height;
-  transition:transform var(--dur) var(--ease),width var(--dur) var(--ease),
-    height var(--dur) var(--ease),opacity 380ms ease,
+  transition:transform var(--dur) var(--ease) var(--delay,0ms),
+    width var(--dur) var(--ease) var(--delay,0ms),
+    height var(--dur) var(--ease) var(--delay,0ms),
+    opacity 420ms ease var(--delay,0ms),
     background 620ms ease,border-color 620ms ease,box-shadow 620ms ease}
 .card.parked{opacity:0;pointer-events:none}
 
@@ -93,7 +112,7 @@ body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--text);
 
 /* padding tracks viewport height so single-row tiles never crop their text */
 .content{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;
-  gap:clamp(4px,.8vh,8px);padding:clamp(6px,1.3vh,14px) clamp(10px,1.1vw,14px);
+  gap:clamp(4px,.8vh,8px);padding:clamp(12px,2.6vh,28px) clamp(20px,2.2vw,28px);
   overflow:hidden;transition:padding var(--dur) var(--ease)}
 [data-phase="hero"] .card.inhero .content{padding:0;align-items:center;text-align:center;gap:0}
 /* The intro group is centred as a whole, not hung off a centred headline, so the
@@ -107,18 +126,26 @@ body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--text);
   margin:0;text-wrap:balance;transition:font-size var(--dur) var(--ease),line-height var(--dur) var(--ease)}
 /* vh term keeps the intro type from outgrowing the window on short viewports */
 [data-phase="hero"] .headline{font-size:clamp(30px,min(5.6vw,11.5vh),76px);line-height:.95;letter-spacing:-.048em}
-[data-phase="grid"] .headline{font-size:clamp(15px,1.85vw,27px);line-height:1.08}
+[data-phase="grid"] .headline{font-size:clamp(15px,1.95vw,34px);line-height:1.08}
 .headline .br{display:block}
 
 .dek{color:var(--muted);margin:0;text-wrap:pretty;overflow:hidden;
   transition:font-size var(--dur) var(--ease)}
 [data-phase="hero"] .dek{font-size:clamp(13.5px,1.3vw,17px);line-height:1.5;max-width:32em}
-[data-phase="grid"] .dek{font-size:clamp(11px,.92vw,13px);line-height:1.42}
+[data-phase="grid"] .dek{font-size:clamp(11px,1.02vw,17px);line-height:1.5}
 
 .eyebrow{font-family:var(--mono);color:var(--accent);text-transform:uppercase;font-weight:600;
   white-space:nowrap;transition:font-size var(--dur) var(--ease),letter-spacing var(--dur) var(--ease)}
 [data-phase="hero"] .eyebrow{font-size:clamp(9.5px,.78vw,11px);letter-spacing:.2em}
 [data-phase="grid"] .eyebrow{font-size:clamp(8.5px,.68vw,10px);letter-spacing:.13em}
+
+/* The download tile drops to the page's backmost colour instead of the card
+   surface every other tile uses. The CTA inside it is painted in --ink, which is
+   the exact inverse of --ground in both themes — so the button lands on the
+   widest contrast step the palette has, and the one tile that matters most is
+   the one the eye reaches first. */
+[data-phase="grid"] .card[data-id="cta"]{background:var(--ground)}
+.card[data-id="cta"] .meta{color:var(--muted)}
 
 .cta{display:inline-flex;align-items:center;justify-content:center;border-radius:8px;
   background:var(--ink);color:var(--ground);font-weight:600;border:0;cursor:pointer;
@@ -133,10 +160,45 @@ body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--text);
 [data-phase="hero"] .meta{font-size:11px}
 [data-phase="grid"] .meta{font-size:9.5px}
 
-.lines{display:flex;flex-direction:column;gap:6px}
-.ln{height:6px;border-radius:3px;background:var(--line)}
-.applabel{font-size:11.5px;color:var(--muted);line-height:1.4;overflow:hidden}
+.applabel{font-size:clamp(11px,.9vw,15px);color:var(--muted);line-height:1.45;overflow:hidden}
 .applabel b{color:var(--ink);font-weight:650}
+
+/* ---- in-tile content ----
+   Every tile says something true about the app before it is clicked. Empty
+   tiles made the board read as a mockup of a product rather than the product;
+   these are the actual feature set, at a size that survives a 27" monitor. */
+
+/* the headline tile keeps its hero type, and gains a second line once it is a
+   tile — the claim needs a supporting sentence at tile scale, and the hero
+   cannot afford one */
+.subhead{color:var(--muted);margin:clamp(10px,1.4vh,20px) 0 0;line-height:1.5;text-wrap:pretty;
+  font-size:clamp(10.5px,.95vw,16.5px);max-width:38em}
+/* content that only makes sense once the card is a tile. The hero is one
+   sentence and a headline by design; these would crowd it. */
+[data-phase="hero"] .gridonly{display:none}
+
+/* key/value feature rows — the label is the term, the value is what it does */
+.feat{display:flex;flex-direction:column;gap:clamp(5px,1.6vh,18px);overflow:hidden}
+.frow{display:flex;gap:9px;align-items:baseline;line-height:1.4}
+.fkey{flex:none;min-width:clamp(52px,4.4vw,74px);font-family:var(--mono);font-size:clamp(8.5px,.7vw,12px);
+  color:var(--accent);text-transform:uppercase;letter-spacing:.08em;font-weight:600}
+.fval{font-size:clamp(10.5px,.95vw,16.5px);color:var(--muted);text-wrap:pretty}
+.fval b{color:var(--ink);font-weight:600}
+
+/* template thumbnails: real built-ins, drawn as the layouts they are */
+.tgal{display:grid;grid-template-columns:repeat(3,1fr);gap:clamp(4px,.8vw,10px)}
+.tmini{aspect-ratio:4/3;display:grid;gap:2px;padding:2px;border:1px solid var(--line);
+  border-radius:4px;background:var(--surface-2)}
+.tmini i{display:block;border-radius:2px;background:var(--accent-soft);border:1px solid var(--accent-line)}
+.tnew{border-style:dashed;background:none;place-items:center;color:var(--faint);
+  font-size:14px;line-height:1;font-family:var(--mono)}
+.tlead{font-size:clamp(10.5px,.95vw,16.5px);color:var(--ink);line-height:1.5;margin:0 0 clamp(8px,1.4vh,16px);text-wrap:pretty;font-weight:500}
+.tcap{font-size:clamp(9.5px,.8vw,14px);color:var(--muted);line-height:1.5;margin:clamp(6px,1.2vh,14px) 0 0;text-wrap:pretty}
+
+/* a compact stat strip for the short tiles */
+.kv{display:flex;flex-wrap:wrap;gap:clamp(3px,.8vh,8px) clamp(14px,1.4vw,26px);
+  font-size:clamp(10px,.9vw,15px);color:var(--muted);line-height:1.5;margin-top:clamp(8px,1.4vh,18px)}
+.kv b{color:var(--ink);font-weight:600}
 
 /* detail layer — genuinely different content, so it is an overlay that
    fades in over the same card rather than replacing anything */
@@ -161,21 +223,44 @@ body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--text);
    In the intro the empty grid is the point, so it gets a brighter dash. */
 [data-phase="hero"] .cell{border-color:var(--faint);opacity:.45}
 
-/* column-boundary handles: drag to redistribute column width as fr ratios */
-/* inside .gridwrap on purpose: cards paint above, so a boundary is only grabbable
-   in the gutter where it is actually visible, and never over a card's titlebar */
-.handles{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity 300ms ease}
-.handles.on{opacity:1}
-.chandle{position:absolute;pointer-events:auto;cursor:col-resize;touch-action:none;
-  border-radius:6px;background:transparent}
-.chandle::after{content:"";position:absolute;left:50%;top:0;width:2px;height:100%;
-  transform:translateX(-50%);background:var(--accent);border-radius:2px;
-  opacity:0;transition:opacity 140ms ease}
-.chandle:hover::after,.chandle:focus-visible::after,.chandle.grabbing::after{opacity:1}
-.chandle:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-.dropzone{position:absolute;border-radius:7px;background:var(--accent-soft);
-  border:1.5px solid var(--accent-line);opacity:0;transition:opacity 130ms ease;pointer-events:none}
-.dropzone.on{opacity:1}
+/* Per-tile resize: Griddle's own south-east handle, the same one the desktop app
+   exposes (resizeHandles defaults to ["se"]). Dragging it calls grid.resizeTile(),
+   which quantises to whole cells and pushes neighbours out of the way — so the
+   tile can only ever be a whole number of cells wide and tall. It lives on the
+   card, not in the gutter, because it resizes a window rather than a column. */
+.rhandle{position:absolute;right:0;bottom:0;width:22px;height:22px;z-index:2;
+  border:0;padding:0;background:transparent;cursor:nwse-resize;touch-action:none;
+  opacity:0;transition:opacity 260ms ease}
+[data-phase="grid"].tools-on .rhandle{opacity:1}
+.card.expanded .rhandle,.card.parked .rhandle{display:none}
+/* a corner bracket, not an icon — it reads as "grab this corner" at 9px.
+   Drawn in --line, the same weight as the card's own border: present on ten
+   tiles at once, anything brighter reads as decoration and pulls the eye off
+   the content. It earns contrast only under the cursor. */
+.rhandle::after{content:"";position:absolute;right:4px;bottom:4px;width:9px;height:9px;
+  border-right:1.5px solid var(--line);border-bottom:1.5px solid var(--line);
+  border-bottom-right-radius:3px;transition:border-color 140ms ease}
+.card:hover .rhandle::after{border-color:var(--faint)}
+.rhandle:hover::after,.rhandle:focus-visible::after,.rhandle.grabbing::after{border-color:var(--accent)}
+.rhandle:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:4px}
+/* Drop preview. It must paint ABOVE the tiles, not on the grid backdrop: the
+   board is fully packed with opaque cards, so a highlight underneath them is
+   invisible in exactly the moment it is needed. This is what the app itself
+   does — a translucent overlay over the real windows, showing the cells you are
+   about to claim. Cells are drawn individually so you can count them, which is
+   the whole point of a grid.
+   Above the DRAGGED card too (z-index 55 vs its 50), not just the static ones:
+   the card follows the cursor and the snap target is the cell under it, so the
+   two almost always coincide — draw the preview underneath and the card hides
+   the very thing it is previewing. The wash is ~12% alpha, so the card still
+   reads through it. */
+.preview{position:absolute;inset:0;pointer-events:none;z-index:55;opacity:0;
+  transition:opacity 120ms ease}
+.preview.on{opacity:1}
+.pcell{position:absolute;border-radius:5px;background:var(--accent-soft);
+  border:1px solid var(--accent-line)}
+.pzone{position:absolute;border-radius:7px;border:2px solid var(--accent);
+  box-shadow:0 0 0 1px var(--ground)}
 
 .controls{position:fixed;left:50%;bottom:18px;transform:translateX(-50%) translateY(14px);
   display:flex;align-items:center;gap:3px;padding:6px;background:var(--surface);
@@ -193,9 +278,40 @@ body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--text);
 .step .val{min-width:20px;text-align:center;font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums;font-weight:600}
 select.mode{font-family:var(--text);font-size:12px;background:var(--surface-2);color:var(--ink);
   border:1px solid var(--line);border-radius:6px;padding:3px 6px;cursor:pointer}
-.note{font-size:10.5px;color:var(--accent);font-family:var(--mono);white-space:nowrap;
-  max-width:0;overflow:hidden;transition:max-width 400ms ease;padding:0}
-.note.on{max-width:180px;padding-right:6px}
+/* Reset is disabled until something has actually diverged from the seeded page,
+   so it reads as "there is nothing to undo here" rather than as a live control
+   that happens to do nothing. It is always present, never conditionally shown —
+   a control that appears and disappears would resize the bar, which is the very
+   thing the toast was moved out of the bar to avoid. */
+.resetbtn{font-family:var(--text);font-size:12px;font-weight:600;color:var(--ink);
+  background:var(--surface-2);border:1px solid var(--line);border-radius:6px;
+  padding:4px 11px;cursor:pointer;line-height:1.4;
+  transition:opacity 200ms ease,border-color 160ms ease,color 160ms ease}
+.resetbtn:hover:not(:disabled){border-color:var(--accent-line);background:var(--accent-soft);color:var(--accent)}
+.resetbtn:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.resetbtn:disabled{opacity:.34;cursor:default}
+/* Status lives ABOVE the control bar, never inside it. As a child of .controls
+   this animated its own max-width, so every message widened the bar and shifted
+   every button under the user's cursor — then shifted them back on the way out.
+   Fixed-position and centred on its own axis, it cannot move anything. */
+.toast{position:fixed;left:50%;bottom:70px;z-index:75;
+  display:flex;align-items:center;gap:10px;padding:7px 8px 7px 13px;
+  background:var(--surface);border:1px solid var(--line);border-radius:9px;
+  box-shadow:var(--shadow-hi);white-space:nowrap;
+  opacity:0;pointer-events:none;transform:translateX(-50%) translateY(6px);
+  transition:opacity 200ms ease,transform 200ms var(--ease)}
+.toast.on{opacity:1;pointer-events:auto;transform:translateX(-50%) translateY(0)}
+/* replayed on every message so a REPLACED toast still reads as a new event —
+   without it, rapid actions look like one stuck toast */
+.toast.bump{animation:tbump 240ms var(--ease)}
+@keyframes tbump{0%{transform:translateX(-50%) translateY(4px)}100%{transform:translateX(-50%) translateY(0)}}
+.tmsg{font-size:11px;color:var(--accent);font-family:var(--mono)}
+.tundo{display:none;font-family:var(--text);font-size:11px;font-weight:600;
+  color:var(--ink);background:var(--surface-2);border:1px solid var(--line);
+  border-radius:6px;padding:3px 9px;cursor:pointer;line-height:1.4}
+.toast.undoable .tundo{display:block}
+.tundo:hover{border-color:var(--accent-line);background:var(--accent-soft)}
+.tundo:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 
 .scrim{position:fixed;inset:0;background:rgba(11,11,18,.34);backdrop-filter:blur(3px);
   opacity:0;pointer-events:none;transition:opacity 280ms ease;z-index:80}
@@ -210,11 +326,14 @@ select.mode{font-family:var(--text);font-size:12px;background:var(--surface-2);c
    present; Gap and Corners are the fun ones and arrive last. */
 @media (max-width:1279px){.ctl.tier-3{display:none}}
 @media (max-width:1099px){.ctl.tier-2{display:none}}
-@media (max-width:899px){.handles{display:none}}
+/* Below this width a cell is too small to aim a 22px corner grip at, and the
+   handle would sit on top of the content it is meant to resize. Dragging tiles
+   still works on touch; only resizing goes away. */
+@media (max-width:899px){.rhandle{display:none}}
 
 @media (prefers-reduced-motion:reduce){
   .card,.headline,.dek,.eyebrow,.cta,.meta,.content{transition-duration:1ms !important}
-  .handles{transition-duration:1ms !important}
+  .rhandle{transition-duration:1ms !important}
 }
 </style>
 
@@ -227,8 +346,8 @@ select.mode{font-family:var(--text);font-size:12px;background:var(--surface-2);c
 </header>
 
 <main class="stage" id="stage">
-  <div class="gridwrap" id="gridwrap"><div id="cells"></div><div class="dropzone" id="dropzone"></div>
-    <div class="handles" id="handles" role="group" aria-label="Column width handles"></div></div>
+  <div class="gridwrap" id="gridwrap"><div id="cells"></div></div>
+  <div class="preview" id="preview" aria-hidden="true"></div>
 </main>
 
 <button class="hint" id="hint">press any key to arrange &rarr;</button>
@@ -237,10 +356,10 @@ select.mode{font-family:var(--text);font-size:12px;background:var(--surface-2);c
 <div class="controls" id="controls" role="group" aria-label="Grid controls">
   <div class="ctl tier-0"><label>Grid responsiveness</label>
     <select class="mode" id="modeSel" aria-label="Grid responsiveness">
-      <option value="reflow" selected>Reorganize · reflow</option>
-      <option value="griddle">Griddle · library default</option>
-      <option value="push">Push · displace neighbours</option>
-      <option value="stack">Overlap · windows stack</option>
+      <option value="reflow" selected>Reorganize</option>
+      <option value="griddle">Griddle default</option>
+      <option value="shove">Tile shoving</option>
+      <option value="overlap">Overlap</option>
     </select></div>
   <div class="ctl tier-0"><label>Columns</label><div class="step">
     <button id="colsDec" aria-label="Fewer columns">−</button><span class="val" id="colsVal">12</span>
@@ -254,7 +373,12 @@ select.mode{font-family:var(--text);font-size:12px;background:var(--surface-2);c
   <div class="ctl tier-3"><label>Corners</label><div class="step">
     <button id="radDec" aria-label="Squarer corners">−</button><span class="val" id="radVal">10px</span>
     <button id="radInc" aria-label="Rounder corners">+</button></div></div>
-  <span class="note" id="note"></span>
+  <div class="ctl tier-0"><button class="resetbtn" id="resetBtn" type="button" disabled>Reset</button></div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite">
+  <span class="tmsg" id="toastMsg"></span>
+  <button class="tundo" id="toastUndo" type="button">Undo</button>
 </div>
 
 <script>var GriddleLib=(()=>{var pt=Object.defineProperty;var Kt=Object.getOwnPropertyDescriptor;var Vt=Object.getOwnPropertyNames;var Jt=Object.prototype.hasOwnProperty;var Qt=(o,t)=>{for(var e in t)pt(o,e,{get:t[e],enumerable:!0})},Zt=(o,t,e,n)=>{if(t&&typeof t=="object"||typeof t=="function")for(let i of Vt(t))!Jt.call(o,i)&&i!==e&&pt(o,i,{get:()=>t[i],enumerable:!(n=Kt(t,i))||n.enumerable});return o};var to=o=>Zt(pt({},"__esModule",{value:!0}),o);var mo={};Qt(mo,{Grid:()=>nt,solveMinimalMoves:()=>qt});var lt=class{constructor(){this.listeners=new Set}on(t){return this.listeners.add(t),()=>this.listeners.delete(t)}off(t){this.listeners.delete(t)}emit(t){for(let e of Array.from(this.listeners))e(t)}clear(){this.listeners.clear()}};function S(o,t){return o.col<t.col+t.w&&o.col+o.w>t.col&&o.row<t.row+t.h&&o.row+o.h>t.row}function St(o,t){if(S(o,t))return!1;let e=(o.col+o.w===t.col||t.col+t.w===o.col)&&o.row<t.row+t.h&&o.row+o.h>t.row,n=(o.row+o.h===t.row||t.row+t.h===o.row)&&o.col<t.col+t.w&&o.col+o.w>t.col,i=(o.col+o.w===t.col||t.col+t.w===o.col)&&(o.row+o.h===t.row||t.row+t.h===o.row);return e||n||i}function A(o){return{col:o.col,row:o.row,w:o.w,h:o.h}}function At(o,t){let e=o.col+o.w/2,n=o.row+o.h/2,i=t.col+t.w/2,r=t.row+t.h/2;return{dx:i-e,dy:r-n}}function yt(o,t){let{dx:e,dy:n}=At(o,t),i=-e,r=-n;return Math.abs(i)>=Math.abs(r)?i>=0?"e":"w":r>=0?"s":"n"}function oo(o){return o==="n"?"s":o==="s"?"n":o==="e"?"w":"e"}function eo(o,t){let{dx:e,dy:n}=At(o,t),i=Math.abs(e)>1e-9,r=Math.abs(n)>1e-9;return i&&r?"corner":i?"horizontal":"vertical"}function no(o,t,e){let n=e==="nw"||e==="sw"?t.col-.5:t.col+t.w+.5,i=e==="nw"||e==="ne"?t.row-.5:t.row+t.h+.5,r=o.col+o.w/2,s=o.row+o.h/2,c=n-r,u=i-s;return c*c+u*u}function U(o,t){let e=yt(o,t),n=oo(e),i=eo(o,t),r=["n","s","e","w"],s=new Set([e,n]),c;i==="horizontal"?c=s.has("n")?mt(r,s):"n":c=s.has("e")?mt(r,s):"e",s.add(c);let u=mt(r,s),f=["nw","ne","sw","se"].map(p=>({c:p,d:no(o,t,p)})).sort((p,l)=>p.d-l.d),a=f.slice(0,2).map(p=>p.c),h=f.slice(2).map(p=>p.c);return[e,n,c,u,a[0],a[1],h[0],h[1]]}function mt(o,t){for(let e of o)if(!t.has(e))return e;return o[0]}function io(o,t){let e=0,n=0;return(t==="n"||t==="nw"||t==="ne")&&(n=-1),(t==="s"||t==="sw"||t==="se")&&(n=1),(t==="w"||t==="nw"||t==="sw")&&(e=-1),(t==="e"||t==="ne"||t==="se")&&(e=1),{col:o.col+e,row:o.row+n,w:o.w,h:o.h}}function z(o){let t=io({col:0,row:0,w:0,h:0},o);return{dx:t.col,dy:t.row}}function Et(o,t){return o.w===t.w&&o.h===t.h}function Ct(o,t,e,n){let i=o.getTile(t);if(!i)return!1;let r=o.tiles,s=new Map(r.map(l=>[l.id,l])),c={col:e.col,row:e.row,w:i.w,h:i.h},u=U(n,c),w=o.config.maxRepackHops??64,f={positions:new Map(r.map(l=>[l.id,{col:l.col,row:l.row}])),touched:new Set,cost:0},a=new Map,h=[f],p=l=>{for(let[m,x]of l.positions){if(m===t)continue;let y=s.get(m),T={col:x.col,row:x.row,w:y.w,h:y.h};if(S(T,c))return!1}return!0};for(;h.length>0;){let l=h.shift(),m=xt(l.positions,l.touched),x=a.get(m);if(x!==void 0&&x<=l.cost)continue;if(a.set(m,l.cost),p(l)){for(let[b,v]of l.positions)b!==t&&o._setTilePos(b,v);return o._setTilePos(t,e),!0}if(l.cost>=w)continue;let y=null;for(let[b,v]of l.positions){if(b===t)continue;let E=s.get(b),P={col:v.col,row:v.row,w:E.w,h:E.h};if(S(P,c)){y=E;break}}if(!y)continue;for(let b of u){let v=Bt(l,y.id,b,s,o,t);if(!v)continue;let P=l.touched.has(y.id)?0:1,B=l.cost+P,X=xt(v.positions,v.touched),Y=a.get(X);Y!==void 0&&Y<=B||(v.cost=B,P===0?h.unshift(v):h.push(v))}let T=new Set([y.id,...l.touched]);for(let b of T)if(b!==t)for(let v of u){let E=Bt(l,b,v,s,o,t);if(!E)continue;let B=l.touched.has(b)?0:1,X=l.cost+B,Y=xt(E.positions,E.touched),Z=a.get(Y);Z!==void 0&&Z<=X||(E.cost=X,B===0?h.unshift(E):h.push(E))}}return!1}function Bt(o,t,e,n,i,r){let s=o.positions.get(t);if(!s)return null;let c=n.get(t),{dx:u,dy:w}=z(e),f={col:s.col+u,row:s.row+w,w:c.w,h:c.h};if(!i.rectInBounds(f))return null;for(let[p,l]of o.positions){if(p===t||p===r)continue;let m=n.get(p),x={col:l.col,row:l.row,w:m.w,h:m.h};if(S(x,f))return null}let a=new Map(o.positions);a.set(t,{col:f.col,row:f.row});let h=new Set(o.touched);return h.add(t),{positions:a,touched:h,cost:o.cost}}function xt(o,t){let e=[],n=Array.from(o.keys()).sort();for(let i of n){let r=o.get(i);e.push(`${i}:${r.col},${r.row}`)}return e.join("|")+"#"+Array.from(t).sort().join(",")}function Pt(o,t,e){let n=o.tilesIn(e,new Set([t]));if(n.length===0)return!0;let i=o.snapshotTiles(),r=U(A(n[0]),e);for(let s of r){if(Ot(o,t,e,s))return!0;o.restoreTiles(i)}return!1}function _t(o,t,e,n={}){let i=o.getTile(t);if(!i)return!1;let r=n.forceFromRect??A(i),s={col:e.col,row:e.row,w:i.w,h:i.h};if(!o.rectInBounds(s))return!1;let c=o.tilesIn(s,new Set([t]));if(c.length===0)return o._setTilePos(t,e),!0;if(c.length===1&&St(r,A(c[0]))&&Et(c[0],i)){let l=c[0],m={col:l.col,row:l.row},x={col:r.col,row:r.row};return o._setTilePos(t,m),o._setTilePos(l.id,x),!0}let u=o.snapshotTiles(),w=U(r,s),f=new Set([t]),a=!0;for(let l of c)if(!so(o,l.id,w,s,f)){a=!1;break}if(a)return o._setTilePos(t,e),!0;o.restoreTiles(u);let h=yt(r,s);if(ro(o,h)){if(co(o,t,e,h))return!0;o.restoreTiles(u)}for(let l of w){if(Ot(o,t,s,l))return o._setTilePos(t,e),!0;o.restoreTiles(u)}return Ct(o,t,e,r)?!0:(o.restoreTiles(u),!1)}function so(o,t,e,n,i){let r=o.getTile(t);if(!r)return!1;let s=A(r);for(let c of e){let{dx:u,dy:w}=z(c),f=1/0;u>0?f=Math.max(1,n.col+n.w-s.col):u<0&&(f=Math.max(1,s.col+s.w-n.col));let a=1/0;w>0?a=Math.max(1,n.row+n.h-s.row):w<0&&(a=Math.max(1,s.row+s.h-n.row));let h;if(u===0&&w===0||(u===0?h=a:w===0?h=f:h=Math.min(f,a),!isFinite(h)))continue;let p={col:s.col+h*u,row:s.row+h*w,w:r.w,h:r.h};if(!o.rectInBounds(p))continue;let l=new Set(i);if(l.add(t),o.tilesIn(p,l).length===0)return o._setTilePos(t,{col:p.col,row:p.row}),!0}return!1}function ro(o,t){let{dx:e,dy:n}=z(t);return e<0||n<0||e!==0&&!o.config.infiniteX||n!==0&&!o.config.infiniteY?!1:!!(e!==0&&o.config.infiniteX||n!==0&&o.config.infiniteY)}function Ot(o,t,e,n){let{dx:i,dy:r}=z(n);if(i===0&&r===0)return!1;let s=o.tilesIn(e,new Set([t]));if(s.length===0)return!0;let c=new Map,u=[];function w(l,m){let x=1/0;i>0?x=Math.max(1,m.col+m.w-l.col):i<0&&(x=Math.max(1,l.col+l.w-m.col));let y=1/0;return r>0?y=Math.max(1,m.row+m.h-l.row):r<0&&(y=Math.max(1,l.row+l.h-m.row)),i===0?y:r===0?x:Math.min(x,y)}for(let l of s){let m=w(l,e);if(!isFinite(m))return!1;c.set(l.id,m),u.push({id:l.id,k:m})}function f(l){let m=c.get(l.id)??0;return{col:l.col+m*i,row:l.row+m*r,w:l.w,h:l.h}}let a=1e3,h=0;for(;u.length>0;){if(h++>a)return!1;let{id:l}=u.shift(),m=o.getTile(l);if(!m)continue;let x=f(m);if(!o.rectInBounds(x))return!1;for(let y of o.tiles){if(y.id===l||y.id===t)continue;let T=f(y);if(S(x,T)){let b=w(y,x);if(!isFinite(b))return!1;let v=c.get(y.id)??0,E={...y,col:y.col+v*i,row:y.row+v*r},P=w(E,x);if(!isFinite(P))return!1;let B=v+P;if(B<=v)continue;c.set(y.id,B),u.push({id:y.id,k:B})}}}let p=new Map;for(let l of o.tiles)l.id!==t&&p.set(l.id,f(l));for(let[l,m]of p){if(!o.rectInBounds(m)||S(m,e))return!1;for(let[x,y]of p)if(x!==l&&S(m,y))return!1}for(let[l,m]of p)o._setTilePos(l,{col:m.col,row:m.row});return!0}function co(o,t,e,n){let i=o.getTile(t);if(!i)return!1;let r={col:e.col,row:e.row,w:i.w,h:i.h},{dx:s,dy:c}=z(n),u=1e4;for(let w=0;w<u;w++){let f=o.tilesIn(r,new Set([t]));if(f.length===0)return o._setTilePos(t,e),!0;let a=f.map(h=>({...h}));for(;a.length>0;){let h=a.shift(),p=o.getTile(h.id);if(!p)continue;let l={col:p.col+s,row:p.row+c,w:p.w,h:p.h};if(!o.rectInBounds(l))return!1;o._setTilePos(h.id,{col:l.col,row:l.row});let m=o.tilesIn(l,new Set([h.id,t]));for(let x of m)a.find(y=>y.id===x.id)||a.push(x)}}return!1}function _(o){let t=o.position;return!t||t==="static"||t==="relative"||t==="sticky"}function Ft(o){let t=o.config.gravity??"none";if(t==="none")return[];let e=new Set;for(let n=0;n<1e4;n++){let i=!1,r=[...o.tiles].filter(s=>_(s)).sort((s,c)=>Dt(s,t)-Dt(c,t));for(let s of r){let c=lo(s,t);if(!c)continue;let u={col:s.col+c.dx,row:s.row+c.dy,w:s.w,h:s.h};!o.rectInBounds(u)||o.tiles.filter(f=>f.id!==s.id&&_(f)&&S(A(f),u)).length>0||(o._setTilePos(s.id,{col:u.col,row:u.row}),e.add(s.id),i=!0)}if(!i)break}return Array.from(e)}function lo(o,t){if(t==="none")return null;if(t==="top")return o.row>0?{dx:0,dy:-1}:null;if(t==="left")return o.col>0?{dx:-1,dy:0}:null;if(t==="bottom")return{dx:0,dy:1};if(t==="right")return{dx:1,dy:0};let e=Math.sign(t.col-o.col),n=Math.sign(t.row-o.row),i=Math.abs(t.col-o.col),r=Math.abs(t.row-o.row);return i===0&&n===0?null:i>=r&&e!==0?{dx:e,dy:0}:n!==0?{dx:0,dy:n}:e!==0?{dx:e,dy:0}:null}function Dt(o,t){return t==="none"?0:t==="top"?o.row:t==="bottom"?-o.row:t==="left"?o.col:t==="right"?-o.col:Math.abs(t.col-o.col)+Math.abs(t.row-o.row)}function ot(o){return o.loop?.enabled===!0}function et(o){if(ot(o)&&(o.infiniteX||o.infiniteY||!Number.isFinite(o.cols)||!Number.isFinite(o.rows)))throw new Error("Griddle: loop mode requires finite cols/rows and is incompatible with infiniteX/infiniteY")}function Nt(o,t){if(o.length===0||t<=0)return null;let e=o.reduce((r,s)=>r+s.w*s.h,0),n=Math.max(...o.map(r=>r.w)),i=Math.max(...o.map(r=>r.h));for(let r=Math.min(t,e);r>=n;r--){if(e%r!==0)continue;let s=e/r;if(s<i)continue;let c=fo(o,r,s);if(c)return{placements:c,width:r,height:s,holes:0}}return uo(o,Math.min(t,e))}function fo(o,t,e){let n=[...o].sort((h,p)=>p.w*p.h-h.w*h.h||p.h-h.h),i=n.length,r=new Uint8Array(t*e),s=new Array(i).fill(!1),c=new Map,u=0,w=(h,p,l,m)=>{if(h+l>t||p+m>e)return!1;for(let x=p;x<p+m;x++)for(let y=h;y<h+l;y++)if(r[x*t+y])return!1;return!0},f=(h,p,l,m,x)=>{for(let y=p;y<p+m;y++)for(let T=h;T<h+l;T++)r[y*t+T]=x},a=h=>{if(++u>5e4)return!1;let p=h;for(;p<t*e&&r[p];)p++;if(p>=t*e)return!0;let l=p%t,m=(p-l)/t,x=new Set;for(let y=0;y<i;y++){if(s[y])continue;let T=n[y],b=`${T.w}x${T.h}`;if(!x.has(b)&&(x.add(b),!!w(l,m,T.w,T.h))){if(s[y]=!0,f(l,m,T.w,T.h,1),c.set(T.id,{col:l,row:m}),a(p+1))return!0;s[y]=!1,f(l,m,T.w,T.h,0),c.delete(T.id)}}return!1};return a(0)?c:null}function uo(o,t){let e=[...o].sort((a,h)=>h.w*h.h-a.w*a.h||h.h-a.h),n=new Map,i=[],r=(a,h,p,l)=>{if(a+p>t)return!1;for(let m=h;m<h+l;m++){let x=i[m];if(x){for(let y=a;y<a+p;y++)if(x[y])return!1}}return!0},s=(a,h,p,l)=>{for(let m=h;m<h+l;m++){let x=i[m];x||(x=new Array(t).fill(!1),i[m]=x);for(let y=a;y<a+p;y++)x[y]=!0}},c=0;for(;e.length>0;){let a=c%t,h=(c-a)/t;if(!i[h]?.[a]){let p=e.findIndex(l=>r(a,h,l.w,l.h));if(p>=0){let l=e.splice(p,1)[0];n.set(l.id,{col:a,row:h}),s(a,h,l.w,l.h)}}c++}let u=0,w=0,f=0;for(let a of o){let h=n.get(a.id);u=Math.max(u,h.col+a.w),w=Math.max(w,h.row+a.h),f+=a.w*a.h}return{placements:n,width:u,height:w,holes:u*w-f}}var Q=Object.freeze({enabled:!0,repositionDurationMs:320,repositionEasing:"cubic-bezier(0.22, 1, 0.36, 1)",liftDurationMs:160,liftEasing:"cubic-bezier(0.22, 1, 0.36, 1)",respectReducedMotion:!0});function $t(o,t){return typeof o=="number"&&Number.isFinite(o)?Math.max(0,o):t}function Gt(o,t){return typeof o=="string"&&o.trim()?o.trim():t}function zt(o){return{enabled:o?.enabled??Q.enabled,repositionDurationMs:$t(o?.repositionDurationMs,Q.repositionDurationMs),repositionEasing:Gt(o?.repositionEasing,Q.repositionEasing),liftDurationMs:$t(o?.liftDurationMs,Q.liftDurationMs),liftEasing:Gt(o?.liftEasing,Q.liftEasing),respectReducedMotion:o?.respectReducedMotion??Q.respectReducedMotion}}function ao(o){if(!Number.isFinite(o.cols)||!Number.isInteger(o.cols)||o.cols<=0)throw new RangeError("Griddle: reflow cols must be a positive finite integer");if(o.strategy!=="griddle-v1")throw new RangeError(`Griddle: unsupported reflow strategy "${String(o.strategy)}"`)}function Lt(o,t){if(!Number.isInteger(o.w)||o.w<=0||!Number.isInteger(o.h)||o.h<=0)throw new RangeError(`Griddle: tile "${o.id}" footprint must use positive integer cells`);if(o.w<=t)return{...o};let e=t/o.w;return{...o,w:t,h:Math.max(1,Math.round(o.h*e))}}function gt(o,t){let e=[];for(let n of o){if(!Number.isInteger(n.col)||!Number.isInteger(n.row)||!Number.isInteger(n.w)||!Number.isInteger(n.h)||n.col<0||n.row<0||n.w<=0||n.h<=0||n.col+n.w>t)throw new RangeError(`Griddle: reflow placement for tile "${n.id}" is outside the grid bounds`);let i=e.find(r=>S(A(r),A(n)));if(i)throw new RangeError(`Griddle: reflow placements for tiles "${i.id}" and "${n.id}" overlap`);e.push(n)}}function Ht(o,t,e,n,i=0){let r={col:0,row:Math.max(0,i),w:t,h:e};for(;;){for(let s=0;s<=n-t;s+=1)if(r.col=s,!o.some(c=>S(A(c),r)))return{col:s,row:r.row};r.row+=1}}function ho(o,t){let e=[...o].sort((s,c)=>s.row!==c.row?s.row-c.row:s.col!==c.col?s.col-c.col:s.id.localeCompare(c.id)),n=[];for(let s of e){let c=Lt(s,t),u=Number.isInteger(c.col)&&Number.isInteger(c.row)&&c.col>=0&&c.row>=0&&c.col+c.w<=t;if(u&&!n.some(a=>S(A(a),A(c)))){n.push(c);continue}let f=Ht(n,c.w,c.h,t,u?c.row:0);n.push({...c,...f})}let i=new Map(n.map(s=>[s.id,s])),r=o.map(s=>i.get(s.id)??{...s});return gt(r,t),r}function wo(o,t,e){let n=[],i=[];for(let s of o){let c=e[s.id];c?n.push({...s,...c}):i.push(Lt(s,t))}gt(n,t);let r=[...n];for(let s of i){let c=Ht(r,s.w,s.h,t);r.push({...s,...c})}return gt(r,t),r}function Wt(o,t){ao(t);let e=t.placements;return e&&Object.keys(e).length>0?wo(o,t.cols,e):ho(o,t.cols)}function ft(o){return{infiniteX:o.infiniteX??o.cols===1/0,infiniteY:o.infiniteY??o.rows===1/0,gap:o.gap??0,gravity:o.gravity??"none",resizeHandles:o.resizeHandles??["se"],snapDuringDrag:o.snapDuringDrag??!0,maxRepackHops:o.maxRepackHops??64,...o,animation:zt(o.animation)}}function ut(o,t){if(!Number.isInteger(o)||o<=0)throw new RangeError(`Griddle: ${t} must be a positive integer`)}function po(o,t){return!o.infiniteX&&(t.col<0||t.col+t.w>o.cols)||o.infiniteX&&t.col<0||!o.infiniteY&&(t.row<0||t.row+t.h>o.rows)?!1:!o.infiniteY||t.row>=0}function Xt(o,t){if(!_(t))return t;let e=t.w,n=t.h;if(!o.infiniteX&&Number.isInteger(t.col)){let i=o.cols-t.col;i>=1&&(e=Math.min(e,i))}if(!o.infiniteY&&Number.isInteger(t.row)){let i=o.rows-t.row;i>=1&&(n=Math.min(n,i))}return e===t.w&&n===t.h?t:{...t,w:e,h:n}}function W(o,t){let e=new Set,n=[];for(let i of t){if(e.has(i.id))throw new Error(`Griddle: duplicate tile id "${i.id}"`);if(e.add(i.id),ut(i.w,`tile "${i.id}" width`),ut(i.h,`tile "${i.id}" height`),!_(i))continue;if(!Number.isInteger(i.col)||!Number.isInteger(i.row))throw new RangeError(`Griddle: tile "${i.id}" position must use integer cells`);let r=A(i);if(!po(o,r))throw new RangeError(`Griddle: tile "${i.id}" is outside the grid bounds`);let s=n.find(c=>S(A(c),r));if(s)throw new RangeError(`Griddle: tiles "${s.id}" and "${i.id}" overlap`);n.push(i)}}function It(o,t,e,n){let i=new Set,r=[{col:t.col,row:t.row}],s=0;for(;r.length>0&&s++<512;){let c=r.shift(),u=`${c.col},${c.row}`;if(i.has(u))continue;i.add(u);let w={col:c.col,row:c.row,w:t.w,h:t.h};if(o.rectInBounds(w)&&o.tilesIn(w,new Set([t.id,n])).length===0&&!S(w,e))return c;r.push({col:c.col+1,row:c.row}),r.push({col:c.col-1,row:c.row}),r.push({col:c.col,row:c.row+1}),r.push({col:c.col,row:c.row-1})}return null}var nt=class o{constructor(t,e=[]){this.tilesById=new Map,this.changes=new lt,this.config=ft(t),et(this.config);let n=e.map(i=>({...i}));W(this.config,n);for(let i of n)this.tilesById.set(i.id,i)}updateConfig(t){let e=ot(this.config),n=ft({...this.config,...t,animation:t.animation?{...this.config.animation,...t.animation}:this.config.animation});et(n),W(n,this.tiles),this.config=n,this.changes.emit({type:"config",tileIds:[]}),!e&&ot(n)&&this.pack()}reflow(t){let e=this.tiles.filter(_),n=Wt(e,t),i=new Map(n.map(c=>[c.id,c])),r=ft({...this.config,cols:t.cols,infiniteX:!1});et(r);let s=[];for(let c of e){let u=i.get(c.id);u&&(c.col!==u.col||c.row!==u.row||c.w!==u.w||c.h!==u.h)&&s.push(c.id)}this.config=r;for(let c of n)this._setTileRect(c.id,c);return this.changes.emit({type:"reflow",tileIds:s}),s.length>0}get tiles(){return Array.from(this.tilesById.values())}getTile(t){return this.tilesById.get(t)}tilesIn(t,e=new Set){let n=[];for(let i of this.tilesById.values())e.has(i.id)||_(i)&&S(t,A(i))&&n.push(i);return n}rectInBounds(t){let{cols:e,rows:n,infiniteX:i,infiniteY:r}=this.config;if(i){if(t.col<0)return!1}else if(t.col<0||t.col+t.w>e)return!1;if(r){if(t.row<0)return!1}else if(t.row<0||t.row+t.h>n)return!1;return!0}addTile(t){if(this.tilesById.has(t.id))throw new Error(`Griddle: duplicate tile id "${t.id}"`);let e=Xt(this.config,{...t});W(this.config,[...this.tiles,e]),this.tilesById.set(t.id,e),this.changes.emit({type:"add",tileIds:[t.id]}),this.config.gravity&&this.config.gravity!=="none"&&this.compactAll(),this._structuralRepack()}addTileWithDisplacement(t){if(this.tilesById.has(t.id))throw new Error(`Griddle: duplicate tile id "${t.id}"`);let e=Xt(this.config,{...t});if(ut(e.w,`tile "${e.id}" width`),ut(e.h,`tile "${e.id}" height`),!_(e))return this.addTile(e),!0;if(!Number.isInteger(e.col)||!Number.isInteger(e.row))return!1;let n={col:e.col,row:e.row,w:e.w,h:e.h};if(!this.rectInBounds(n))return!1;let i=this.snapshotTiles();this.tilesById.set(e.id,e);let r=this.tilesIn(n,new Set([e.id]));for(let s of r){let u=U(n,A(s)).map(z),w=!1;for(let f of u){if(f.dx===0&&f.dy===0)continue;let a={col:s.col,row:s.row};for(let h=0;h<128&&!w;h++){a={col:a.col+f.dx,row:a.row+f.dy};let p={col:a.col,row:a.row,w:s.w,h:s.h};if(!this.rectInBounds(p))break;this.tilesIn(p,new Set([s.id,e.id])).length===0&&!S(p,n)&&(this._setTilePos(s.id,a),w=!0)}if(w)break}if(!w){let f=It(this,s,n,e.id);f&&(this._setTilePos(s.id,f),w=!0)}if(!w)return this.restoreTiles(i),!1}try{W(this.config,this.tiles)}catch{return this.restoreTiles(i),!1}return this.changes.emit({type:"add",tileIds:[e.id]}),this.config.gravity&&this.config.gravity!=="none"&&this.compactAll(),this._structuralRepack(),!0}removeTile(t){this.tilesById.has(t)&&(this.tilesById.delete(t),this.changes.emit({type:"remove",tileIds:[t]}),this.config.gravity&&this.config.gravity!=="none"&&this.compactAll(),this._structuralRepack())}_structuralRepack(){ot(this.config)&&(this.config.loop?.repack??"toggle")==="structural"&&this.pack()}_setTilePos(t,e){let n=this.tilesById.get(t);n&&(n.col=e.col,n.row=e.row)}_setTileRect(t,e){let n=this.tilesById.get(t);n&&(n.col=e.col,n.row=e.row,n.w=e.w,n.h=e.h)}moveTile(t,e){let n=this.tilesById.get(t);if(!n||!_(n))return!1;if(n.col===e.col&&n.row===e.row)return!0;let i=this.snapshotTiles(),r=_t(this,t,e);if(r){try{W(this.config,this.tiles)}catch{return this.restoreTiles(i),!1}this.changes.emit({type:"move",tileIds:this.tiles.map(s=>s.id)}),this.config.gravity&&this.config.gravity!=="none"&&this.compactAll()}return r}moveGroup(t,e){if(t.length===0||e.dcol===0&&e.drow===0)return!0;let n=new Set(t),i=[];for(let w of t){let f=this.tilesById.get(w);if(!f||!_(f))return!1;i.push(f)}let r=new Map;for(let w of i){let f={col:w.col+e.dcol,row:w.row+e.drow},a={col:f.col,row:f.row,w:w.w,h:w.h};if(!this.rectInBounds(a))return!1;r.set(w.id,f)}let s=this.snapshotTiles();for(let[w,f]of r)this._setTilePos(w,f);let c=new Set;for(let w of i){let f=r.get(w.id),a={col:f.col,row:f.row,w:w.w,h:w.h};for(let h of this.tilesIn(a,n))c.add(h.id)}let u=this._groupBounds(i,r);for(let w of c){let f=this.tilesById.get(w);if(!f)continue;let a=It(this,f,u,w);if(!a)return this.restoreTiles(s),!1;this._setTilePos(w,a)}for(let w of i){let f=r.get(w.id),a={col:f.col,row:f.row,w:w.w,h:w.h};if(this.tilesIn(a,n).length>0)return this.restoreTiles(s),!1}try{W(this.config,this.tiles)}catch{return this.restoreTiles(s),!1}return this.changes.emit({type:"move",tileIds:this.tiles.map(w=>w.id)}),this.config.gravity&&this.config.gravity!=="none"&&this.compactAll(),!0}_groupBounds(t,e){let n=1/0,i=1/0,r=-1/0,s=-1/0;for(let c of t){let u=e.get(c.id)??{col:c.col,row:c.row};n=Math.min(n,u.col),i=Math.min(i,u.row),r=Math.max(r,u.col+c.w),s=Math.max(s,u.row+c.h)}return{col:n,row:i,w:r-n,h:s-i}}setTilePinned(t,e){let n=this.tilesById.get(t);return!n||_(n)?!1:(n.pinned={x:e.x,y:e.y},this.changes.emit({type:"move",tileIds:[t]}),!0)}setTilePosition(t,e,n={}){let i=this.tilesById.get(t);if(!i)return!1;let r={...i,position:e};n.pinned!==void 0&&(r.pinned={...n.pinned}),n.offset!==void 0&&(r.offset={...n.offset}),n.sticky!==void 0&&(r.sticky={...n.sticky});try{W(this.config,this.tiles.map(s=>s.id===t?r:s))}catch{return!1}return Object.assign(i,r),this.changes.emit({type:"move",tileIds:[t]}),!0}resizeTile(t,e){let n=this.tilesById.get(t);if(!n)return!1;let i=Math.max(n.minW??1,Math.min(n.maxW??1e6,Math.floor(e.w))),r=Math.max(n.minH??1,Math.min(n.maxH??1e6,Math.floor(e.h))),s=this.config.infiniteX?i:Math.max(1,this.config.cols-n.col),c=this.config.infiniteY?r:Math.max(1,this.config.rows-n.row),u={w:Math.min(i,s),h:Math.min(r,c)};if(u.w===n.w&&u.h===n.h)return!0;let w={col:n.col,row:n.row,w:u.w,h:u.h};if(!this.rectInBounds(w))return!1;let f=this.snapshotTiles();if(n.w=u.w,n.h=u.h,!Pt(this,t,w)){let a=this.tilesIn(w,new Set([t]));for(let h of a){let l=U(w,A(h)).map(z),m=!1;for(let x of l){if(x.dx===0&&x.dy===0)continue;let y={col:h.col,row:h.row};for(let T=0;T<128&&!m;T++){y={col:y.col+x.dx,row:y.row+x.dy};let b={col:y.col,row:y.row,w:h.w,h:h.h};if(!this.rectInBounds(b))break;this.tilesIn(b,new Set([h.id,t])).length===0&&!S(b,w)&&(this._setTilePos(h.id,y),m=!0)}if(m)break}if(!m){let x=It(this,h,w,t);x&&(this._setTilePos(h.id,x),m=!0)}if(!m)return this.restoreTiles(f),!1}}try{W(this.config,this.tiles)}catch{return this.restoreTiles(f),!1}return this.changes.emit({type:"resize",tileIds:[t]}),this.config.gravity&&this.config.gravity!=="none"&&this.compactAll(),this._structuralRepack(),!0}snapshotTiles(){let t=new Map;for(let[e,n]of this.tilesById)t.set(e,{...n});return t}restoreTiles(t){this.tilesById.clear();for(let[e,n]of t)this.tilesById.set(e,{...n})}compactAll(){let t=Ft(this);t.length>0&&this.changes.emit({type:"compact",tileIds:t})}pack(){let t=this.tiles.filter(_);if(t.length===0)return!1;let e=Number.isFinite(this.config.cols)?this.config.cols:0;if(e<=0)return!1;let n=1/0,i=1/0,r=-1/0,s=-1/0,c=0;for(let f of t)n=Math.min(n,f.col),i=Math.min(i,f.row),r=Math.max(r,f.col+f.w),s=Math.max(s,f.row+f.h),c+=f.w*f.h;if((r-n)*(s-i)===c){if(n===0&&i===0)return!1;let f=[];for(let a of t)this._setTilePos(a.id,{col:a.col-n,row:a.row-i}),f.push(a.id);return this.changes.emit({type:"compact",tileIds:f}),!0}let u=Nt(t.map(f=>({id:f.id,w:Math.min(f.w,e),h:f.h})),e);if(!u)return!1;let w=[];for(let f of t){let a=u.placements.get(f.id);if(!a)continue;let h=Math.min(f.w,e);(a.col!==f.col||a.row!==f.row||h!==f.w)&&(this._setTileRect(f.id,{col:a.col,row:a.row,w:h,h:f.h}),w.push(f.id))}return w.length>0&&this.changes.emit({type:"compact",tileIds:w}),w.length>0}toJSON(){return{version:1,config:{...this.config},tiles:this.tiles.map(t=>({...t}))}}loadJSON(t){if(t.version!==1)throw new Error(`Griddle: unsupported snapshot version ${t.version}`);let e=ft(t.config);et(e);let n=t.tiles.map(i=>({...i}));W(e,n),this.config=e,this.tilesById.clear();for(let i of n)this.tilesById.set(i.id,i);this.changes.emit({type:"load",tileIds:this.tiles.map(i=>i.id)})}static fromJSON(t){if(t.version!==1)throw new Error(`Griddle: unsupported snapshot version ${t.version}`);let e=new o(t.config,t.tiles);return e.changes.emit({type:"load",tileIds:e.tiles.map(n=>n.id)}),e}};function it(o){return typeof o=="number"&&Number.isInteger(o)&&o>0}function Tt(o){return typeof o=="number"&&Number.isInteger(o)&&o>=0}function jt(o,t,e){return Tt(o.col)&&Tt(o.row)&&it(o.w)&&it(o.h)&&o.col+o.w<=t&&o.row+o.h<=e}function qt(o,t,e,n={}){if(!e||!it(e.cols)||!it(e.rows))return null;let i=e.cols,r=e.rows;if(!o||typeof o.length!="number"||!t||typeof t.id!="string"||t.id===""||!jt(t,i,r))return null;let s=[],c=new Set;for(let d of o){if(!d||typeof d.id!="string"||d.id===""||c.has(d.id)||(c.add(d.id),!jt(d,i,r)))return null;d.id!==t.id&&s.push({id:d.id,col:d.col,row:d.row,w:d.w,h:d.h})}s.sort((d,g)=>d.id<g.id?-1:d.id>g.id?1:0);let u=s.length,w=i*r;if(w>4096)return null;let f=new Int32Array(w).fill(-1);for(let d=0;d<u;d++){let g=s[d];for(let M=g.row;M<g.row+g.h;M++)for(let I=g.col;I<g.col+g.w;I++){let O=M*i+I;if(f[O]!==-1)return null;f[O]=d}}let a=(d,g)=>({ok:d,moves:[],movedCount:0,distance:0,nodes:g}),h=t.w*t.h;for(let d=0;d<u;d++)h+=s[d].w*s[d].h;if(h>w)return a(!1,0);let p=[],l=new Uint8Array(u);for(let d=t.row;d<t.row+t.h;d++)for(let g=t.col;g<t.col+t.w;g++){let M=f[d*i+g];M>=0&&!l[M]&&(l[M]=1,p.push(M))}for(let d of p){let g=s[d];for(let M=g.row;M<g.row+g.h;M++)for(let I=g.col;I<g.col+g.w;I++)f[M*i+I]=-1}for(let d=t.row;d<t.row+t.h;d++)for(let g=t.col;g<t.col+t.w;g++)f[d*i+g]=-2;if(p.length===0)return a(!0,0);let m=it(n.maxNodes)?n.maxNodes:4e5,x=Math.min(Tt(n.maxMoves)?n.maxMoves:u,u);if(p.length>x)return a(!1,0);let y=new Int32Array(u),T=new Int32Array(u);for(let d=0;d<u;d++)y[d]=s[d].col,T[d]=s[d].row;let b=new Int32Array(u),v=new Int32Array(u),E=new Int32Array(w),P=new Uint8Array(u),B=[],X=new Array(u).fill(void 0),Y=new Array(u).fill(void 0),Z=new Array(u).fill(void 0),V=new Int32Array(i+r-1),J=0,st=!1;function Ut(d){let g=s[d],M=g.col,I=g.row,O=i-g.w+1,N=r-g.h+1,H=O*N-1;if(J+H>m)return st=!0,!1;J+=H,V.fill(0);for(let k=0;k<O;k++){let D=k>M?k-M:M-k;for(let R=0;R<N;R++)k===M&&R===I||V[D+(R>I?R-I:I-R)]++}for(let k=0,D=0;k<V.length;k++){let R=V[k];V[k]=D,D+=R}let j=new Int32Array(H),$=new Int32Array(H),q=new Int32Array(H);for(let k=0;k<O;k++){let D=k>M?k-M:M-k;for(let R=0;R<N;R++){if(k===M&&R===I)continue;let K=D+(R>I?R-I:I-R),G=V[K]++;j[G]=k,$[G]=R,q[G]=K}}return X[d]=j,Y[d]=$,Z[d]=q,!0}let at=1;for(let d=0;d<u;d++){let g=s[d].w*s[d].h;g>at&&(at=g)}let Yt=Math.min(u,at),bt=new Array(u).fill(void 0),L=-1,ht=[],Mt=new Int32Array(u),vt=new Int32Array(u);function rt(d,g,M,I){let O=s[d];for(let N=M;N<M+O.h;N++){let H=N*i;for(let j=g;j<g+O.w;j++)E[H+j]=I}}function kt(d,g,M){if(d===B.length){(L<0||g<L)&&(L=g,ht=B.slice(),Mt=Int32Array.from(b),vt=Int32Array.from(v));return}let I=B[d];if(X[I]===void 0&&!Ut(I))return;let O=s[I],N=X[I],H=Y[I],j=Z[I],$=bt[d];$===void 0&&($=new Int32Array(Yt),bt[d]=$);for(let q=0;q<N.length;q++){let k=j[q];if(L>=0&&g+k>=L)break;if(J>=m){st=!0;return}J++;let D=N[q],R=H[q],K=!0,G=0;for(let F=R;F<R+O.h&&K;F++){let C=F*i;for(let wt=D;wt<D+O.w;wt++){let tt=E[C+wt];if(tt===-1)continue;if(tt===-2||P[tt]){K=!1;break}let Rt=!1;for(let dt=0;dt<G;dt++)if($[dt]===tt){Rt=!0;break}if(!Rt){if(G>=M){K=!1;break}$[G++]=tt}}}if(K){for(let F=0;F<G;F++){let C=$[F];rt(C,b[C],v[C],-1),P[C]=1,B.push(C)}rt(I,D,R,I),b[I]=D,v[I]=R,kt(d+1,g+k,M-G),rt(I,D,R,-1);for(let F=G-1;F>=0;F--){let C=$[F];B.pop(),P[C]=0,b[C]=y[C],v[C]=T[C],rt(C,b[C],v[C],C)}if(st)return}}}for(let d=p.length;d<=x;d++){E.set(f),b.set(y),v.set(T),P.fill(0),B.length=0;for(let g of p)P[g]=1,B.push(g);if(L=-1,ht=[],kt(0,0,d-p.length),L>=0||st)break}if(L<0)return a(!1,J);let ct=[];for(let d of ht)ct.push({id:s[d].id,col:Mt[d],row:vt[d]});return ct.sort((d,g)=>d.id<g.id?-1:d.id>g.id?1:0),{ok:!0,moves:ct,movedCount:ct.length,distance:L,nodes:J}}return to(mo);})();
@@ -269,7 +393,9 @@ const root=document.documentElement;
 /* Content authored ONCE, for the grid. The hero reuses these very nodes. */
 const CARDS=[
   { id:'headline', app:'Griddle Window Manager', tier:0, w:5, h:3, hero:1,
-    html:'<h1 class="headline">Every window,<span class="br">right where it belongs.</span></h1>',
+    html:'<h1 class="headline">Every window,<span class="br">right where it belongs.</span></h1>'
+        +'<p class="subhead gridonly">Windows 11 gives you halves and quarters. Griddle gives you a grid —'
+        +' 12 columns by 6 rows out of the box — and lets every window claim whatever rectangle of cells you want.</p>',
     title:'Every window, right where it belongs.',
     detail:'<p class="dbody">Windows 11 gives you halves and quarters. Griddle gives you a real grid — say 12 columns by 6 rows — and lets any window claim any rectangle of cells.</p><p class="dbody">Drag one and an overlay shows exactly where it lands and which neighbours it pushes. <b>Which is what you are doing right now</b> — this page runs the same layout engine the app does.</p>' },
   { id:'foss', app:'License', tier:0, w:3, h:1, hero:1,
@@ -277,7 +403,9 @@ const CARDS=[
     title:'MIT licensed',
     detail:'<p class="dbody">Free and open source under the MIT licence. No account, no paid tier, no telemetry. The full source, the design specs, and the entire commit history are public.</p>' },
   { id:'dek', app:'What it does', tier:0, w:4, h:2, hero:1,
-    html:'<p class="dek">A grid you design yourself — and every window exactly where you meant it to go.</p>',
+    html:'<p class="dek">A grid you design yourself — and every window exactly where you meant it to go.</p>'
+        +'<div class="kv gridonly"><span><b>12 × 6</b> by default</span><span>gap and padding <b>0–64px</b></span>'
+        +'<span>per monitor, or <b>spanning several</b></span></div>',
     title:'What it does',
     detail:'<p class="dbody">Enable a grid on any monitor and every eligible window snaps into it. Save arrangements as <b>templates</b>, pin apps to their usual spot with <b>per-app defaults</b>, and restore your whole desktop at startup with <b>views</b>.</p>' },
   /* No `hero` flag on purpose: the intro is text only. A download button there is
@@ -287,10 +415,36 @@ const CARDS=[
     html:'<a class="cta" href="https://github.com/DadsDoingDesign/GriddleWindowManager/releases/latest" target="_blank" rel="noopener">Download for Windows 11</a><div class="meta">v0.2.0 · 3.1 MB · x64</div>',
     title:'Download',
     detail:'<p class="dbody">Version 0.2.0, 3.1 MB, x64. Installs <b>per-user</b> — no administrator rights needed.</p><p class="dbody">The installer is not code-signed, so SmartScreen warns once: choose <b>More info → Run anyway</b>. That means Windows does not recognise the publisher, not that anything is wrong.</p>' },
-  { id:'vscode', app:'Visual Studio Code', tier:1, w:4, h:3, lines:[76,52,64], accent:'#4A9EDB' },
-  { id:'figma',  app:'Figma',  tier:1, w:4, h:2, lines:[68,46], accent:'#A259FF' },
-  { id:'chrome', app:'Chrome', tier:2, w:3, h:3, lines:[60,40,50], accent:'#F5A623' },
-  { id:'slack',  app:'Slack',  tier:3, w:3, h:1, lines:[62], accent:'#E01E5A' },
+  { id:'modes', app:'Placement', tier:1, w:4, h:3, accent:'#4A9EDB',
+    html:'<div class="feat">'
+      +'<div class="frow"><span class="fkey">Reorganize</span><span class="fval">the window lands <b>exactly</b> where you aimed, and the others reorganise around it — as few of them moving as possible</span></div>'
+      +'<div class="frow"><span class="fkey">Shoving</span><span class="fval">neighbours are shoved aside one shove at a time, and equal-size windows swap</span></div>'
+      +'<div class="frow"><span class="fkey">Overlap</span><span class="fval">windows stop contesting space entirely and lie over one another, most recent on top</span></div>'
+      +'</div>',
+    title:'Placement modes',
+    detail:'<p class="dbody">Every grid decides for itself what happens when you drop a window on cells someone else is already using.</p><p class="dbody"><b>Reorganize</b> lands the window exactly where you aimed and reorganises the rest, moving as few as it can. <b>Tile shoving</b> shoves neighbours aside one shove at a time, and refuses the drop when one has nowhere to go. <b>Overlap</b> drops the contest for space altogether — tiles lie over each other, stretch anywhere in the grid, and the one you touched last comes to the top.</p><p class="dbody">The selector at the bottom of this page drives all of them on this grid, right now — including <b>Griddle default</b>, which hands the decision to the layout library unaided.</p>' },
+  { id:'views',  app:'Views',  tier:1, w:4, h:2, accent:'#A259FF',
+    html:'<div class="feat">'
+      +'<div class="frow"><span class="fkey">Save</span><span class="fval">every grid, its spacing, and which program sits where</span></div>'
+      +'<div class="frow"><span class="fkey">Restore</span><span class="fval">your whole desktop reassembles itself after a reboot</span></div>'
+      +'</div>',
+    title:'Views',
+    detail:'<p class="dbody">Where a template saves one grid&rsquo;s slots, a <b>view</b> saves your whole desktop: every enabled grid with its dimensions and spacing, plus which program sits on which cells.</p><p class="dbody">Views store executable names rather than window handles, so they survive reboots. Set one as <b>Load at startup</b> and your desktop comes back the way you left it — even though every window handle is new.</p>' },
+  { id:'templates', app:'Templates', tier:2, w:3, h:3, accent:'#F5A623',
+    html:'<p class="tlead">A gallery per grid. Applying one maps your open windows to its slots.</p><div class="tgal">'
+      +'<div class="tmini" style="grid-template-columns:1fr 1fr"><i></i><i></i></div>'
+      +'<div class="tmini" style="grid-template-columns:repeat(3,1fr)"><i></i><i></i><i></i></div>'
+      +'<div class="tmini" style="grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr"><i></i><i></i><i></i><i></i></div>'
+      +'<div class="tmini" style="grid-template-columns:2fr 1fr"><i></i><i></i></div>'
+      +'<div class="tmini" style="grid-template-rows:1fr 1fr"><i></i><i></i></div>'
+      +'<div class="tmini tnew" aria-hidden="true">+</div>'
+      +'</div><p class="tcap">Two columns, thirds, quarters, main + side, two rows — or capture the arrangement you already have and name it.</p>',
+    title:'Templates',
+    detail:'<p class="dbody">A gallery per grid, with built-ins for two columns, three columns, 2×2 quarters, main + side column, and two rows.</p><p class="dbody">Capture the current arrangement as a named template — <b>slots only</b>, no window identities are stored. Applying one maps your current windows to its slots by recency and places the extras. If a template&rsquo;s dimensions differ from the grid&rsquo;s, the button says so up front.</p>' },
+  { id:'monitors', app:'Monitors', tier:3, w:3, h:1, accent:'#E01E5A',
+    html:'<div class="applabel"><b>One grid across several screens.</b> Or a separate grid on each.</div>',
+    title:'Monitors',
+    detail:'<p class="dbody">Enable a grid on any monitor and choose its columns and rows. Or turn on <b>Span monitors</b> for a single grid across the combined work area of two or more displays.</p><p class="dbody">If that union is L-shaped, the dead space is excluded and windows snap to the nearest usable cells. Spanning grids are the newest feature here and the least field-tested — please report anything odd.</p>' },
   { id:'local', app:'Privacy', tier:3, w:3, h:1,
     html:'<div class="applabel"><b>Stays on your machine.</b> No telemetry, no account.</div>',
     title:'It stays on your machine',
@@ -302,45 +456,38 @@ const CARDS=[
 ];
 /* Download sits directly under the headline: the primary action stays adjacent to
    the claim rather than drifting into the middle of the board. */
-const SEATS={headline:[0,0],vscode:[5,0],chrome:[9,0],cta:[0,3],dek:[4,3],figma:[8,3],
-             foss:[0,5],local:[3,5],safe:[6,5],slack:[9,5]};
+const SEATS={headline:[0,0],modes:[5,0],templates:[9,0],cta:[0,3],dek:[4,3],views:[8,3],
+             foss:[0,5],local:[3,5],safe:[6,5],monitors:[9,5]};
 
 const solveMinimalMoves=GriddleLib.solveMinimalMoves;
 let cols=12,rows=6,gap=10,radius=10,mode='reflow';
-let colFr=Array.from({length:cols},()=>1);
 const PAD=24;
-let grid=null,expandedId=null,started=false,didDrag=false,drag=null;
+let grid=null,expandedId=null,started=false,didDrag=false,drag=null,rez=null,undoSnap=null;
+/* Reset compares against the page as it first arranged itself, not against a
+   hardcoded board — the seed depends on viewport tier, so the only honest
+   baseline is the one this visitor actually got. */
+const DEFAULTS={cols:12,rows:6,gap:10,radius:10,mode:'reflow'};
+let seedKey='';
 const els=new Map();
 const stage=document.getElementById('stage'),gridwrap=document.getElementById('gridwrap'),
-      cellsEl=document.getElementById('cells'),dropzone=document.getElementById('dropzone'),
+      cellsEl=document.getElementById('cells'),preview=document.getElementById('preview'),
       controls=document.getElementById('controls'),scrim=document.getElementById('scrim'),
-      hint=document.getElementById('hint'),note=document.getElementById('note'),
-      handles=document.getElementById('handles');
+      hint=document.getElementById('hint'),toast=document.getElementById('toast'),
+      toastMsg=document.getElementById('toastMsg'),toastUndo=document.getElementById('toastUndo'),
+      resetBtn=document.getElementById('resetBtn');
 
 function panelRect(){const w=innerWidth,h=innerHeight,mx=Math.max(16,Math.min(64,w*.045));
   const top=68,bot=Math.min(86,h*.11);return{x:mx,y:top,w:w-mx*2,h:h-top-bot};}
 function tierLimit(){const w=innerWidth,h=innerHeight;
   if(w<760||h<520)return 0; if(w<1060)return 1; if(w<1400)return 2; return 3;}
-/* uw is the MEAN column width. It seeds the engine (which wants one number) and
-   nothing else — real column widths come from the fr ratios below. */
+/* Every column is the same width and every row the same height. That is not a
+   simplification of the grid — it IS the grid. A tile's size is a cell count, so
+   the only thing a resize can change is how many cells it spans. */
 function unit(){const p=panelRect();
   return{uw:(p.w-PAD*2-gap*(cols-1))/cols,uh:(p.h-PAD*2-gap*(rows-1))/rows,p};}
 
-/* Columns are fr ratios, not pixels. Dragging a boundary trades weight between
-   exactly two neighbours and conserves their sum, so the total is invariant —
-   dragging every boundary repeatedly cannot inflate the grid. Each column is
-   additionally clamped around a mean of 1. */
-const MIN_FR=.35, MAX_FR=3;
-function frTotal(){const t=colFr.reduce((a,b)=>a+b,0);return t>0?t:cols;}
-function colWidths(){const p=panelRect();
-  const inner=p.w-PAD*2-gap*(cols-1),t=frTotal();
-  return colFr.map(f=>inner*f/t);}
-function colOffsets(){const ws=colWidths(),xs=[];let x=0;
-  for(let i=0;i<cols;i++){xs.push(x);x+=ws[i]+gap;}
-  return xs;}
-function cellRect(c,r,w,h){const{uh,p}=unit(),ws=colWidths(),xs=colOffsets();
-  let width=0;for(let i=c;i<c+w&&i<cols;i++)width+=ws[i];
-  return{x:p.x+PAD+xs[c],y:p.y+PAD+r*(uh+gap),w:width+gap*(w-1),h:uh*h+gap*(h-1)};}
+function cellRect(c,r,w,h){const{uw,uh,p}=unit();
+  return{x:p.x+PAD+c*(uw+gap),y:p.y+PAD+r*(uh+gap),w:uw*w+gap*(w-1),h:uh*h+gap*(h-1)};}
 
 function build(){
   for(const c of CARDS){
@@ -353,17 +500,24 @@ function build(){
       <span class="tbname">${c.app}</span><button class="closebtn" aria-label="Close">✕</button>`;
     const content=document.createElement('div');
     content.className='content';
-    content.innerHTML=c.html||`<div class="lines">${(c.lines||[]).map(w=>`<div class="ln" style="width:${w}%"></div>`).join('')}</div>`;
+    content.innerHTML=c.html||'';
     const det=document.createElement('div');
     det.className='detail';
     det.innerHTML=`<h2 class="dtitle">${c.title||c.app}</h2>${c.detail||'<p class="dbody">A window managed by Griddle. Drag it anywhere; its neighbours move out of the way.</p>'}`;
-    el.append(tb,content,det);
+    const rh=document.createElement('button');
+    rh.className='rhandle';rh.type='button';
+    rh.setAttribute('aria-label',`Resize ${c.app}`);
+    el.append(tb,content,det,rh);
     stage.append(el);
     els.set(c.id,{el,tb});
     tb.addEventListener('pointerdown',e=>dragStart(e,c.id));
+    rh.addEventListener('pointerdown',e=>resizeStart(e,c.id));
+    rh.addEventListener('keydown',e=>resizeKey(e,c.id));
     el.addEventListener('click',e=>{
       if(e.target.closest('.closebtn')){collapse();return;}
-      if(!started||didDrag||e.target.closest('a'))return;
+      // the grip lives inside the card, so its click would otherwise expand it
+      if(mode==='overlap')raise(c.id);
+      if(!started||didDrag||e.target.closest('a,.rhandle'))return;
       if(expandedId!==c.id)expand(c.id);
     });
   }
@@ -380,11 +534,10 @@ function place(id,r,d){const e=els.get(id);if(!e)return;
    takes over. The stack is measured off the rendered headline box, so the type can
    scale freely without ever colliding with what sits under it. */
 function layoutHero(){
-  const{uh,p}=unit(),ws=colWidths(),xs=colOffsets();
+  const{uw,uh,p}=unit();
   const c0=cols>=8?1:0, c1=cols>=8?cols-2:cols-1, rspan=Math.min(rows,5);
-  let iw=0;for(let i=c0;i<=c1;i++)iw+=ws[i];
-  iw+=gap*(c1-c0);
-  const ix=p.x+PAD+xs[c0], iy=p.y+PAD, ih=uh*rspan+gap*(rspan-1);
+  const span=c1-c0+1, iw=uw*span+gap*(span-1);
+  const ix=p.x+PAD+c0*(uw+gap), iy=p.y+PAD, ih=uh*rspan+gap*(rspan-1);
   place('headline',{x:ix,y:iy,w:iw,h:ih},0);
 
   for(const c of CARDS){
@@ -415,7 +568,13 @@ function layoutHero(){
     place('foss',{x:ix+32,y:iy+30+top,w:inner,h:EB},0);
     place('dek',{x:ix+(iw-dekW)/2,y:iy+30+top+EB+G1+hh+G2,w:dekW,h:dh},0);
   };
-  put();requestAnimationFrame(put);
+  put();
+}
+/* Two passes, because pass one measures text that pass one itself just sized.
+   Both run behind the curtain, so neither is ever seen. */
+function layoutHeroSettled(done){
+  layoutHero();
+  requestAnimationFrame(()=>{layoutHero();if(done)done();});
 }
 function seedGrid(){
   const{uw,uh}=unit();
@@ -431,133 +590,329 @@ function seedGrid(){
 function renderCells(){
   const p=panelRect();
   gridwrap.style.cssText=`left:${p.x}px;top:${p.y}px;width:${p.w}px;height:${p.h}px`;
-  const{uh}=unit(),ws=colWidths(),xs=colOffsets();let s='';
+  const{uw,uh}=unit();let s='';
   for(let r=0;r<rows;r++)for(let c=0;c<cols;c++)
-    s+=`<div class="cell" style="left:${PAD+xs[c]}px;top:${PAD+r*(uh+gap)}px;width:${ws[c]}px;height:${uh}px"></div>`;
+    s+=`<div class="cell" style="left:${PAD+c*(uw+gap)}px;top:${PAD+r*(uh+gap)}px;width:${uw}px;height:${uh}px"></div>`;
   cellsEl.innerHTML=s;
-  placeHandles();
+  if(drag)drag.shown=null;   // geometry moved; force the next frame to repaint
 }
-function sync(d){
+/* `step` staggers the tiles by reading order, so an arrangement assembles as a
+   wave rather than lurching into place all at once. Every other caller passes
+   nothing and gets zero delay — the stagger is for the one moment that earns it,
+   the hero handing over to the grid. The delay is rewritten on every sync, so it
+   can never leak into the next drag. */
+function sync(d,step){
   const seen=new Set();
-  for(const t of grid.tiles){
+  const order=[...grid.tiles].sort((a,b)=>a.row-b.row||a.col-b.col);
+  order.forEach((t,i)=>{
     seen.add(t.id);
-    const e=els.get(t.id);if(!e)continue;
+    const e=els.get(t.id);if(!e)return;
     e.el.classList.remove('parked');
+    e.el.style.setProperty('--delay',(step?i*step:0)+'ms');
     if(expandedId!==t.id)place(t.id,cellRect(t.col,t.row,t.w,t.h),d);
+  });
+  // a parked tile never reaches the loop above, so without this it keeps whatever
+  // delay it last carried and drags in late when it returns to the board
+  for(const c of CARDS)if(!seen.has(c.id)){
+    const e=els.get(c.id);e.el.classList.add('parked');e.el.style.setProperty('--delay','0ms');
   }
-  for(const c of CARDS)if(!seen.has(c.id))els.get(c.id).el.classList.add('parked');
 }
 function start(){
   if(started)return;started=true;
   hint.classList.add('gone');
   seedGrid();renderCells();
+  seedKey=boardKey();
   root.dataset.phase='grid';
-  sync(reduce?1:820);
-  /* the panel and the column handles are tools for a grid that exists — they wait
+  sync(reduce?1:820,reduce?0:38);
+  /* the panel and the resize grips are tools for a grid that exists — they wait
      until the arrangement has fully landed (--dur is 820ms) */
-  setTimeout(()=>{controls.classList.add('on');handles.classList.add('on');},reduce?10:900);
+  setTimeout(()=>{controls.classList.add('on');root.classList.add('tools-on');refreshReset();},reduce?10:1180);
 }
 
-/* ---- column width redistribution (fr, clamped, sum-conserving) ---- */
-/* Handle nodes are reused, never re-created. Rebuilding them on every render would
-   destroy the node the pointer has captured (or the keyboard has focused) halfway
-   through the very interaction that triggered the render. */
-function placeHandles(){
-  if(!started){handles.innerHTML='';return;}
-  if(handles.children.length!==cols-1){
-    let s='';
-    for(let i=0;i<cols-1;i++)
-      s+=`<div class="chandle" role="separator" tabindex="0" data-i="${i}"`
-        +` aria-label="Width between column ${i+1} and column ${i+2}"></div>`;
-    handles.innerHTML=s;
+/* ---- tile resize (Griddle's resizeTile, snapped to whole cells) ----
+   The engine does the work. grid.resizeTile() clamps the new footprint to the
+   board, pushes whatever it overlaps out of the way, and rolls the whole thing
+   back if no arrangement exists — returning false rather than a broken board.
+   All this code does is turn a pointer position into a cell count and let the
+   library answer. That is the point: the gesture on this page and the gesture in
+   the app are the same call. */
+/* ---- toast ----
+   One element, reused. That is the whole dedup strategy: a burst of drops or a
+   drag that crosses six cells cannot queue six toasts, because there is only ever
+   the one and each message overwrites the last. The dismissal timer restarts with
+   it, so the run of actions reads as a single message that keeps up.
+   `snap` is the board as it stood BEFORE the action. Passing it turns the toast
+   into an undo; passing nothing leaves it a plain readout. */
+function hideToast(){
+  toast.classList.remove('on','undoable');
+  clearTimeout(hideToast._t);
+  undoSnap=null;
+}
+function showToast(msg,snap,hold){
+  toastMsg.textContent=msg;
+  undoSnap=snap||null;
+  toast.classList.toggle('undoable',!!undoSnap);
+  toast.classList.add('on');
+  toast.classList.remove('bump');void toast.offsetWidth;toast.classList.add('bump');
+  clearTimeout(hideToast._t);
+  if(!hold)hideToast._t=setTimeout(hideToast,reduce?1400:3400);
+}
+toastUndo.addEventListener('click',()=>{
+  if(!undoSnap)return;
+  const snap=undoSnap;
+  hideToast();
+  grid.loadJSON(snap);
+  sync(reduce?1:380);
+  showToast('reverted');
+  refreshReset();
+});
+/* Candidate sizes are always evaluated against the board as it stood when the
+   drag began, never against the previous frame's result. Griddle's resize pushes
+   neighbours, and compounding those pushes frame by frame would let the board
+   drift further with every wobble of the hand. From a fixed baseline the gesture
+   is reversible: drag back out and the neighbours come back with you. */
+function tryResize(w,h){
+  grid.loadJSON(rez.snap);
+  let ok=grid.resizeTile(rez.id,{w,h});
+  /* The seeded board is exactly full — ten tiles tiling 12x6 with not one spare
+     cell — and resizeTile can only PUSH neighbours, never displace them off the
+     board. So on a fresh page every attempt to grow is correctly refused, and
+     the gesture would look broken while behaving perfectly.
+     The drop path already has an answer for this exact shape of problem: when the
+     minimal-move solver finds no exact re-tiling, it repacks the whole board with
+     the dragged tile pinned. Reuse it, pinning the new footprint instead of a new
+     position. In 'griddle' mode do NOT — that mode exists to show the library's
+     unaided answer, and quietly rescuing a refusal is the one thing that would
+     make it a lie. */
+  if(!ok&&mode!=='griddle'&&mode!=='overlap'){
+    grid.loadJSON(rez.snap);
+    const rr=reorderRepack(rez.id,{col:rez.col,row:rez.row},{w,h});
+    if(rr){applyLayout(rr.placed);ok=true;}
   }
-  const p=panelRect(),xs=colOffsets(),hit=Math.max(12,gap+8);
-  [...handles.children].forEach((el,i)=>{
-    el.style.left=(PAD+xs[i+1]-gap/2-hit/2)+'px';
-    el.style.top=PAD+'px';
-    el.style.width=hit+'px';
-    el.style.height=(p.h-PAD*2)+'px';
-    el.setAttribute('aria-valuenow',colFr[i].toFixed(2));
-  });
+  // `best` is a whole board, not a size: a repack cannot be re-applied by calling
+  // resizeTile again, so a rejected candidate has to rewind to a saved layout.
+  if(ok){rez.w=w;rez.h=h;rez.best=grid.toJSON();}
+  else grid.loadJSON(rez.best);
+  sync(0);
+  // hold: no dismissal timer while the hand is still on the grip, and no Undo
+  // offered for a gesture that has not finished happening
+  showToast(`${rez.w} × ${rez.h} cells`,null,true);
 }
-function nudgeFr(i,delta){
-  const a=colFr[i],b=colFr[i+1],sum=a+b;
-  // clamping the pair AND conserving their sum is what stops repeated drags
-  // from ratcheting the ratios upward
-  const lo=Math.max(MIN_FR,sum-MAX_FR), hi=Math.min(MAX_FR,sum-MIN_FR);
-  const na=Math.min(hi,Math.max(lo,a+delta));
-  if(na===a)return false;
-  colFr[i]=na;colFr[i+1]=sum-na;
-  return true;
-}
-function frReadout(i){
-  note.textContent=`${colFr[i].toFixed(2)}fr · ${colFr[i+1].toFixed(2)}fr`;
-  note.classList.add('on');
-}
-handles.addEventListener('pointerdown',e=>{
-  const h=e.target.closest('.chandle');if(!h)return;
-  e.preventDefault();
-  const i=+h.dataset.i, startX=e.clientX, a0=colFr[i], b0=colFr[i+1];
-  const inner=panelRect().w-PAD*2-gap*(cols-1), perPx=frTotal()/Math.max(1,inner);
-  h.setPointerCapture(e.pointerId);h.classList.add('grabbing');
-  frReadout(i);
+function resizeStart(e,id){
+  if(!started||expandedId)return;
+  const t=grid.getTile(id);if(!t)return;
+  e.preventDefault();e.stopPropagation();
+  const grip=e.currentTarget,el=els.get(id).el;
+  const snap=grid.toJSON();
+  rez={id,col:t.col,row:t.row,w:t.w,h:t.h,snap,best:snap};
+  grip.setPointerCapture(e.pointerId);
+  grip.classList.add('grabbing');
+  el.style.zIndex='50';el.style.boxShadow='var(--shadow-hi)';
+  showToast(`${t.w} × ${t.h} cells`,null,true);
   const move=ev=>{
-    const want=a0+(ev.clientX-startX)*perPx;
-    colFr[i]=a0;colFr[i+1]=b0;
-    if(nudgeFr(i,want-a0)){renderCells();sync(0);}
-    frReadout(i);
+    if(!rez)return;
+    const{uw,uh,p}=unit();
+    /* the pointer sits at the tile's far corner, so the distance from its origin
+       IS the span; +gap because a w-cell tile carries w-1 gutters inside it */
+    const x0=p.x+PAD+rez.col*(uw+gap),y0=p.y+PAD+rez.row*(uh+gap);
+    const w=Math.max(1,Math.min(cols-rez.col,Math.round((ev.clientX-x0+gap)/(uw+gap))));
+    const h=Math.max(1,Math.min(rows-rez.row,Math.round((ev.clientY-y0+gap)/(uh+gap))));
+    if(w!==rez.w||h!==rez.h)tryResize(w,h);
   };
   const up=()=>{
-    h.removeEventListener('pointermove',move);
-    h.classList.remove('grabbing');
-    note.classList.remove('on');
-    sync(reduce?1:200);
+    grip.removeEventListener('pointermove',move);
+    grip.classList.remove('grabbing');
+    if(!rez)return;
+    const{w,h,snap}=rez;rez=null;
+    el.style.zIndex='';el.style.boxShadow='';
+    // a grow on a full board can cost a tile; the same heal the drop path runs
+    // gives it a route back once there is room again
+    heal(id);
+    sync(reduce?1:380);
+    const lost=CARDS.filter(c=>c.tier<=tierLimit()&&!grid.getTile(c.id)).length;
+    if(lost)flash(lost,snap);else showToast(`resized to ${w} × ${h}`,snap);
+    refreshReset();
   };
-  h.addEventListener('pointermove',move);
-  h.addEventListener('pointerup',up,{once:true});
-  h.addEventListener('pointercancel',up,{once:true});
-});
-handles.addEventListener('keydown',e=>{
-  const h=e.target.closest('.chandle');if(!h)return;
-  const i=+h.dataset.i;
-  if(e.key==='ArrowLeft'||e.key==='ArrowRight'){
-    e.preventDefault();
-    if(nudgeFr(i,e.key==='ArrowRight'?.08:-.08)){renderCells();sync(reduce?1:160);frReadout(i);
-      setTimeout(()=>note.classList.remove('on'),1400);}
+  grip.addEventListener('pointermove',move);
+  grip.addEventListener('pointerup',up,{once:true});
+  grip.addEventListener('pointercancel',up,{once:true});
+}
+/* Keyboard parity. The column handles this replaces were arrow-operable and that
+   must not regress — a resize gesture reachable only by pointer is not reachable. */
+function resizeKey(e,id){
+  const d={ArrowRight:[1,0],ArrowLeft:[-1,0],ArrowDown:[0,1],ArrowUp:[0,-1]}[e.key];
+  if(!d||!started||expandedId)return;
+  const t=grid.getTile(id);if(!t)return;
+  e.preventDefault();
+  const w=Math.max(1,Math.min(cols-t.col,t.w+d[0])),h=Math.max(1,Math.min(rows-t.row,t.h+d[1]));
+  if(w===t.w&&h===t.h)return;
+  const snap=grid.toJSON();
+  let ok=grid.resizeTile(id,{w,h});
+  if(!ok&&mode!=='griddle'&&mode!=='overlap'){
+    grid.loadJSON(snap);
+    const rr=reorderRepack(id,{col:t.col,row:t.row},{w,h});
+    if(rr){applyLayout(rr.placed);ok=true;}
   }
-});
-handles.addEventListener('dblclick',e=>{
-  const h=e.target.closest('.chandle');if(!h)return;
-  const i=+h.dataset.i, sum=colFr[i]+colFr[i+1];
-  colFr[i]=colFr[i+1]=sum/2;
-  renderCells();sync(reduce?1:220);
-});
+  if(!ok){grid.loadJSON(snap);return;}
+  heal(id);
+  sync(reduce?1:220);
+  const lost=CARDS.filter(c=>c.tier<=tierLimit()&&!grid.getTile(c.id)).length;
+  if(lost)flash(lost,snap);else showToast(`resized to ${w} × ${h}`,snap);
+  refreshReset();
+}
+
+/* ---- Overlap ----
+   Griddle's Grid refuses to hold two tiles on the same cell — every mutation is
+   validated and rolled back on collision. So free overlap cannot be done by
+   asking it nicely; it is done through the library's own escape hatch. A tile
+   whose `position` is not static/relative/sticky is OUT OF FLOW: isInFlow()
+   returns false for it, and both the overlap validator and tilesIn() skip it
+   entirely. Marking every tile `absolute` therefore turns collision off at the
+   source, using public API rather than reaching past it — the grid still clamps
+   to its own bounds, so tiles stretch anywhere inside it but never outside. */
+function setFlow(on){
+  for(const t of grid.tiles)grid.setTilePosition(t.id,on?'static':'absolute');
+}
+/* Leaving Overlap has to hand back a board Griddle will accept. Pack the tiles
+   into the first slot each one fits, in reading order of where the user left
+   them, so the arrangement they built is approximated rather than discarded. */
+function settleFromOverlap(){
+  const cur=grid.tiles.map(t=>({...t})).sort((a,b)=>a.row-b.row||a.col-b.col);
+  const pack=(list,authored)=>{
+    const placed=[],lost=[];
+    for(const t of list){
+      const c=CARDS.find(x=>x.id===t.id);
+      const w=Math.min(authored&&c?c.w:t.w,cols),h=Math.min(authored&&c?c.h:t.h,rows);
+      const pos=firstFit(placed,w,h);
+      if(pos)placed.push({id:t.id,col:pos.col,row:pos.row,w,h});else lost.push(t.id);
+    }
+    return{placed,lost};
+  };
+  /* Overlap has no contest for space, so tiles can be stretched until their
+     footprints sum to more than the board can hold, at which point no packing
+     exists at all. Three attempts, each strictly more likely to succeed than the
+     last: keep what the user built; then their authored sizes largest-first,
+     because first-fit in reading order cannot tile a board with zero slack; then
+     the seeded arrangement, which always fits because the page shipped with it.
+     Losing a tile silently is the one outcome not on the list. */
+  let r=pack(cur,false);
+  if(r.lost.length){
+    const area=t=>{const c=CARDS.find(x=>x.id===t.id);return c?c.w*c.h:t.w*t.h;};
+    r=pack([...cur].sort((a,b)=>area(b)-area(a)),true);
+  }
+  if(r.lost.length){seedGrid();return 0;}
+  applyLayout(r.placed);
+  return 0;
+}
+/* Most recently touched on top. The counter is renormalised well below the
+   dragged card (50), the preview (55) and the scrim (80), so stacking can never
+   climb into their layer however long someone plays with it. */
+let topZ=0;
+function raise(id){
+  const e=els.get(id);if(!e)return;
+  if(++topZ>30){
+    const byZ=CARDS.map(c=>els.get(c.id)).filter(Boolean)
+      .sort((x,y)=>(+x.el.style.zIndex||0)-(+y.el.style.zIndex||0));
+    topZ=0;for(const x of byZ)x.el.style.zIndex=String(++topZ);
+  }
+  e.el.style.zIndex=String(topZ);
+}
+function clearZ(){for(const c of CARDS){const e=els.get(c.id);if(e)e.el.style.zIndex='';}topZ=0;}
+/* Out-of-flow tiles are invisible to moveTile (it refuses them), so the move is
+   applied as a whole-board snapshot instead. loadJSON validates, and validation
+   skips out-of-flow tiles — which is exactly why this is allowed to overlap. */
+function overlapMove(id,to){
+  const snap=grid.toJSON();
+  snap.tiles=snap.tiles.map(t=>t.id===id?{...t,col:to.col,row:to.row}:t);
+  grid.loadJSON(snap);
+}
+
+function boardKey(){
+  return grid?grid.tiles.map(t=>`${t.id}:${t.col},${t.row},${t.w},${t.h}`).sort().join('|'):'';
+}
+function dirty(){
+  if(!started)return false;
+  return cols!==DEFAULTS.cols||rows!==DEFAULTS.rows||gap!==DEFAULTS.gap||
+         radius!==DEFAULTS.radius||mode!==DEFAULTS.mode||boardKey()!==seedKey;
+}
+function refreshReset(){resetBtn.disabled=!dirty();}
+function resetAll(){
+  if(!started)return;
+  /* Undo survives a reset only when the grid still has the same dimensions.
+     Restoring a 14-column board into a 12-column grid would put tiles outside
+     the board, so in that case the reset is deliberately final. */
+  const dimsSame=cols===DEFAULTS.cols&&rows===DEFAULTS.rows;
+  const was=dimsSame&&grid?grid.toJSON():null;
+  hideToast();
+  cols=DEFAULTS.cols;rows=DEFAULTS.rows;gap=DEFAULTS.gap;radius=DEFAULTS.radius;mode=DEFAULTS.mode;
+  document.getElementById('modeSel').value=mode;
+  root.style.setProperty('--card-radius',radius+'px');
+  document.getElementById('colsVal').textContent=cols;
+  document.getElementById('rowsVal').textContent=rows;
+  document.getElementById('gapVal').textContent=gap+'px';
+  document.getElementById('radVal').textContent=radius+'px';
+  seedGrid();
+  clearZ();
+  seedKey=boardKey();
+  renderCells();
+  sync(reduce?1:560,reduce?0:26);
+  btns();
+  showToast('reset to defaults',was);
+  refreshReset();
+}
+resetBtn.addEventListener('click',resetAll);
 
 function dragStart(e,id){
   if(!started||expandedId)return;
   const t=grid.getTile(id);if(!t)return;
   const el=els.get(id).el,r=cellRect(t.col,t.row,t.w,t.h);
   didDrag=false;
-  drag={id,t,sx:e.clientX,sy:e.clientY,ox:e.clientX-r.x,oy:e.clientY-r.y,to:{col:t.col,row:t.row}};
+  // `shown` is what the preview is currently painted at; `to` is where a release
+  // would land. They start out of step so the first frame always paints.
+  drag={id,t,sx:e.clientX,sy:e.clientY,ox:e.clientX-r.x,oy:e.clientY-r.y,
+        to:{col:t.col,row:t.row},shown:null};
   el.classList.add('dragging');el.style.setProperty('--dur','0ms');
   el.style.zIndex='50';el.style.boxShadow='var(--shadow-hi)';
   addEventListener('pointermove',dragMove);addEventListener('pointerup',dragEnd,{once:true});
 }
+/* Paint the cells a drop would claim, plus one outline around the whole
+   footprint. Rebuilt only on the frames where the target cell actually changes,
+   so this is a handful of writes per drag, not one per pointer event. */
+function showPreview(col,row,w,h){
+  if(col==null){preview.classList.remove('on');preview.innerHTML='';return;}
+  let s='';
+  for(let r=row;r<row+h;r++)for(let c=col;c<col+w;c++){
+    const q=cellRect(c,r,1,1);
+    s+=`<div class="pcell" style="left:${q.x}px;top:${q.y}px;width:${q.w}px;height:${q.h}px"></div>`;
+  }
+  const z=cellRect(col,row,w,h);
+  s+=`<div class="pzone" style="left:${z.x}px;top:${z.y}px;width:${z.w}px;height:${z.h}px"></div>`;
+  preview.innerHTML=s;
+  preview.classList.add('on');
+}
+/* Pointer events fire faster than the screen refreshes, so writing layout on
+   every one of them does the same work several times before anything is shown.
+   Coalesce into one write per frame: the card tracks the cursor exactly, and the
+   snapped preview is only touched on the frames where the target cell changes. */
+let dragRaf=0,dragPt=null;
 function dragMove(e){
   if(!drag)return;
   if(Math.abs(e.clientX-drag.sx)>3||Math.abs(e.clientY-drag.sy)>3)didDrag=true;
-  const x=e.clientX-drag.ox,y=e.clientY-drag.oy;
+  dragPt={x:e.clientX,y:e.clientY};
+  if(!dragRaf)dragRaf=requestAnimationFrame(dragFrame);
+}
+function dragFrame(){
+  dragRaf=0;
+  if(!drag||!dragPt)return;
+  const x=dragPt.x-drag.ox,y=dragPt.y-drag.oy;
   els.get(drag.id).el.style.transform=`translate(${x}px,${y}px)`;
   const{uw,uh,p}=unit();
-  // columns are no longer uniform, so snap to the nearest column offset
-  const xs=colOffsets(),rel=x-p.x-PAD;
-  let col=0,best=Infinity;
-  for(let i=0;i<=cols-drag.t.w;i++){const d=Math.abs(xs[i]-rel);if(d<best){best=d;col=i;}}
+  const col=Math.max(0,Math.min(cols-drag.t.w,Math.round((x-p.x-PAD)/(uw+gap))));
   const row=Math.max(0,Math.min(rows-drag.t.h,Math.round((y-p.y-PAD)/(uh+gap))));
-  drag.to={col,row};
-  const dr=cellRect(col,row,drag.t.w,drag.t.h);
-  dropzone.style.cssText=`left:${dr.x-p.x}px;top:${dr.y-p.y}px;width:${dr.w}px;height:${dr.h}px`;
-  dropzone.classList.add('on');
+  if(!drag.shown||col!==drag.shown.col||row!==drag.shown.row){
+    drag.to={col,row};drag.shown={col,row};
+    showPreview(col,row,drag.t.w,drag.t.h);
+  }
 }
 /* ---- reorder + repack ----
    The board is a reading order. A drop pins the dragged tile exactly where it was
@@ -575,19 +930,22 @@ function firstFit(placed,w,h){
   }
   return null;
 }
-function reorderRepack(id,to){
+function reorderRepack(id,to,size){
   const lim=tierLimit();
   const onBoard=new Map(grid.tiles.map(t=>[t.id,{...t}]));
   const me=onBoard.get(id);
   if(!me)return null;
-  const pinned={...me,col:to.col,row:to.row};
+  const pinned={...me,col:to.col,row:to.row,...(size||{})};
   if(pinned.col<0||pinned.row<0||pinned.col+pinned.w>cols||pinned.row+pinned.h>rows)return null;
   /* The roster is every card that belongs on the board at this size, not just the
      ones currently placed. Without that, an evicted tile is gone for good: the
-     headline is 15 cells and will never find a 5x3 hole again once it is off. */
+     headline is 15 cells and will never find a 5x3 hole again once it is off.
+     A tile ON the board keeps the size it currently has, not the size it was
+     authored at — otherwise the first repack after any resize silently undoes it.
+     Only a tile that is off the board comes back at its authored size. */
   const reading=CARDS.filter(c=>c.tier<=lim&&c.id!==id).map(c=>{
     const t=onBoard.get(c.id);
-    return{id:c.id,tier:c.tier,w:Math.min(c.w,cols),h:Math.min(c.h,rows),
+    return{id:c.id,tier:c.tier,w:Math.min(t?t.w:c.w,cols),h:Math.min(t?t.h:c.h,rows),
            row:t?t.row:Infinity,col:t?t.col:Infinity};
   }).sort((a,b)=>a.row-b.row||a.col-b.col||(a.id<b.id?-1:1));
   const pack=order=>{
@@ -623,24 +981,35 @@ function applyLayout(placed){
    board would keep drifting emptier. After any successful drop, if a card that
    belongs on the board is missing, repack the whole thing (pinning the tile the
    user just placed) to make room for it again. */
-function heal(){
+function heal(id){
   const lim=tierLimit();
   if(!CARDS.some(c=>c.tier<=lim&&!grid.getTile(c.id)))return;
-  const t=grid.getTile(drag.id);
+  const t=grid.getTile(id);
   if(!t)return;
-  const rr=reorderRepack(drag.id,{col:t.col,row:t.row});
+  const rr=reorderRepack(id,{col:t.col,row:t.row});
   if(rr)applyLayout(rr.placed);
 }
 
 function dragEnd(){
   if(!drag)return;
   removeEventListener('pointermove',dragMove);
-  dropzone.classList.remove('on');
+  if(dragRaf){cancelAnimationFrame(dragRaf);dragRaf=0;}
+  dragPt=null;
+  showPreview(null);
   const el=els.get(drag.id).el;
   el.classList.remove('dragging');el.style.zIndex='';el.style.boxShadow='';
-  if(mode==='stack'){
+  // captured before anything mutates, so Undo restores the whole board and not
+  // merely the dragged tile — a drop can move half a dozen windows
+  const wasBoard=grid.toJSON();
+  if(mode==='overlap'){
+    overlapMove(drag.id,drag.to);
+    showToast('landed · overlapping',wasBoard);
+  } else if(mode==='shove'){
+    // Griddle's moveTile: it shoves whatever is in the way, and refuses the drop
+    // when a neighbour has nowhere to go.
+    const wasAt=new Map(grid.tiles.map(t=>[t.id,t.col+','+t.row]));
     grid.moveTile(drag.id,drag.to);
-    el.style.zIndex='40';
+    flashMoved(grid.tiles.filter(t=>t.id!==drag.id&&wasAt.get(t.id)!==t.col+','+t.row).length,wasBoard);
   } else if(mode==='reflow'){
     // Same solver the desktop app uses: land the dragged window exactly where
     // it was aimed and move as few neighbours as possible to make room.
@@ -655,8 +1024,8 @@ function dragEnd(){
       const snap=grid.toJSON();
       snap.tiles=[...others.map(t=>{const m=moved.get(t.id);return m?{...t,col:m.col,row:m.row}:t;}),target];
       grid.loadJSON(snap);
-      flashMoved(res.movedCount);
-      heal();
+      flashMoved(res.movedCount,wasBoard);
+      heal(drag.id);
     } else {
       // No exact re-tiling exists — which on a fully packed board is the common
       // case, not the exception. Reflow instead, so the drop always lands.
@@ -664,8 +1033,8 @@ function dragEnd(){
       const rr=reorderRepack(drag.id,drag.to);
       if(rr){
         applyLayout(rr.placed);
-        flashMoved(rr.placed.filter(t=>t.id!==drag.id&&before.get(t.id)!==t.col+','+t.row).length);
-        flash(rr.evicted.filter(eid=>!grid.getTile(eid)).length);
+        flashMoved(rr.placed.filter(t=>t.id!==drag.id&&before.get(t.id)!==t.col+','+t.row).length,wasBoard);
+        flash(rr.evicted.filter(eid=>!grid.getTile(eid)).length,wasBoard);
       } else {
         grid.moveTile(drag.id,drag.to);
       }
@@ -682,15 +1051,13 @@ function dragEnd(){
     try{
       grid.reflow({strategy:'griddle-v1',cols});
     }catch(err){
-      note.textContent='griddle reflow declined';
-      note.classList.add('on');
-      clearTimeout(dragEnd._t);
-      dragEnd._t=setTimeout(()=>note.classList.remove('on'),2000);
+      showToast('griddle reflow declined',wasBoard);
     }
   } else {
     grid.moveTile(drag.id,drag.to);
   }
-  drag=null;sync(reduce?1:440);
+  if(mode==='overlap')raise(drag.id);
+  drag=null;sync(reduce?1:440);refreshReset();
   setTimeout(()=>{didDrag=false;},60);
 }
 function expand(id){
@@ -713,24 +1080,20 @@ function collapse(quiet){
   setTimeout(()=>{el.style.zIndex='';},470);
   if(!quiet)scrim.classList.remove('on');
 }
-function flashMoved(n){
-  note.textContent = n===0 ? 'landed · nothing moved'
-    : n===1 ? 'landed · 1 window moved' : `landed · ${n} windows moved`;
-  note.classList.add('on');clearTimeout(flashMoved._t);
-  flashMoved._t=setTimeout(()=>note.classList.remove('on'),2000);
+function flashMoved(n,snap){
+  showToast(n===0?'landed · nothing moved'
+    :n===1?'landed · 1 window moved':`landed · ${n} windows moved`,snap);
 }
-function flash(n){
+function flash(n,snap){
   if(!n)return;
-  note.textContent=n===1?'1 window did not fit':`${n} windows did not fit`;
-  note.classList.add('on');clearTimeout(flash._t);
-  flash._t=setTimeout(()=>note.classList.remove('on'),2600);
+  showToast(n===1?'1 window did not fit':`${n} windows did not fit`,snap);
 }
 function applyDims(nc,nr){
+  // a pending Undo holds a board sized for the OLD grid; restoring it into a
+  // resized one would put tiles outside the board. Retire it with the change.
+  hideToast();
   const snap=grid.tiles.map(t=>({...t}));
-  const prevFr=colFr;
   cols=nc;rows=nr;
-  // keep the ratios the user set for the columns that survive; new columns join at 1fr
-  colFr=Array.from({length:cols},(_,i)=>prevFr[i]!==undefined?prevFr[i]:1);
   const{uw,uh}=unit();
   grid=new Grid({cols,rows,unitWidth:Math.max(1,uw),unitHeight:Math.max(1,uh)});
   let dropped=0;
@@ -738,9 +1101,10 @@ function applyDims(nc,nr){
     const w=Math.min(t.w,cols),h=Math.min(t.h,rows);
     if(!grid.addTileWithDisplacement({id:t.id,col:Math.max(0,Math.min(t.col,cols-w)),row:Math.max(0,Math.min(t.row,rows-h)),w,h}))dropped++;
   }
+  if(mode==='overlap')setFlow(false);   // the rebuild above re-imposed flow
   document.getElementById('colsVal').textContent=cols;
   document.getElementById('rowsVal').textContent=rows;
-  renderCells();sync(reduce?1:520);flash(dropped);btns();
+  renderCells();sync(reduce?1:520);flash(dropped);btns();refreshReset();
 }
 function btns(){
   document.getElementById('colsDec').disabled=cols<=4;
@@ -756,14 +1120,24 @@ document.getElementById('colsInc').onclick=()=>applyDims(Math.min(20,cols+1),row
 document.getElementById('colsDec').onclick=()=>applyDims(Math.max(4,cols-1),rows);
 document.getElementById('rowsInc').onclick=()=>applyDims(cols,Math.min(10,rows+1));
 document.getElementById('rowsDec').onclick=()=>applyDims(cols,Math.max(3,rows-1));
-function setGap(v){gap=v;document.getElementById('gapVal').textContent=gap+'px';renderCells();sync(reduce?1:380);btns();}
+function setGap(v){gap=v;document.getElementById('gapVal').textContent=gap+'px';renderCells();sync(reduce?1:380);btns();refreshReset();}
 document.getElementById('gapInc').onclick=()=>setGap(Math.min(28,gap+2));
 document.getElementById('gapDec').onclick=()=>setGap(Math.max(0,gap-2));
 function setRadius(v){radius=v;root.style.setProperty('--card-radius',radius+'px');
-  document.getElementById('radVal').textContent=radius+'px';btns();}
+  document.getElementById('radVal').textContent=radius+'px';btns();refreshReset();}
 document.getElementById('radInc').onclick=()=>setRadius(Math.min(22,radius+2));
 document.getElementById('radDec').onclick=()=>setRadius(Math.max(0,radius-2));
-document.getElementById('modeSel').onchange=e=>{mode=e.target.value;};
+document.getElementById('modeSel').onchange=e=>{
+  const was=mode;mode=e.target.value;
+  if(started&&was!==mode){
+    if(mode==='overlap'){setFlow(false);clearZ();}
+    else if(was==='overlap'){
+      const lost=settleFromOverlap();setFlow(true);clearZ();sync(reduce?1:460);
+      if(lost)flash(lost);
+    }
+  }
+  refreshReset();
+};
 document.getElementById('themeBtn').onclick=()=>{
   const cur=root.getAttribute('data-theme');
   const sys=matchMedia('(prefers-color-scheme:dark)').matches;
@@ -777,7 +1151,7 @@ addEventListener('keydown',e=>{
 hint.addEventListener('click',start);
 stage.addEventListener('click',e=>{if(!started&&!e.target.closest('a,button'))start();});
 let rt;addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(()=>{
-  if(!started){renderCells();layoutHero();return;}
+  if(!started){renderCells();layoutHeroSettled();return;}
   renderCells();
   if(expandedId){const W=innerWidth,H=innerHeight,w=Math.min(600,W-56),h=Math.min(400,H-120);
     place(expandedId,{x:(W-w)/2,y:(H-h)/2,w,h},1);}
@@ -787,8 +1161,12 @@ let rt;addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(()=>{
 root.dataset.phase='hero';
 build();
 renderCells();   // the intro floats over a real, empty grid — so it must exist first
-requestAnimationFrame(()=>{layoutHero();
-  requestAnimationFrame(()=>{for(const[,e]of els)e.el.style.removeProperty('--dur');});});
+requestAnimationFrame(()=>layoutHeroSettled(()=>{
+  // settled: raise the curtain, THEN hand the cards back their real durations.
+  // Restoring --dur any earlier is what let a provisional position animate.
+  root.classList.add('ready');
+  requestAnimationFrame(()=>{for(const[,e]of els)e.el.style.removeProperty('--dur');});
+}));
 btns();
 const hold=new URLSearchParams(location.search).has('hold');
 if(reduce)start();else if(!hold)setTimeout(()=>{if(!started)start();},2400);
