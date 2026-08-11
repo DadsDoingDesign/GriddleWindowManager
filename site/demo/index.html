@@ -57,6 +57,16 @@ body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--text);
    what it says. */
 .stage{position:absolute;inset:0;overflow:hidden}
 
+/* THE CURTAIN. Laying the hero out takes two passes — a provisional box, then
+   the real one measured from rendered text — and both used to be on screen. The
+   page painted ten unpositioned cards stacked at the origin at full opacity for
+   ~125ms, then snapped the description into place, then threw it back to its
+   provisional box and crawled it 400px down THROUGH the headline over a second.
+   Measuring under opacity:0 keeps every measurement valid (unlike display:none)
+   while showing none of it. Nothing is revealed until the layout has settled. */
+html:not(.ready) .stage,html:not(.ready) .gridwrap,html:not(.ready) .hint{opacity:0}
+.stage{transition:opacity 520ms ease}
+
 /* ============================================================
    ONE component per card. Content is authored once, for the GRID.
    The hero is the same nodes with different geometry and type
@@ -65,8 +75,10 @@ body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--text);
 .card{position:absolute;left:0;top:0;border-radius:var(--card-radius);overflow:hidden;
   display:flex;flex-direction:column;background:var(--surface);
   border:1px solid transparent;will-change:transform,width,height;
-  transition:transform var(--dur) var(--ease),width var(--dur) var(--ease),
-    height var(--dur) var(--ease),opacity 380ms ease,
+  transition:transform var(--dur) var(--ease) var(--delay,0ms),
+    width var(--dur) var(--ease) var(--delay,0ms),
+    height var(--dur) var(--ease) var(--delay,0ms),
+    opacity 420ms ease var(--delay,0ms),
     background 620ms ease,border-color 620ms ease,box-shadow 620ms ease}
 .card.parked{opacity:0;pointer-events:none}
 
@@ -97,7 +109,7 @@ body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--text);
 
 /* padding tracks viewport height so single-row tiles never crop their text */
 .content{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;
-  gap:clamp(4px,.8vh,8px);padding:clamp(6px,1.3vh,14px) clamp(10px,1.1vw,14px);
+  gap:clamp(4px,.8vh,8px);padding:clamp(12px,2.6vh,28px) clamp(20px,2.2vw,28px);
   overflow:hidden;transition:padding var(--dur) var(--ease)}
 [data-phase="hero"] .card.inhero .content{padding:0;align-items:center;text-align:center;gap:0}
 /* The intro group is centred as a whole, not hung off a centred headline, so the
@@ -263,6 +275,18 @@ body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--text);
 .step .val{min-width:20px;text-align:center;font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums;font-weight:600}
 select.mode{font-family:var(--text);font-size:12px;background:var(--surface-2);color:var(--ink);
   border:1px solid var(--line);border-radius:6px;padding:3px 6px;cursor:pointer}
+/* Reset is disabled until something has actually diverged from the seeded page,
+   so it reads as "there is nothing to undo here" rather than as a live control
+   that happens to do nothing. It is always present, never conditionally shown —
+   a control that appears and disappears would resize the bar, which is the very
+   thing the toast was moved out of the bar to avoid. */
+.resetbtn{font-family:var(--text);font-size:12px;font-weight:600;color:var(--ink);
+  background:var(--surface-2);border:1px solid var(--line);border-radius:6px;
+  padding:4px 11px;cursor:pointer;line-height:1.4;
+  transition:opacity 200ms ease,border-color 160ms ease,color 160ms ease}
+.resetbtn:hover:not(:disabled){border-color:var(--accent-line);background:var(--accent-soft);color:var(--accent)}
+.resetbtn:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.resetbtn:disabled{opacity:.34;cursor:default}
 /* Status lives ABOVE the control bar, never inside it. As a child of .controls
    this animated its own max-width, so every message widened the bar and shifted
    every button under the user's cursor — then shifted them back on the way out.
@@ -329,10 +353,10 @@ select.mode{font-family:var(--text);font-size:12px;background:var(--surface-2);c
 <div class="controls" id="controls" role="group" aria-label="Grid controls">
   <div class="ctl tier-0"><label>Grid responsiveness</label>
     <select class="mode" id="modeSel" aria-label="Grid responsiveness">
-      <option value="reflow" selected>Reorganize · reflow</option>
-      <option value="griddle">Griddle · library default</option>
-      <option value="push">Push · displace neighbours</option>
-      <option value="stack">Overlap · windows stack</option>
+      <option value="reflow" selected>Reorganize</option>
+      <option value="griddle">Griddle default</option>
+      <option value="shove">Tile shoving</option>
+      <option value="overlap">Overlap</option>
     </select></div>
   <div class="ctl tier-0"><label>Columns</label><div class="step">
     <button id="colsDec" aria-label="Fewer columns">−</button><span class="val" id="colsVal">12</span>
@@ -346,6 +370,7 @@ select.mode{font-family:var(--text);font-size:12px;background:var(--surface-2);c
   <div class="ctl tier-3"><label>Corners</label><div class="step">
     <button id="radDec" aria-label="Squarer corners">−</button><span class="val" id="radVal">10px</span>
     <button id="radInc" aria-label="Rounder corners">+</button></div></div>
+  <div class="ctl tier-0"><button class="resetbtn" id="resetBtn" type="button" disabled>Reset</button></div>
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite">
@@ -389,12 +414,12 @@ const CARDS=[
     detail:'<p class="dbody">Version 0.2.0, 3.1 MB, x64. Installs <b>per-user</b> — no administrator rights needed.</p><p class="dbody">The installer is not code-signed, so SmartScreen warns once: choose <b>More info → Run anyway</b>. That means Windows does not recognise the publisher, not that anything is wrong.</p>' },
   { id:'modes', app:'Placement', tier:1, w:4, h:3, accent:'#4A9EDB',
     html:'<div class="feat">'
-      +'<div class="frow"><span class="fkey">Reflow</span><span class="fval">the window lands <b>exactly</b> where you aimed, and the others reorganise around it — as few of them moving as possible</span></div>'
-      +'<div class="frow"><span class="fkey">Push</span><span class="fval">neighbours are shoved aside one shove at a time, and equal-size windows swap</span></div>'
-      +'<div class="frow"><span class="fkey">Stack</span><span class="fval">windows still snap to cells, but may overlap freely</span></div>'
+      +'<div class="frow"><span class="fkey">Reorganize</span><span class="fval">the window lands <b>exactly</b> where you aimed, and the others reorganise around it — as few of them moving as possible</span></div>'
+      +'<div class="frow"><span class="fkey">Shoving</span><span class="fval">neighbours are shoved aside one shove at a time, and equal-size windows swap</span></div>'
+      +'<div class="frow"><span class="fkey">Overlap</span><span class="fval">windows stop contesting space entirely and lie over one another, most recent on top</span></div>'
       +'</div>',
-    title:'Three placement modes',
-    detail:'<p class="dbody">Every grid decides for itself what happens when you drop a window on cells someone else is already using.</p><p class="dbody"><b>Reflow</b> lands the window exactly where you aimed and reorganises the rest, moving as few as it can. Where no arrangement exists it falls back to Push, so Reflow is never worse than Push. <b>Push</b> shoves neighbours aside, and refuses the drop when one has nowhere to go. <b>Stack</b> lets windows overlap, most recently touched on top.</p><p class="dbody">The selector at the bottom of this page drives those same three modes — on this grid, right now.</p>' },
+    title:'Placement modes',
+    detail:'<p class="dbody">Every grid decides for itself what happens when you drop a window on cells someone else is already using.</p><p class="dbody"><b>Reorganize</b> lands the window exactly where you aimed and reorganises the rest, moving as few as it can. <b>Tile shoving</b> shoves neighbours aside one shove at a time, and refuses the drop when one has nowhere to go. <b>Overlap</b> drops the contest for space altogether — tiles lie over each other, stretch anywhere in the grid, and the one you touched last comes to the top.</p><p class="dbody">The selector at the bottom of this page drives all of them on this grid, right now — including <b>Griddle default</b>, which hands the decision to the layout library unaided.</p>' },
   { id:'views',  app:'Views',  tier:1, w:4, h:2, accent:'#A259FF',
     html:'<div class="feat">'
       +'<div class="frow"><span class="fkey">Save</span><span class="fval">every grid, its spacing, and which program sits where</span></div>'
@@ -435,12 +460,18 @@ const solveMinimalMoves=GriddleLib.solveMinimalMoves;
 let cols=12,rows=6,gap=10,radius=10,mode='reflow';
 const PAD=24;
 let grid=null,expandedId=null,started=false,didDrag=false,drag=null,rez=null,undoSnap=null;
+/* Reset compares against the page as it first arranged itself, not against a
+   hardcoded board — the seed depends on viewport tier, so the only honest
+   baseline is the one this visitor actually got. */
+const DEFAULTS={cols:12,rows:6,gap:10,radius:10,mode:'reflow'};
+let seedKey='';
 const els=new Map();
 const stage=document.getElementById('stage'),gridwrap=document.getElementById('gridwrap'),
       cellsEl=document.getElementById('cells'),preview=document.getElementById('preview'),
       controls=document.getElementById('controls'),scrim=document.getElementById('scrim'),
       hint=document.getElementById('hint'),toast=document.getElementById('toast'),
-      toastMsg=document.getElementById('toastMsg'),toastUndo=document.getElementById('toastUndo');
+      toastMsg=document.getElementById('toastMsg'),toastUndo=document.getElementById('toastUndo'),
+      resetBtn=document.getElementById('resetBtn');
 
 function panelRect(){const w=innerWidth,h=innerHeight,mx=Math.max(16,Math.min(64,w*.045));
   const top=68,bot=Math.min(86,h*.11);return{x:mx,y:top,w:w-mx*2,h:h-top-bot};}
@@ -482,6 +513,7 @@ function build(){
     el.addEventListener('click',e=>{
       if(e.target.closest('.closebtn')){collapse();return;}
       // the grip lives inside the card, so its click would otherwise expand it
+      if(mode==='overlap')raise(c.id);
       if(!started||didDrag||e.target.closest('a,.rhandle'))return;
       if(expandedId!==c.id)expand(c.id);
     });
@@ -533,7 +565,13 @@ function layoutHero(){
     place('foss',{x:ix+32,y:iy+30+top,w:inner,h:EB},0);
     place('dek',{x:ix+(iw-dekW)/2,y:iy+30+top+EB+G1+hh+G2,w:dekW,h:dh},0);
   };
-  put();requestAnimationFrame(put);
+  put();
+}
+/* Two passes, because pass one measures text that pass one itself just sized.
+   Both run behind the curtain, so neither is ever seen. */
+function layoutHeroSettled(done){
+  layoutHero();
+  requestAnimationFrame(()=>{layoutHero();if(done)done();});
 }
 function seedGrid(){
   const{uw,uh}=unit();
@@ -555,25 +593,37 @@ function renderCells(){
   cellsEl.innerHTML=s;
   if(drag)drag.shown=null;   // geometry moved; force the next frame to repaint
 }
-function sync(d){
+/* `step` staggers the tiles by reading order, so an arrangement assembles as a
+   wave rather than lurching into place all at once. Every other caller passes
+   nothing and gets zero delay — the stagger is for the one moment that earns it,
+   the hero handing over to the grid. The delay is rewritten on every sync, so it
+   can never leak into the next drag. */
+function sync(d,step){
   const seen=new Set();
-  for(const t of grid.tiles){
+  const order=[...grid.tiles].sort((a,b)=>a.row-b.row||a.col-b.col);
+  order.forEach((t,i)=>{
     seen.add(t.id);
-    const e=els.get(t.id);if(!e)continue;
+    const e=els.get(t.id);if(!e)return;
     e.el.classList.remove('parked');
+    e.el.style.setProperty('--delay',(step?i*step:0)+'ms');
     if(expandedId!==t.id)place(t.id,cellRect(t.col,t.row,t.w,t.h),d);
+  });
+  // a parked tile never reaches the loop above, so without this it keeps whatever
+  // delay it last carried and drags in late when it returns to the board
+  for(const c of CARDS)if(!seen.has(c.id)){
+    const e=els.get(c.id);e.el.classList.add('parked');e.el.style.setProperty('--delay','0ms');
   }
-  for(const c of CARDS)if(!seen.has(c.id))els.get(c.id).el.classList.add('parked');
 }
 function start(){
   if(started)return;started=true;
   hint.classList.add('gone');
   seedGrid();renderCells();
+  seedKey=boardKey();
   root.dataset.phase='grid';
-  sync(reduce?1:820);
+  sync(reduce?1:820,reduce?0:38);
   /* the panel and the resize grips are tools for a grid that exists — they wait
      until the arrangement has fully landed (--dur is 820ms) */
-  setTimeout(()=>{controls.classList.add('on');root.classList.add('tools-on');},reduce?10:900);
+  setTimeout(()=>{controls.classList.add('on');root.classList.add('tools-on');refreshReset();},reduce?10:1180);
 }
 
 /* ---- tile resize (Griddle's resizeTile, snapped to whole cells) ----
@@ -611,6 +661,7 @@ toastUndo.addEventListener('click',()=>{
   grid.loadJSON(snap);
   sync(reduce?1:380);
   showToast('reverted');
+  refreshReset();
 });
 /* Candidate sizes are always evaluated against the board as it stood when the
    drag began, never against the previous frame's result. Griddle's resize pushes
@@ -630,7 +681,7 @@ function tryResize(w,h){
      position. In 'griddle' mode do NOT — that mode exists to show the library's
      unaided answer, and quietly rescuing a refusal is the one thing that would
      make it a lie. */
-  if(!ok&&mode!=='griddle'){
+  if(!ok&&mode!=='griddle'&&mode!=='overlap'){
     grid.loadJSON(rez.snap);
     const rr=reorderRepack(rez.id,{col:rez.col,row:rez.row},{w,h});
     if(rr){applyLayout(rr.placed);ok=true;}
@@ -677,6 +728,7 @@ function resizeStart(e,id){
     sync(reduce?1:380);
     const lost=CARDS.filter(c=>c.tier<=tierLimit()&&!grid.getTile(c.id)).length;
     if(lost)flash(lost,snap);else showToast(`resized to ${w} × ${h}`,snap);
+    refreshReset();
   };
   grip.addEventListener('pointermove',move);
   grip.addEventListener('pointerup',up,{once:true});
@@ -693,7 +745,7 @@ function resizeKey(e,id){
   if(w===t.w&&h===t.h)return;
   const snap=grid.toJSON();
   let ok=grid.resizeTile(id,{w,h});
-  if(!ok&&mode!=='griddle'){
+  if(!ok&&mode!=='griddle'&&mode!=='overlap'){
     grid.loadJSON(snap);
     const rr=reorderRepack(id,{col:t.col,row:t.row},{w,h});
     if(rr){applyLayout(rr.placed);ok=true;}
@@ -703,7 +755,109 @@ function resizeKey(e,id){
   sync(reduce?1:220);
   const lost=CARDS.filter(c=>c.tier<=tierLimit()&&!grid.getTile(c.id)).length;
   if(lost)flash(lost,snap);else showToast(`resized to ${w} × ${h}`,snap);
+  refreshReset();
 }
+
+/* ---- Overlap ----
+   Griddle's Grid refuses to hold two tiles on the same cell — every mutation is
+   validated and rolled back on collision. So free overlap cannot be done by
+   asking it nicely; it is done through the library's own escape hatch. A tile
+   whose `position` is not static/relative/sticky is OUT OF FLOW: isInFlow()
+   returns false for it, and both the overlap validator and tilesIn() skip it
+   entirely. Marking every tile `absolute` therefore turns collision off at the
+   source, using public API rather than reaching past it — the grid still clamps
+   to its own bounds, so tiles stretch anywhere inside it but never outside. */
+function setFlow(on){
+  for(const t of grid.tiles)grid.setTilePosition(t.id,on?'static':'absolute');
+}
+/* Leaving Overlap has to hand back a board Griddle will accept. Pack the tiles
+   into the first slot each one fits, in reading order of where the user left
+   them, so the arrangement they built is approximated rather than discarded. */
+function settleFromOverlap(){
+  const cur=grid.tiles.map(t=>({...t})).sort((a,b)=>a.row-b.row||a.col-b.col);
+  const pack=(list,authored)=>{
+    const placed=[],lost=[];
+    for(const t of list){
+      const c=CARDS.find(x=>x.id===t.id);
+      const w=Math.min(authored&&c?c.w:t.w,cols),h=Math.min(authored&&c?c.h:t.h,rows);
+      const pos=firstFit(placed,w,h);
+      if(pos)placed.push({id:t.id,col:pos.col,row:pos.row,w,h});else lost.push(t.id);
+    }
+    return{placed,lost};
+  };
+  /* Overlap has no contest for space, so tiles can be stretched until their
+     footprints sum to more than the board can hold, at which point no packing
+     exists at all. Three attempts, each strictly more likely to succeed than the
+     last: keep what the user built; then their authored sizes largest-first,
+     because first-fit in reading order cannot tile a board with zero slack; then
+     the seeded arrangement, which always fits because the page shipped with it.
+     Losing a tile silently is the one outcome not on the list. */
+  let r=pack(cur,false);
+  if(r.lost.length){
+    const area=t=>{const c=CARDS.find(x=>x.id===t.id);return c?c.w*c.h:t.w*t.h;};
+    r=pack([...cur].sort((a,b)=>area(b)-area(a)),true);
+  }
+  if(r.lost.length){seedGrid();return 0;}
+  applyLayout(r.placed);
+  return 0;
+}
+/* Most recently touched on top. The counter is renormalised well below the
+   dragged card (50), the preview (55) and the scrim (80), so stacking can never
+   climb into their layer however long someone plays with it. */
+let topZ=0;
+function raise(id){
+  const e=els.get(id);if(!e)return;
+  if(++topZ>30){
+    const byZ=CARDS.map(c=>els.get(c.id)).filter(Boolean)
+      .sort((x,y)=>(+x.el.style.zIndex||0)-(+y.el.style.zIndex||0));
+    topZ=0;for(const x of byZ)x.el.style.zIndex=String(++topZ);
+  }
+  e.el.style.zIndex=String(topZ);
+}
+function clearZ(){for(const c of CARDS){const e=els.get(c.id);if(e)e.el.style.zIndex='';}topZ=0;}
+/* Out-of-flow tiles are invisible to moveTile (it refuses them), so the move is
+   applied as a whole-board snapshot instead. loadJSON validates, and validation
+   skips out-of-flow tiles — which is exactly why this is allowed to overlap. */
+function overlapMove(id,to){
+  const snap=grid.toJSON();
+  snap.tiles=snap.tiles.map(t=>t.id===id?{...t,col:to.col,row:to.row}:t);
+  grid.loadJSON(snap);
+}
+
+function boardKey(){
+  return grid?grid.tiles.map(t=>`${t.id}:${t.col},${t.row},${t.w},${t.h}`).sort().join('|'):'';
+}
+function dirty(){
+  if(!started)return false;
+  return cols!==DEFAULTS.cols||rows!==DEFAULTS.rows||gap!==DEFAULTS.gap||
+         radius!==DEFAULTS.radius||mode!==DEFAULTS.mode||boardKey()!==seedKey;
+}
+function refreshReset(){resetBtn.disabled=!dirty();}
+function resetAll(){
+  if(!started)return;
+  /* Undo survives a reset only when the grid still has the same dimensions.
+     Restoring a 14-column board into a 12-column grid would put tiles outside
+     the board, so in that case the reset is deliberately final. */
+  const dimsSame=cols===DEFAULTS.cols&&rows===DEFAULTS.rows;
+  const was=dimsSame&&grid?grid.toJSON():null;
+  hideToast();
+  cols=DEFAULTS.cols;rows=DEFAULTS.rows;gap=DEFAULTS.gap;radius=DEFAULTS.radius;mode=DEFAULTS.mode;
+  document.getElementById('modeSel').value=mode;
+  root.style.setProperty('--card-radius',radius+'px');
+  document.getElementById('colsVal').textContent=cols;
+  document.getElementById('rowsVal').textContent=rows;
+  document.getElementById('gapVal').textContent=gap+'px';
+  document.getElementById('radVal').textContent=radius+'px';
+  seedGrid();
+  clearZ();
+  seedKey=boardKey();
+  renderCells();
+  sync(reduce?1:560,reduce?0:26);
+  btns();
+  showToast('reset to defaults',was);
+  refreshReset();
+}
+resetBtn.addEventListener('click',resetAll);
 
 function dragStart(e,id){
   if(!started||expandedId)return;
@@ -844,10 +998,15 @@ function dragEnd(){
   // captured before anything mutates, so Undo restores the whole board and not
   // merely the dragged tile — a drop can move half a dozen windows
   const wasBoard=grid.toJSON();
-  if(mode==='stack'){
+  if(mode==='overlap'){
+    overlapMove(drag.id,drag.to);
+    showToast('landed · overlapping',wasBoard);
+  } else if(mode==='shove'){
+    // Griddle's moveTile: it shoves whatever is in the way, and refuses the drop
+    // when a neighbour has nowhere to go.
+    const wasAt=new Map(grid.tiles.map(t=>[t.id,t.col+','+t.row]));
     grid.moveTile(drag.id,drag.to);
-    el.style.zIndex='40';
-    showToast('landed · stacked',wasBoard);
+    flashMoved(grid.tiles.filter(t=>t.id!==drag.id&&wasAt.get(t.id)!==t.col+','+t.row).length,wasBoard);
   } else if(mode==='reflow'){
     // Same solver the desktop app uses: land the dragged window exactly where
     // it was aimed and move as few neighbours as possible to make room.
@@ -892,12 +1051,10 @@ function dragEnd(){
       showToast('griddle reflow declined',wasBoard);
     }
   } else {
-    // push: Griddle's own displacement, no repack layered on top
-    const wasAt=new Map(grid.tiles.map(t=>[t.id,t.col+','+t.row]));
     grid.moveTile(drag.id,drag.to);
-    flashMoved(grid.tiles.filter(t=>t.id!==drag.id&&wasAt.get(t.id)!==t.col+','+t.row).length,wasBoard);
   }
-  drag=null;sync(reduce?1:440);
+  if(mode==='overlap')raise(drag.id);
+  drag=null;sync(reduce?1:440);refreshReset();
   setTimeout(()=>{didDrag=false;},60);
 }
 function expand(id){
@@ -941,9 +1098,10 @@ function applyDims(nc,nr){
     const w=Math.min(t.w,cols),h=Math.min(t.h,rows);
     if(!grid.addTileWithDisplacement({id:t.id,col:Math.max(0,Math.min(t.col,cols-w)),row:Math.max(0,Math.min(t.row,rows-h)),w,h}))dropped++;
   }
+  if(mode==='overlap')setFlow(false);   // the rebuild above re-imposed flow
   document.getElementById('colsVal').textContent=cols;
   document.getElementById('rowsVal').textContent=rows;
-  renderCells();sync(reduce?1:520);flash(dropped);btns();
+  renderCells();sync(reduce?1:520);flash(dropped);btns();refreshReset();
 }
 function btns(){
   document.getElementById('colsDec').disabled=cols<=4;
@@ -959,14 +1117,24 @@ document.getElementById('colsInc').onclick=()=>applyDims(Math.min(20,cols+1),row
 document.getElementById('colsDec').onclick=()=>applyDims(Math.max(4,cols-1),rows);
 document.getElementById('rowsInc').onclick=()=>applyDims(cols,Math.min(10,rows+1));
 document.getElementById('rowsDec').onclick=()=>applyDims(cols,Math.max(3,rows-1));
-function setGap(v){gap=v;document.getElementById('gapVal').textContent=gap+'px';renderCells();sync(reduce?1:380);btns();}
+function setGap(v){gap=v;document.getElementById('gapVal').textContent=gap+'px';renderCells();sync(reduce?1:380);btns();refreshReset();}
 document.getElementById('gapInc').onclick=()=>setGap(Math.min(28,gap+2));
 document.getElementById('gapDec').onclick=()=>setGap(Math.max(0,gap-2));
 function setRadius(v){radius=v;root.style.setProperty('--card-radius',radius+'px');
-  document.getElementById('radVal').textContent=radius+'px';btns();}
+  document.getElementById('radVal').textContent=radius+'px';btns();refreshReset();}
 document.getElementById('radInc').onclick=()=>setRadius(Math.min(22,radius+2));
 document.getElementById('radDec').onclick=()=>setRadius(Math.max(0,radius-2));
-document.getElementById('modeSel').onchange=e=>{mode=e.target.value;};
+document.getElementById('modeSel').onchange=e=>{
+  const was=mode;mode=e.target.value;
+  if(started&&was!==mode){
+    if(mode==='overlap'){setFlow(false);clearZ();}
+    else if(was==='overlap'){
+      const lost=settleFromOverlap();setFlow(true);clearZ();sync(reduce?1:460);
+      if(lost)flash(lost);
+    }
+  }
+  refreshReset();
+};
 document.getElementById('themeBtn').onclick=()=>{
   const cur=root.getAttribute('data-theme');
   const sys=matchMedia('(prefers-color-scheme:dark)').matches;
@@ -980,7 +1148,7 @@ addEventListener('keydown',e=>{
 hint.addEventListener('click',start);
 stage.addEventListener('click',e=>{if(!started&&!e.target.closest('a,button'))start();});
 let rt;addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(()=>{
-  if(!started){renderCells();layoutHero();return;}
+  if(!started){renderCells();layoutHeroSettled();return;}
   renderCells();
   if(expandedId){const W=innerWidth,H=innerHeight,w=Math.min(600,W-56),h=Math.min(400,H-120);
     place(expandedId,{x:(W-w)/2,y:(H-h)/2,w,h},1);}
@@ -990,8 +1158,12 @@ let rt;addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(()=>{
 root.dataset.phase='hero';
 build();
 renderCells();   // the intro floats over a real, empty grid — so it must exist first
-requestAnimationFrame(()=>{layoutHero();
-  requestAnimationFrame(()=>{for(const[,e]of els)e.el.style.removeProperty('--dur');});});
+requestAnimationFrame(()=>layoutHeroSettled(()=>{
+  // settled: raise the curtain, THEN hand the cards back their real durations.
+  // Restoring --dur any earlier is what let a provisional position animate.
+  root.classList.add('ready');
+  requestAnimationFrame(()=>{for(const[,e]of els)e.el.style.removeProperty('--dur');});
+}));
 btns();
 const hold=new URLSearchParams(location.search).has('hold');
 if(reduce)start();else if(!hold)setTimeout(()=>{if(!started)start();},2400);
