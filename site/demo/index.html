@@ -1,4 +1,11 @@
 <title>Griddle Window Manager</title>
+<!-- Without this, a phone lays the page out at ~980px and scales the result down
+     to fit the screen. Everything mobile-specific here was therefore dead:
+     `max-width:760px` never matched, so the touch sizes and the 4x8 board never
+     fired, and the 44px targets that DID apply via `pointer:coarse` were being
+     shrunk to about 17 physical px on a 390px phone. One tag; it is the
+     precondition for every other mobile fix on this page. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 150 150'><style>*{fill:%230B0B12}@media(prefers-color-scheme:dark){*{fill:%23F3F3F7}}</style><path d='M8 0H103A8 8 0 0 1 111 8V25A8 8 0 0 1 103 33H37A4 4 0 0 0 33 37V113A4 4 0 0 0 37 117H64A8 8 0 0 1 72 125V142A8 8 0 0 1 64 150H8A8 8 0 0 1 0 142V8A8 8 0 0 1 8 0Z'/><rect x='78' y='78' width='72' height='72' rx='8'/></svg>">
 <style>
 :root{
@@ -644,48 +651,65 @@ select.mode{font-family:var(--text);font-size:12px;background:var(--surface-2);c
   .tgal{display:none}
 }
 
-/* ---- the control bar on touch ----
-   Every target in the bar was sized for a mouse: 22px steppers, 20px pager
-   arrows, a 3px-padded select. The guidance floor for a finger is 44px, and
-   missing a 22px button on a phone is the difference between changing a setting
-   and expanding a tile by accident.
-   Everything grows to ~44px, and the bar is allowed to WRAP — at 390px there is
-   no arrangement where tabs, a control, the pager and Reset fit on one line at
-   finger size, and wrapping to a second row is far better than shrinking back
-   below the floor or hiding a control. */
+/* the pill: live state on the left, a chevron on the right */
+.sheetbtn{display:none;align-items:center;justify-content:space-between;gap:12px;
+  min-height:56px;padding:0 16px;border:0;background:none;cursor:pointer;
+  font:inherit;color:var(--ink);border-radius:13px;width:100%}
+.sheetbtn:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.sheetstate{font-family:var(--text);font-size:14.5px;font-weight:600;letter-spacing:-.01em}
+.sheetchev{font-size:15px;color:var(--faint);line-height:1;transition:transform 260ms var(--ease-out)}
+
+/* ---- mobile: the bar becomes a bottom sheet ----
+   Wrapping the desktop bar to fit 44px targets produced a 233px blob on an
+   812px screen — 29% of the display — showing exactly ONE setting at a time
+   behind a 1/4 pager, sitting on top of the board it controls. Eleven controls'
+   worth of chrome to expose one setting, on the page whose entire job is
+   watching the board react.
+   So on a phone the bar is not a bar. At rest it is a 56px pill that reads the
+   live state, which earns its space even closed, and the board keeps 93% of the
+   screen. Tapping it raises every setting at once — no tabs, no pager, nothing
+   hidden — as full-width rows with the label on the left and the control on the
+   right, which is the one layout where a 44px target costs no horizontal room
+   at all. The board stays visible above it and keeps reacting while you adjust,
+   which a full-screen settings page would have broken. */
 @media (pointer:coarse),(max-width:760px){
-  .controls{bottom:12px;gap:6px;padding:8px;border-radius:15px;
-    flex-wrap:wrap;justify-content:center;max-width:calc(100vw - 20px)}
-  .tabs{margin-right:0;padding:3px;order:1}
-  .tabs::after{display:none}          /* the wrap already separates the groups */
-  .tab{padding:0 16px;min-height:44px;display:flex;align-items:center;
-    font-size:13.5px;border-radius:9px}
-  /* TWO rows, not three. Left to itself the flex order (tabs, panes, pager,
-     reset) puts the pane on its own line and strands the pager and Reset on a
-     third — a control bar three rows tall on a phone is most of the screen.
-     Reorder so the two group-level controls share row one and everything that
-     acts on the selected group shares row two, with a zero-height full-width
-     item forcing the break exactly where we want it. */
-  .ctl.reset{order:2}
-  .controls::after{content:'';flex-basis:100%;height:0;order:3}
-  .panes{order:4;flex:0 1 auto;justify-content:center}
-  .pager{order:5}
-  .ctl{gap:9px;padding:2px 6px}
-  .ctl+.ctl{border-left:0}
-  .ctl label{font-size:10.5px}
-  .step{gap:3px}
+  .controls{left:50%;bottom:10px;flex-direction:column;align-items:stretch;
+    gap:0;padding:6px;border-radius:18px;flex-wrap:nowrap;
+    width:min(430px,calc(100vw - 20px));max-height:calc(100vh - 120px);overflow-y:auto}
+  .sheetbtn{display:flex}
+
+  /* collapsed — the pill is the only thing showing */
+  .controls .tabs,.controls .panes,.controls .pager,.controls .ctl.reset{display:none}
+
+  /* raised — every setting, both groups, no tabs and no pager */
+  html.sheet-open .controls .panes{display:block}
+  html.sheet-open .controls .ctl.reset{display:flex}
+  /* align-items:stretch, not the base rule's `center`: without it every row
+     hugs its own content and centres, so the label column starts at a
+     different x on each line and nothing lines up. */
+  html.sheet-open .pane{display:flex;flex-direction:column;gap:0;align-items:stretch}
+  html.sheet-open .pane .ctl[data-off]{display:flex}   /* paging is off here */
+  html.sheet-open .sheetchev{transform:rotate(180deg)}
+
+  /* A setting is a full-width row, everything LEFT ALIGNED: the label sits in a
+     fixed-width column so every input starts at the same x down the whole sheet.
+     Pushing controls to the right edge instead put a different amount of dead
+     space in every row and gave the eye no line to follow. */
+  .ctl{justify-content:flex-start;gap:12px;padding:7px 8px;min-height:52px;
+    border-left:0 !important}
+  .ctl label{flex:none;width:96px}
+  .ctl+.ctl,.controls .ctl.reset{border-left:0;border-top:1px solid var(--line-soft)}
+  .ctl label{font-size:11.5px;letter-spacing:.07em}
+  .step{gap:4px}
   .step button{width:44px;height:44px;font-size:19px;border-radius:11px}
-  .step .val{min-width:38px;font-size:15px}
-  select.mode{font-size:15px;padding:11px 12px;min-height:44px;border-radius:9px}
-  .pager{padding-left:0;border-left:0}
-  .pager button{width:40px;height:44px;font-size:17px;border-radius:10px}
-  .pgnum{font-size:13px;min-width:32px}
-  .ctl.reset{border-left:0}
-  .resetbtn{padding:12px 18px;font-size:13.5px;min-height:44px;border-radius:9px}
-  /* The toast has to clear a bar that is now two rows of 44px targets — measured
-     at 128px tall sitting 12px off the bottom, so anything under ~152px sits on
-     top of the controls. 158px leaves a small gap above it. */
-  .toast{bottom:158px}
+  .step .val{min-width:40px;font-size:15.5px}
+  select.mode{font-size:15px;padding:11px 12px;min-height:44px;border-radius:9px;
+    max-width:58vw}
+  .resetbtn{padding:13px 22px;font-size:13.5px;min-height:48px;border-radius:10px}
+  .ctl.reset{padding-top:9px}
+  /* the toast sits above the collapsed pill; the sheet covers it while open,
+     which is fine — you are not reading toasts while setting up the board */
+  .toast{bottom:84px}
 }
 
 @media (prefers-reduced-motion:reduce){
@@ -715,6 +739,13 @@ select.mode{font-family:var(--text);font-size:12px;background:var(--surface-2);c
      width — Gap and Corners were display:none below 1100px, so on a laptop you
      simply could not change them. -->
 <div class="controls" id="controls" role="group" aria-label="Grid controls">
+  <!-- Mobile only. The bar collapses to this pill, which reads the live state so
+       it is worth its 56px even closed; tapping it raises the whole set. On a
+       pointer device it never renders and the bar behaves exactly as before. -->
+  <button class="sheetbtn" id="sheetBtn" type="button" aria-expanded="false" aria-controls="panes">
+    <span class="sheetstate" id="sheetState">Reorganize · 12×6</span>
+    <span class="sheetchev" aria-hidden="true">⌃</span>
+  </button>
   <div class="tabs" role="tablist" aria-label="Setting group">
     <button class="tab on" type="button" role="tab" aria-selected="true" data-tab="layout">Layout</button>
     <button class="tab" type="button" role="tab" aria-selected="false" data-tab="behaviour">Behaviour</button>
@@ -1651,7 +1682,7 @@ function dirty(){
          radius!==DEFAULTS.radius||mode!==DEFAULTS.mode||ovf!==DEFAULTS.ovf||
          boardKey()!==seedKey;
 }
-function refreshReset(){resetBtn.disabled=!dirty();}
+function refreshReset(){resetBtn.disabled=!dirty();refreshSheet();}
 function resetAll(){
   if(!started)return;
   /* Undo survives a reset only when the grid still has the same dimensions.
@@ -2248,9 +2279,44 @@ const panesEl=document.getElementById('panes'),pagerEl=document.getElementById('
       pgNumEl=document.getElementById('pgNum'),pgPrevEl=document.getElementById('pgPrev'),
       pgNextEl=document.getElementById('pgNext');
 let ctlPage=0;
+/* Is the bar behaving as a sheet? Same query as the CSS, so the two can never
+   disagree about which layout is on screen. */
+function sheetMode(){return matchMedia('(pointer:coarse),(max-width:760px)').matches;}
+/* The pill has to be worth its height while closed, so it reads the two settings
+   a visitor is most likely to be checking: what the board does on a drop, and
+   how big it is. */
+function refreshSheet(){
+  const el=document.getElementById('sheetState');
+  if(!el)return;
+  const m=document.getElementById('modeSel');
+  el.textContent=`${m.options[m.selectedIndex].text} · ${cols}×${rows}`;
+}
+function setSheet(open){
+  root.classList.toggle('sheet-open',open);
+  document.getElementById('sheetBtn').setAttribute('aria-expanded',open?'true':'false');
+}
+document.getElementById('sheetBtn').onclick=()=>setSheet(!root.classList.contains('sheet-open'));
+// tapping the board dismisses the sheet — but only the board, so that adjusting
+// a setting inside the sheet never closes it out from under you
+addEventListener('pointerdown',e=>{
+  if(!root.classList.contains('sheet-open'))return;
+  if(e.target.closest('.controls'))return;
+  setSheet(false);
+},true);
+
 function layoutPager(){
   const pane=panesEl.querySelector('.pane.on');
   if(!pane)return;
+  /* No paging in the sheet. It opens tall enough for every input, so hiding
+     controls behind arrows there would be solving a problem that no longer
+     exists — and re-hiding them on a resize would strand settings mid-session. */
+  if(sheetMode()){
+    for(const p of panesEl.querySelectorAll('.pane'))
+      for(const c of p.children){c.removeAttribute('data-off');c.removeAttribute('data-first');}
+    pagerEl.hidden=true;
+    refreshSheet();
+    return;
+  }
   const ctls=[...pane.children];
   for(const c of ctls){c.removeAttribute('data-off');c.removeAttribute('data-first');}
   const widths=ctls.map(c=>c.getBoundingClientRect().width);
@@ -2300,7 +2366,7 @@ document.getElementById('themeBtn').onclick=()=>{
 };
 scrim.addEventListener('click',()=>collapse());
 addEventListener('keydown',e=>{
-  if(e.key==='Escape'){collapse();return;}
+  if(e.key==='Escape'){setSheet(false);collapse();return;}
   if(!started&&!e.metaKey&&!e.ctrlKey&&!e.altKey)start();
 });
 hint.addEventListener('click',start);
