@@ -307,18 +307,53 @@ html.panning .card,.card.dragging{cursor:grabbing}
    gallery sat marooned at 430px in the middle of acres of space. Container units
    scale it with the tile in both directions instead — wide tile, wide
    thumbnails; short tile, capped height so it cannot overflow. */
-.tgal{display:grid;gap:clamp(5px,1.8cqi,16px);align-self:center;min-height:0;width:100%;
-  grid-template-columns:repeat(auto-fit,minmax(clamp(64px,20cqi,230px),1fr))}
-.tmini svg{max-height:min(30cqb,200px)}
-.tmini,.dtpl{display:flex;flex-direction:column;gap:5px;align-items:stretch;
-  background:none;border:1px solid var(--line);border-radius:7px;padding:5px;
-  cursor:pointer;font:inherit;color:inherit;text-align:center;min-width:0;
+/* THE GALLERY DIVIDES THE TILE. Four templates, four sections, filling the
+   content box rather than sitting in the middle of it as fixed thumbnails — so
+   each option is a target the size of a quarter of the tile, not a 96px chip.
+   The split follows the tile's SHAPE, because four columns inside a tall narrow
+   tile gives four slivers and four rows inside a wide one gives four ribbons:
+
+     wide and short   →  four columns
+     roughly square   →  quadrants
+     tall and narrow  →  four rows
+
+   Aspect is asked of the container, so it is the tile's real proportion that
+   decides, not the viewport's. */
+.tgal{display:grid;gap:clamp(5px,1.8cqi,14px);width:100%;flex:1 1 auto;min-height:0;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  grid-template-rows:repeat(2,minmax(0,1fr))}
+@container tile (min-aspect-ratio:2/1){
+  .tgal{grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:minmax(0,1fr)}
+}
+@container tile (max-aspect-ratio:1/2){
+  .tgal{grid-template-columns:minmax(0,1fr);grid-template-rows:repeat(4,minmax(0,1fr))}
+}
+.tmini,.dtpl{display:flex;flex-direction:column;gap:5px;align-items:center;
+  justify-content:center;background:none;border:1px solid var(--line);border-radius:7px;
+  padding:5px;cursor:pointer;font:inherit;color:inherit;text-align:center;
+  min-width:0;min-height:0;overflow:hidden;
   transition:border-color 160ms ease,background 160ms ease}
+/* the quadrant IS the hover target, so the whole section responds — surface,
+   border, and the slots inside the thumbnail all lift together */
 .tmini:hover,.dtpl:hover{border-color:var(--accent-line);background:var(--accent-soft)}
+.tmini:hover .dtile{fill:var(--accent-soft);stroke:var(--accent)}
+.tmini:hover span{color:var(--ink)}
 .tmini:focus-visible,.dtpl:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-.tmini svg,.dtpl svg{width:100%;height:auto;display:block}
+.dtpl svg{width:100%;height:auto;display:block}
+/* The thumbnail fills its quadrant and letterboxes — width and height both 100%
+   with the viewBox's default preserveAspectRatio doing the fitting, so a wide
+   section and a tall one each get the largest diagram that fits without ever
+   distorting the layout it is depicting. */
+.tmini svg{width:100%;height:100%;min-height:0;display:block}
+/* Each quadrant is its own container, so it can decide for itself whether it has
+   room for a caption. A section too small for the name keeps the diagram — the
+   shape is the information, the word is the label for it. */
+.tmini{container:quad / size}
 .tmini span{font-size:clamp(8px,3.2cqi,15px);color:var(--muted);font-family:var(--mono);
-  letter-spacing:.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  letter-spacing:.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:none;
+  transition:color 160ms ease}
+@container quad (max-height:64px){ .tmini span{display:none} }
+@container quad (max-width:70px){ .tmini span{display:none} }
 .dtpl span{font-size:clamp(9.5px,.8vw,13px);color:var(--ink);font-family:var(--mono);
   letter-spacing:.03em;font-weight:600}
 .dtpl em{font-style:normal;font-size:clamp(9px,.75vw,12px);color:var(--faint);line-height:1.4;
@@ -408,9 +443,13 @@ html.panning .card,.card.dragging{cursor:grabbing}
    and var() are a browser-support coin-toss, and a stylesheet gets both themes
    from one declaration anyway. */
 .dfig .dcell{fill:none;stroke:var(--line);stroke-dasharray:2 3}
-.dfig .dtile{fill:var(--surface);stroke:var(--line)}
-.dfig .dtile.lit{fill:var(--accent-soft);stroke:var(--accent)}
-.dfig .dtile.ghost{fill:none;stroke:var(--faint);stroke-dasharray:3 2}
+/* Unscoped on purpose. tplSvg draws the template thumbnails for BOTH the popout
+   figure and the tile-face gallery, but these rules used to sit under .dfig — so
+   on the tile itself every slot fell back to the default black fill and the
+   thumbnails rendered as solid blocks. */
+.dtile{fill:var(--surface);stroke:var(--line)}
+.dtile.lit{fill:var(--accent-soft);stroke:var(--accent-line)}
+.dtile.ghost{fill:none;stroke:var(--faint);stroke-dasharray:3 2}
 .dfig .ddead{fill:var(--line-soft);stroke:var(--line)}
 .dfig text{font-family:var(--mono);font-size:10px;fill:var(--muted)}
 .dfig text.lit{fill:var(--accent)}
