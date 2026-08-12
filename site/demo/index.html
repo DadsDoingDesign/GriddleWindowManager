@@ -173,7 +173,7 @@ html.pristine[data-phase="grid"] .card[data-id="headline"]::before{background:va
    from its children in the first place. */
 .content{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;
   gap:clamp(4px,.8vh,8px);padding:var(--padY,16px) var(--padX,20px);
-  overflow:hidden;transition:padding var(--dur) var(--ease);
+  overflow:hidden;transition:padding var(--dur) var(--ease-out),gap var(--dur) var(--ease-out);
   container:tile / size}
 [data-phase="hero"] .card.inhero .content{padding:0;align-items:center;text-align:center;gap:0}
 /* The intro group is centred as a whole, not hung off a centred headline, so the
@@ -184,7 +184,11 @@ html.pristine[data-phase="grid"] .card[data-id="headline"]::before{background:va
 
 /* Type scales between phases on the SAME nodes — no duplicate text. */
 .headline{font-family:var(--sans);font-weight:800;letter-spacing:-.042em;line-height:1.0;
-  margin:0;text-wrap:balance;transition:font-size var(--dur) var(--ease),line-height var(--dur) var(--ease)}
+  margin:0;text-wrap:balance;
+  /* letter-spacing tightens between phases too — left untransitioned it snapped
+     the whole line's width in one frame while the box was still moving */
+  transition:font-size var(--dur) var(--ease-out),line-height var(--dur) var(--ease-out),
+    letter-spacing var(--dur) var(--ease-out)}
 /* vh term keeps the intro type from outgrowing the window on short viewports */
 [data-phase="hero"] .headline{font-size:clamp(30px,min(5.6vw,11.5vh),76px);line-height:.95;letter-spacing:-.048em}
 [data-phase="grid"] .headline{font-size:clamp(15px,6.6cqi,38px);line-height:1.08}
@@ -244,7 +248,23 @@ html.pristine[data-phase="grid"] .card[data-id="headline"]::before{background:va
   font-size:clamp(10px,3.5cqi,17px);max-width:38em}
 /* content that only makes sense once the card is a tile. The hero is one
    sentence and a headline by design; these would crowd it. */
-[data-phase="hero"] .gridonly{display:none}
+/* Content that only makes sense once the card is a tile. It used to be
+   display:none in the hero, which cannot be interpolated — so at the instant the
+   phase flipped, whole paragraphs appeared at full opacity in a box that was
+   still travelling. That pop is most of why the handover read as "the text
+   disappears and reappears".
+   Now it is present in both phases and REVEALED: it holds no height in the hero
+   (so the intro composition is unchanged) and expands, fades and rises into
+   place. The delay lets the card land first — content that arrives before its
+   container has stopped moving reads as two separate events. */
+.gridonly{transition:opacity 340ms var(--ease-out) 380ms,
+  transform 420ms var(--ease-out) 380ms,
+  max-height 500ms var(--ease-out) 300ms,
+  margin 420ms var(--ease-out) 300ms}
+[data-phase="hero"] .gridonly{opacity:0;transform:translateY(8px);
+  max-height:0;margin-top:0;margin-bottom:0;overflow:hidden;pointer-events:none;
+  transition:opacity 160ms ease,transform 160ms ease,max-height 200ms ease,margin 200ms ease}
+[data-phase="grid"] .gridonly{opacity:1;transform:none;max-height:60vh}
 
 /* key/value feature rows — the label is the term, the value is what it does */
 .feat{display:flex;flex-direction:column;gap:clamp(4px,2.6cqb,18px);overflow:hidden}
@@ -1289,13 +1309,50 @@ function sync(d,step){
     const e=els.get(c.id);e.el.classList.add('parked');e.el.style.setProperty('--delay','0ms');
   }
 }
+/* ---- FLIP the hero type across the handover ----
+   The card's BOX morphs beautifully — transform, width and height all
+   interpolate. Its TYPE did not. text-align, align-items and justify-content all
+   change between the phases and none of them can be interpolated, so at the
+   instant the phase flipped, every line of text jumped to its final alignment
+   and then sat still for 820ms while the box travelled around it. That is the
+   whole reason the handover read as the text vanishing and reappearing rather
+   than as one card moving.
+   FLIP is the standard answer: measure where the text was (First), let the
+   layout change (Last), apply the inverse offset so it appears not to have moved
+   (Invert), then animate that offset away (Play). The text ends up travelling
+   with its card even though the property that moved it cannot animate.
+   Driven through the Web Animations API rather than a CSS transition on purpose:
+   the headline is simultaneously running a CSS transition on font-size,
+   line-height and letter-spacing, and writing element.style.transition here
+   would blow all three away. WAAPI composites the transform independently. */
+function flipType(first,ms){
+  if(reduce)return;
+  for(const [n,a] of first){
+    const b=n.getBoundingClientRect();
+    const dx=a.left-b.left,dy=a.top-b.top;
+    if(Math.abs(dx)<0.5&&Math.abs(dy)<0.5)continue;
+    n.animate(
+      [{transform:`translate(${dx}px,${dy}px)`},{transform:'translate(0,0)'}],
+      {duration:ms,easing:'cubic-bezier(.22,.61,.36,1)',fill:'none'});
+  }
+}
+/* Every text node whose alignment differs between the two phases. */
+function heroType(){
+  return [...document.querySelectorAll(
+    '.card.inhero .headline,.card.inhero .dek,.card.inhero .eyebrow,'+
+    '.card.inhero .cta,.card.inhero .meta')]
+    .map(n=>[n,n.getBoundingClientRect()]);
+}
 function start(){
   if(started)return;started=true;
   hint.classList.add('gone');
   seedGrid();renderCells();
   seedKey=boardKey();
-  root.dataset.phase='grid';
+  const firstType=heroType();          // First: where the type is now
+  root.dataset.phase='grid';           // Last:  the alignment change lands here
   sync(reduce?1:820,reduce?0:38);
+  // one frame later the new layout is measurable, so Invert and Play
+  requestAnimationFrame(()=>flipType(firstType,820));
   /* the panel and the resize grips are tools for a grid that exists — they wait
      until the arrangement has fully landed (--dur is 820ms) */
   setTimeout(()=>{controls.classList.add('on');root.classList.add('tools-on');
