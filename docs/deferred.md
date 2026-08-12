@@ -298,3 +298,47 @@ of it has been seen by a human from this build environment. The `v0.2.0`
 commit and tag mark the code and the built installer; **the P0 pass is still
 owed and gates handing that installer to anyone.** Record the results
 (pass/fail per item, machine specs, monitor topology) against the tag.
+
+## Scrolling / canvas tile overflow (site-only, hidden)
+
+The marketing demo (`site/demo/index.html`) grew a second grid setting, **Tile
+overflow**, orthogonal to the re-order logic: what happens when a rearrangement
+needs room the board does not have. Two of its five values ship —
+
+- **Tiles drop** — the spill falls off the board in reading order (this is what
+  the app already does when a grid is full: the window floats).
+- **Restricted** — nothing may leave the board; a move that would cost a window
+  is refused instead.
+
+— and three are **implemented, working, and deliberately hidden** behind
+`hidden` attributes on their `<option>`s:
+
+- **Scroll vertical** / **Scroll horizontal** — the board keeps its columns,
+  rows and tile proportions, and the spill continues past one edge; you scroll
+  to it, carousel-style. Cell size never recomputes, so tile aspect is
+  preserved.
+- **Canvas** — both axes at once, with drag-to-pan and Ctrl+wheel zoom.
+
+**Why they are hidden rather than shipped or deleted.** Scrolling only means
+something when the board sits inside a viewport *smaller than the board*. That
+is true of a web page and false of a desktop: the monitor already is the
+viewport, so there is nowhere for the board to continue to. The honest options
+on a real desktop were to minimize the overflow, to park windows off-screen, or
+to page across Windows virtual desktops — the first loses the "still there, just
+aside" feel, the second is a support trap (invisible live windows the user
+cannot recover if Griddle is paused or removed), and the third rests on an
+undocumented COM API that breaks between Windows builds.
+
+The site demos the app. A setting the app cannot honour would make it a brochure
+instead, so the three come out of the selector until the app can back them.
+
+**They are not dead code.** `extent()`, the carousel offset in `cellRect()`,
+cell snapping, panning and zooming all still run, and the two shipped modes go
+through the same paths (`extent()` simply returns the visible page). Restoring
+the feature on the site is deleting three `hidden` attributes.
+
+**What would unblock shipping it:** virtual-desktop paging in the app — one
+board page per Windows virtual desktop, so "scrolling" is switching desktops and
+every window stays visible, alt-tab-able and on the taskbar. That is the only
+one of the three approaches where an off-page window is never a window the user
+has lost.

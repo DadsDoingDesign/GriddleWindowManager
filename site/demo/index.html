@@ -598,13 +598,27 @@ select.mode{font-family:var(--text);font-size:12px;background:var(--surface-2);c
           <option value="griddle">Default</option>
           <option value="overlap">Overlap</option>
         </select></div>
+      <!-- HIDDEN, NOT REMOVED: scroll-v, scroll-h and canvas.
+           This page exists to demo the desktop app, and a setting the app cannot
+           honour is a promise the product does not keep. Scrolling only means
+           something when the board lives inside a viewport SMALLER than the
+           board — which is true of this page and false of a desktop, where the
+           monitor IS the viewport. There is nowhere to scroll to. The same goes
+           for the canvas gestures built on top of it (drag-to-pan, Ctrl+wheel
+           zoom): they move a viewport over a board, and a desktop has no such
+           viewport to move.
+           Everything implementing them is left intact and working — extent(),
+           the carousel offset in cellRect, snapping, panning, zooming — because
+           the layout engine genuinely expresses it and it returns the day the
+           app can page the board across virtual desktops. Restoring it is
+           deleting three `hidden` attributes. See docs/deferred.md. -->
       <div class="ctl"><label>Tile overflow</label>
         <select class="mode" id="ovfSel" aria-label="Tile overflow">
           <option value="drop" selected>Tiles drop</option>
           <option value="restrict">Restricted</option>
-          <option value="scroll-v">Scroll vertical</option>
-          <option value="scroll-h">Scroll horizontal</option>
-          <option value="canvas">Canvas</option>
+          <option value="scroll-v" hidden>Scroll vertical</option>
+          <option value="scroll-h" hidden>Scroll horizontal</option>
+          <option value="canvas" hidden>Canvas</option>
         </select></div>
     </div>
   </div>
@@ -792,7 +806,7 @@ const CARDS=[
       +'<div class="frow"><span class="fkey">Reorganize</span><span class="fval">lands <b>exactly</b> where you aimed; the others reorganise around it, as few moving as possible</span></div>'
       +'<div class="frow"><span class="fkey">Linear shove</span><span class="fval">neighbours shoved aside one at a time; equal-size windows swap</span></div>'
       +'<div class="frow"><span class="fkey">Overlap</span><span class="fval">no contest for space — tiles lie over each other, most recent on top</span></div>'
-      +'<div class="frow gridonly"><span class="fkey">Overflow</span><span class="fval">separately: when the board runs out of room, tiles <b>drop</b>, are <b>refused</b>, or carry on <b>past the edge</b> to scroll to</span></div>'
+      +'<div class="frow gridonly"><span class="fkey">Overflow</span><span class="fval">separately: when the board runs out of room, tiles either <b>drop</b> off it or the move is <b>refused</b></span></div>'
       +'</div>',
     title:'Placement &amp; overflow',
     detail:'<p class="dlead">Every grid decides for itself what happens when you drop a window on cells someone else is already using.</p>'
@@ -812,12 +826,9 @@ const CARDS=[
       +'<div class="drows">'
       +'<div class="drow"><span class="dkey">Tiles drop</span><span class="dval">Whatever no longer fits falls off the board, in plain reading order — the tiles at the end are the ones that go. Nothing clever, nothing weighted, so you can predict which one it will be. They come back on their own once room opens up.</span></div>'
       +'<div class="drow"><span class="dkey">Restricted</span><span class="dval">Nothing is ever allowed to fall off. If a move would cost a tile, the move is <b>refused</b> instead and the window snaps back. The board can only ever hold what fits.</span></div>'
-      +'<div class="drow"><span class="dkey">Scroll vertical</span><span class="dval">Nothing falls off and nothing is refused — tiles that do not fit are pushed <b>past the bottom edge</b>, and you scroll down to them, like a carousel. The grid you can see keeps exactly the same columns, rows and tile proportions.</span></div>'
-      +'<div class="drow"><span class="dkey">Scroll horizontal</span><span class="dval">The same, sideways: the spill goes off the right edge and you scroll across to it.</span></div>'
-      +'<div class="drow"><span class="dkey">Canvas</span><span class="dval">Both at once. The board keeps going down <b>and</b> across, and you scroll wherever you like — the closest thing here to an endless desk.</span></div>'
       +'</div>'
-      +'<p class="dbody">Scrolling deliberately does <b>not</b> add rows or columns to the grid you are looking at. Squeezing more cells into the same space would change every tile&rsquo;s shape, so instead the grid keeps its dimensions and the board simply continues past the edge of the screen.</p>'
-      +'<p class="dbody">Under <b>Overlap</b> the whole question disappears — windows never compete for space, so nothing can fail to fit. The overflow control switches itself off and says so.</p>' },
+      +'<p class="dbody">Under <b>Overlap</b> the question disappears entirely — windows never compete for space, so nothing can fail to fit. The overflow control switches itself off and says so.</p>'
+      +'<p class="dbody">There were three more: the board carrying on past its edge, vertically, horizontally, or both, with the spill a scroll away. They are <b>held back on purpose</b>. Scrolling only means something when the board sits inside a viewport smaller than itself — true of this page, false of a desktop, where the monitor <i>is</i> the viewport and there is nowhere to scroll to. Shipping a setting the app could not honour would make this page a brochure rather than a demo. The engine still expresses it, and it returns the day Griddle can page a board across virtual desktops.</p>' },
   { id:'views',  app:'Views',  tier:1, w:4, h:2, accent:'#A259FF',
     html:'<div class="feat">'
       +'<div class="frow"><span class="fkey">Save</span><span class="fval">every grid, its spacing, and which program sits where</span></div>'
@@ -903,7 +914,18 @@ let offX=0,offY=0;
 let zoom=1;
 const ZOOM_MIN=.35,ZOOM_MAX=2.4;
 function zoomOf(){return ovf==='canvas'?zoom:1;}
-/* How far past the visible page tiles may live, per overflow mode.
+/* DORMANT — reachable only if the three hidden options are un-hidden.
+   `scroll-v`, `scroll-h` and `canvas` are complete and working: extent, the
+   carousel offset in cellRect, cell snapping, drag-to-pan and Ctrl+wheel zoom
+   all still run. They are hidden from the selector because this page demos the
+   desktop app and the app cannot honour them — a monitor is already the
+   viewport, so a board that continues "past the edge" has nowhere to continue
+   to. Nothing here is dead weight to delete: it is the working half of a feature
+   waiting on virtual-desktop paging in the app. See docs/deferred.md.
+   Everything below therefore still has to be correct, and the two shipped modes
+   (`drop`, `restrict`) share all of it via extent() returning the visible page.
+
+   How far past the visible page tiles may live, per overflow mode.
    The MIN floor matters more than the multiple: on a 1x1 board, "three times the
    page" is three cells, which is not a canvas by any reading. A floor of 16
    guarantees somewhere to explore at any grid size, and 16x16 cells is still a
