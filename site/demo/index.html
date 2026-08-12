@@ -1087,7 +1087,7 @@ const CARDS=[
      row is the one to give up — at 4×2 it still holds both lines of the
      headline (62px of type in a 76px box) and the subhead was already hidden at
      that height. The board comes out exactly full. */
-  { id:'headline', app:'Griddle Window Manager', tier:0, w:5, h:3, sm:[4,2], hero:1,
+  { id:'headline', app:'Griddle Window Manager', tier:0, w:5, h:3, sm:[4,3], minH:140, hero:1,
     html:'<h1 class="headline">Every window,<span class="br">right where it belongs.</span></h1>'
         +'<p class="subhead gridonly">Gives you a grid and lets every window claim whatever rectangle of cells you want.</p>',
     title:'Every window, right where it belongs.',
@@ -1133,7 +1133,7 @@ const CARDS=[
   /* No `hero` flag on purpose: the intro is text only. A download button there is
      dead UI — any key or click starts the arrangement and carries it off, so it
      can never be clicked. It arrives as a real tile once the grid has landed. */
-  { id:'cta', app:'Download', tier:0, w:4, h:2, sm:[4,2],
+  { id:'cta', app:'Download', tier:0, w:4, h:2, sm:[4,2], minH:112,
     /* Below 200px there is no honest way to show a button — the label alone is
        wider than the tile — so the narrowest form is the version string and
        nothing else, and the tile stops pretending to be a call to action. */
@@ -1216,7 +1216,7 @@ const CARDS=[
       +'<div class="drow"><span class="dkey">Apply</span><span class="dval">Your open windows map onto the slots <b>by recency</b>, most recent to the first slot. Anything left over is auto-placed by the usual rules.</span></div>'
       +'<div class="drow"><span class="dkey">Re-dimension</span><span class="dval">Each template carries <b>its own columns and rows</b>, and applying one sets the grid to them. A shape needs its own axes — squeezing Cockpit into a 6&times;4 board would round its rails into something that is no longer a cockpit. Every thumbnail states the dimensions it will set.</span></div>'
       +'</div>'+templatesFig()+'</div>' },
-  { id:'monitors', app:'Monitors', tier:3, w:3, h:1, sm:[4,1], accent:'#E01E5A',
+  { id:'monitors', app:'Monitors', tier:3, w:3, h:1, sm:[4,1], minH:102, accent:'#E01E5A',
     html:'<div class="applabel"><b>One grid across several screens.</b> Or a separate grid on each.</div>',
     title:'Monitors',
     detail:'<p class="dlead">A grid per monitor, each with its own dimensions, spacing and placement mode — or one grid stretched across several screens at once.</p>'
@@ -1227,7 +1227,7 @@ const CARDS=[
       +'<div class="drow"><span class="dkey">Unplugging</span><span class="dval">A spanning grid whose member is gone goes inert rather than guessing, and revives when the screen comes back.</span></div>'
       +'</div>'+monitorsFig()+'</div>'
       +'<p class="dbody">Spanning grids are the newest feature here and the least field-tested — please report anything odd.</p>' },
-  { id:'local', app:'Privacy', tier:3, w:3, h:1, sm:[4,1],
+  { id:'local', app:'Privacy', tier:3, w:3, h:1, sm:[4,1], minH:102,
     html:'<div class="applabel"><b>Stays on your machine.</b> No telemetry, no account.</div>',
     title:'It stays on your machine',
     detail:'<p class="dlead">No telemetry, no analytics, no account. Your window titles never leave your machine.</p>'
@@ -1236,7 +1236,7 @@ const CARDS=[
       +'<div class="drow"><span class="dkey">Network</span><span class="dval">Exactly one feature can make an outbound request — the update check — and it is <b>opt-in and off by default</b>.</span></div>'
       +'<div class="drow"><span class="dkey">Titles</span><span class="dval">Window titles are read to show you a list. They are never stored, never sent, and never written to a log.</span></div>'
       +'</div>' },
-  { id:'safe', app:'Reversible', tier:3, w:3, h:1, sm:[4,1],
+  { id:'safe', app:'Reversible', tier:3, w:3, h:1, sm:[4,1], minH:102,
     html:'<div class="applabel"><b>Nothing is destroyed.</b> Turn a grid off, windows stay put.</div>',
     title:'Nothing is destroyed',
     detail:'<p class="dlead">Nothing Griddle does is destructive. Every way of stopping it leaves your windows exactly where they are.</p>'
@@ -1279,23 +1279,35 @@ function defaultDims(){
    is given, which is what stops small screens from being a page of dropped
    tiles. */
 function narrowBoard(){return cols<=6;}
-/* THE FLOOR BELOW WHICH A TILE IS NOT ALLOWED TO GO.
-   With a 24px padding floor, an honest tile needs 30px of titlebar + 48px of
-   padding + one 24px line = 102px tall, and about 150px across to hold the
-   shortest sentence any tile carries. Rather than degrade a tile past the point
-   where it can say anything — 8px padding, or a negative content box — the tile
-   simply refuses to be that small. Expressed in px and converted to cells at
-   the current cell size, because the same 1×1 footprint is 138px tall on a 12×6
-   board and 79px on a 20×10 one: the constraint is the pixels, not the cells. */
-const MIN_TILE_W=150, MIN_TILE_H=102;
-function minCells(){
+/* PER-TILE FLOORS, AND ONLY WHERE THE CONTENT DEMANDS ONE.
+   Most tiles carry an xs variant precisely so they can live at 1×1 — the licence
+   line becomes "FOSS", the mode list becomes "4 modes", the download tile becomes
+   its version string. Those shrink freely and declare nothing. A floor is the
+   exception, not the rule, and it belongs to the tile whose content cannot
+   reduce any further:
+
+     monitors / local / safe   one whole sentence, no shorter form beyond the
+                               xs variant — 30 titlebar + 48 padding + one 24px
+                               line = 102px. These are the tiles flagged in
+                               review, whose 72-79px specimens had a NEGATIVE
+                               content box at the 24px padding floor.
+     headline                  two lines of display type at 24/20 = 62px, so 140.
+     cta                       a 34px button it cannot usefully draw smaller, so 112.
+
+   Stated in PIXELS and converted at the current cell size, because the same 1×1
+   footprint is 138px tall on a 12×6 board and 79px on a 20×10 one — what the
+   content needs is a number of pixels, not a number of cells. A tile with no
+   floor is free to reach 1×1 wherever it fits. */
+function minCellsFor(c){
   const{uw,uh}=unit();
-  return{w:Math.max(1,Math.min(cols,Math.ceil((MIN_TILE_W+gap)/(uw+gap)))),
-         h:Math.max(1,Math.min(rows,Math.ceil((MIN_TILE_H+gap)/(uh+gap))))};
+  const needW=(c&&c.minW)||0, needH=(c&&c.minH)||0;
+  return{w:needW?Math.max(1,Math.min(cols,Math.ceil((needW+gap)/(uw+gap)))):1,
+         h:needH?Math.max(1,Math.min(rows,Math.ceil((needH+gap)/(uh+gap)))):1};
 }
+const cardById=id=>CARDS.find(c=>c.id===id);
 function cardSize(c){
   const s=narrowBoard()&&c.sm?c.sm:[c.w,c.h];
-  const m=minCells();
+  const m=minCellsFor(c);
   return{w:Math.min(Math.max(s[0],m.w),cols),h:Math.min(Math.max(s[1],m.h),rows)};
 }
 let cols=12,rows=6,gap=10,radius=10,mode='reflow',ovf='drop';
@@ -1761,7 +1773,7 @@ function resizeStart(e,id){
     const maxW=uw*spanW+gap*(spanW-1),maxH=uh*spanH+gap*(spanH-1);
     /* the grip stops at the tile's floor, so you cannot drag a tile down to a
        size at which it has nothing honest to show — it resists instead */
-    const mc=minCells();
+    const mc=minCellsFor(cardById(rez.id));
     const floorW=uw*mc.w+gap*(mc.w-1), floorH=uh*mc.h+gap*(mc.h-1);
     const pw=Math.max(floorW,Math.min(maxW,ev.clientX-x0));
     const ph=Math.max(floorH,Math.min(maxH,ev.clientY-y0));
@@ -1804,7 +1816,7 @@ function resizeKey(e,id){
   // bounded by the extent, not the visible page — in a scrolling mode a tile is
   // allowed to grow into the spill, same as it is allowed to be dropped there
   const kx=extent();
-  const mk=minCells();   // the keyboard grip honours the same floor as the drag
+  const mk=minCellsFor(cardById(id));   // this tile's floor, if it has one
   const w=Math.max(mk.w,Math.min(cols,kx.c-t.col,t.w+d[0])),
         h=Math.max(mk.h,Math.min(rows,kx.r-t.row,t.h+d[1]));
   if(w===t.w&&h===t.h)return;
