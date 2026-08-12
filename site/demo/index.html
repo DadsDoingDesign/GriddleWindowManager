@@ -23,6 +23,14 @@
      (drop 440ms, hero handover 820ms, resize 380ms…), so it is those numbers,
      not this one, that set the pace of anything you can trigger. */
   --ease:cubic-bezier(.25,.1,.25,1); --dur:820ms;
+  /* Arrivals decelerate. A tile moving to a slot is always arriving somewhere,
+     and a symmetric curve makes ten of them read as a mechanism rather than as
+     things coming to rest. easeOutQuad, measured: 27% / 50% / 67% of the
+     distance at 10% / 20% / 30% of the time, against 9% / 30% / 51% for plain
+     ease and 40% / 67% / 83% for the easeOutQuint this page used to use and
+     which read as a snap followed by a crawl. Peak output is exactly 1.0, so
+     nothing travels past its slot. */
+  --ease-out:cubic-bezier(.22,.61,.36,1);
 }
 @media (prefers-color-scheme:dark){:root{
   --ground:#09090D; --panel:#121218; --surface:#1A1A22; --surface-2:#15151C;
@@ -73,6 +81,16 @@ body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--text);
    leaving the cards in the root stacking context where the z-index scale means
    what it says. */
 .stage{position:absolute;inset:0;overflow:hidden}
+/* The board clip (set inline by renderCells) makes .stage a STACKING CONTEXT,
+   which re-created the exact bug the note above .stage's position warns about:
+   .card.expanded's z-index:90 stops competing with .scrim's 80 and starts
+   competing with its own siblings, so an opened tile paints UNDER the scrim and
+   comes back blurred.
+   While a tile is open the clip is simply dropped. It has nothing to do then —
+   the open tile covers the whole board and the scrim covers everything else, so
+   there is nothing outside the board left to clip. !important because the clip
+   is an inline style and would otherwise win. */
+html.reading .stage{clip-path:none !important}
 /* Canvas mode makes the empty board grabbable, the way every infinite-canvas
    tool does. Tiles keep their own cursors — you grab the canvas, not a window. */
 html.canvasmode .stage{cursor:grab}
@@ -97,9 +115,9 @@ html:not(.ready) .stage,html:not(.ready) .gridwrap,html:not(.ready) .hint{opacit
 .card{position:absolute;left:0;top:0;border-radius:var(--card-radius);overflow:hidden;
   display:flex;flex-direction:column;background:transparent;
   border:1px solid transparent;will-change:transform,width,height;
-  transition:transform var(--dur) var(--ease) var(--delay,0ms),
-    width var(--dur) var(--ease) var(--delay,0ms),
-    height var(--dur) var(--ease) var(--delay,0ms),
+  transition:transform var(--dur) var(--ease-out) var(--delay,0ms),
+    width var(--dur) var(--ease-out) var(--delay,0ms),
+    height var(--dur) var(--ease-out) var(--delay,0ms),
     opacity 420ms ease var(--delay,0ms),
     border-color 620ms ease,box-shadow 620ms ease}
 .card.parked{opacity:0;pointer-events:none}
@@ -1241,14 +1259,28 @@ function renderCells(){
    nothing and gets zero delay — the stagger is for the one moment that earns it,
    the hero handing over to the grid. The delay is rewritten on every sync, so it
    can never leak into the next drag. */
+/* The stagger is a DIAGONAL WAVE, not a list being processed.
+   Delay comes from (row + col) — the tile's distance from the top-left corner in
+   cells — rather than from its index in reading order. Index order makes the
+   board animate like a spreadsheet recalculating, one row at a time; anti-
+   diagonal order sweeps across it, which is the difference between "items
+   updated" and "the layout moved". Tiles on the same diagonal share a delay and
+   travel together, so the count of animation groups stays low however many tiles
+   there are.
+   The spread is capped: on a 20x10 board a raw (row+col) reaches 28, which at
+   any useful step is over a second of dribble. Normalising to the board's own
+   diagonal keeps the total sweep the same length whatever the grid size. */
 function sync(d,step){
   const seen=new Set();
   const order=[...grid.tiles].sort((a,b)=>a.row-b.row||a.col-b.col);
+  const diag=Math.max(1,(cols-1)+(rows-1));
+  const SPREAD=14;   // wave positions across the whole board, regardless of dims
   order.forEach((t,i)=>{
     seen.add(t.id);
     const e=els.get(t.id);if(!e)return;
     e.el.classList.remove('parked');
-    e.el.style.setProperty('--delay',(step?i*step:0)+'ms');
+    const wave=step?Math.round((t.row+t.col)/diag*SPREAD)*step:0;
+    e.el.style.setProperty('--delay',wave+'ms');
     if(expandedId!==t.id)place(t.id,cellRect(t.col,t.row,t.w,t.h),d);
   });
   // a parked tile never reaches the loop above, so without this it keeps whatever
@@ -1756,6 +1788,8 @@ function expand(id){
   expandedId=id;
   const el=els.get(id).el;
   el.classList.add('expanded');
+  // drops the board clip, so the open tile can out-stack the scrim's blur
+  root.classList.add('reading');
   place(id,expandRect(),reduce?1:460);
   scrim.classList.add('on');
 }
@@ -1764,6 +1798,7 @@ function collapse(quiet){
   const id=expandedId;expandedId=null;
   const el=els.get(id).el;
   el.classList.remove('expanded');
+  root.classList.remove('reading');
   const t=grid.getTile(id);
   if(t)place(id,cellRect(t.col,t.row,t.w,t.h),reduce?1:460);
   setTimeout(()=>{el.style.zIndex='';},470);
@@ -2106,6 +2141,20 @@ addEventListener('keydown',e=>{
 });
 hint.addEventListener('click',start);
 stage.addEventListener('click',e=>{if(!started&&!e.target.closest('a,button'))start();});
+/* ---- resize ----
+   This used to be `sync(1)` behind a 130ms debounce: nothing moved while you
+   dragged the window, then every tile teleported to its new slot simultaneously
+   in a single frame. Frame-by-frame that reads as one 33ms jump surrounded by
+   dead frames — not a fast animation, the absence of one, which is exactly what
+   "choppy, everything at once" describes.
+   Three changes. The debounce drops to 60ms so the board starts moving while the
+   edge is still travelling rather than waiting for the gesture to end. The tiles
+   get a real duration. And they get the diagonal wave, so a re-layout sweeps
+   across the board instead of flashing.
+   The wave is deliberately tighter here than on the hero handover (10ms per
+   diagonal against 38ms): a resize is a response to something you are doing, and
+   a response that takes half a second to finish arriving feels laggy no matter
+   how pretty the sweep is. */
 let rt;addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(()=>{
   if(!started){renderCells();layoutHeroSettled();return;}
   clampScroll();   // a wider viewport can shrink the scrollable range to nothing
@@ -2113,9 +2162,9 @@ let rt;addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(()=>{
   layoutPager();
   // sync() below deliberately skips the expanded tile, so its new board-sized
   // rect has to be written here or a resize would leave it at the old one
-  if(expandedId)place(expandedId,expandRect(),1);
-  sync(1);
-},130);});
+  if(expandedId)place(expandedId,expandRect(),reduce?1:360);
+  sync(reduce?1:360,reduce?0:10);
+},60);});
 
 root.dataset.phase='hero';
 root.classList.add('pristine');   // the headline holds the highlight until you look elsewhere
