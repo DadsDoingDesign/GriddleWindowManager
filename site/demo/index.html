@@ -337,6 +337,15 @@ html.pristine[data-phase="grid"] .card[data-id="headline"]::before{background:va
   transition:opacity 280ms ease}
 .card.expanded .detail{opacity:1;pointer-events:auto}
 .card.expanded{z-index:90;box-shadow:var(--shadow-hi)}
+/* A card that is MID-FLIGHT and must not be painted over.
+   Cards stack in DOM order, and the headline is the first one built — so it sits
+   at the bottom of the pile and every other tile crosses over the top of it
+   during the hero handover. The same thing bites on close: dropping .expanded
+   takes z-index:90 away in one frame, while the tile still has 460ms of
+   shrinking to do, so it finishes its journey underneath the board.
+   85 is chosen to clear the scrim at 80 — a closing tile has to stay above the
+   backdrop-filter it was opened over — while staying under .expanded's 90. */
+.card.lifted{z-index:85}
 .card.expanded .titlebar{cursor:default}
 .dtitle{font-family:var(--sans);font-size:clamp(21px,2.15vw,36px);font-weight:750;
   letter-spacing:-.025em;margin:0;line-height:1.12;text-wrap:balance}
@@ -1348,11 +1357,21 @@ function start(){
   hint.classList.add('gone');
   seedGrid();renderCells();
   seedKey=boardKey();
+  /* The intro window leads, and nothing crosses over it on the way.
+     Cards paint in DOM order and the headline is built first, so it sits at the
+     bottom of the pile: as the other nine fly out to their seats they pass in
+     front of the very thing the eye is following. Lift the hero cards for the
+     length of the handover and drop them back once everyone has landed. */
+  const lead=[...document.querySelectorAll('.card.inhero')];
+  for(const el of lead)el.classList.add('lifted');
+
   const firstType=heroType();          // First: where the type is now
   root.dataset.phase='grid';           // Last:  the alignment change lands here
   sync(reduce?1:820,reduce?0:38);
   // one frame later the new layout is measurable, so Invert and Play
   requestAnimationFrame(()=>flipType(firstType,820));
+  // 820ms of travel plus the tail of the stagger, then the pile is level again
+  setTimeout(()=>{for(const el of lead)el.classList.remove('lifted');},reduce?20:1120);
   /* the panel and the resize grips are tools for a grid that exists — they wait
      until the arrangement has fully landed (--dur is 820ms) */
   setTimeout(()=>{controls.classList.add('on');root.classList.add('tools-on');
@@ -1854,12 +1873,27 @@ function collapse(quiet){
   if(!expandedId)return;
   const id=expandedId;expandedId=null;
   const el=els.get(id).el;
+  /* Order matters. Dropping .expanded takes z-index:90 with it, so the lift has
+     to be in place first or there is a frame where the tile is already back in
+     DOM order — under everything — with its whole shrink still ahead of it. */
+  el.classList.add('lifted');
   el.classList.remove('expanded');
-  root.classList.remove('reading');
   const t=grid.getTile(id);
   if(t)place(id,cellRect(t.col,t.row,t.w,t.h),reduce?1:460);
-  setTimeout(()=>{el.style.zIndex='';},470);
   if(!quiet)scrim.classList.remove('on');
+  /* `reading` (which suppresses the board clip) is held until the tile has
+     actually landed. Restoring the clip early would make .stage a stacking
+     context again mid-flight, trapping the tile below the scrim it is still
+     travelling over — the exact bug this pair of classes exists to prevent.
+     Guarded on expandedId because a quiet collapse is the first half of
+     switching tiles: the next tile has already re-entered reading by the time
+     this fires, and it must not be cancelled out from under it. */
+  const settled=reduce?20:500;
+  setTimeout(()=>{
+    el.classList.remove('lifted');
+    el.style.zIndex='';
+    if(!expandedId)root.classList.remove('reading');
+  },settled);
 }
 function flashMoved(n,snap){
   showToast(n===0?'landed · nothing moved'
