@@ -798,13 +798,15 @@ select.mode{font-family:var(--text);font-size:12px;background:var(--surface-2);c
   a.cta.notiny{display:inline-flex}
 }
 /* ---- from the Figma iteration rounds (R1-R3, 78 specimens audited) ----
-   Four failures the audit caught that the eye had not:
 
-   1. A fourth padding step. Below ~110px a tile cannot hold one 16px line at
-      pad 24 — 30 titlebar + 48 padding + 24 line is 102, more than the tile —
-      so the 72-79px one-row tiles had a NEGATIVE content box. 8 is the largest
-      padding that still leaves a full line at 72px. */
-@container card (max-height:109px){ .content{padding:8px} }
+   1. PADDING HAS A FLOOR OF 24. An earlier round added an 8px step to rescue
+      the 72-79px one-row tiles, whose content box was otherwise NEGATIVE. That
+      solved the symptom and broke the system: 8px next to 24/40/80 reads as a
+      mistake, which is exactly how it was flagged in review.
+      The real fix is upstream — a tile is no longer allowed to BE that small
+      (see MIN_TILE_H). 30px titlebar + 48px padding + one 24px line = 102px is
+      the smallest honest tile, so nothing below it reaches this stylesheet and
+      the floor can stay where the system says it should be. */
 
 /* 2. The 400px measure is for PROSE. Applying it to the template gallery
       squeezed four thumbnails into one column and overflowed the tile by
@@ -1079,7 +1081,13 @@ function monitorsFig(){
 }
 /* Content authored ONCE, for the grid. The hero reuses these very nodes. */
 const CARDS=[
-  { id:'headline', app:'Griddle Window Manager', tier:0, w:5, h:3, sm:[4,3], hero:1,
+  /* sm is 4×2, not 4×3: once a tile may not be shorter than 102px, the mobile
+     board's 72px cells force every one-row tile to two rows, and the four
+     tier-0 tiles then want 36 of the 32 cells available. The headline's third
+     row is the one to give up — at 4×2 it still holds both lines of the
+     headline (62px of type in a 76px box) and the subhead was already hidden at
+     that height. The board comes out exactly full. */
+  { id:'headline', app:'Griddle Window Manager', tier:0, w:5, h:3, sm:[4,2], hero:1,
     html:'<h1 class="headline">Every window,<span class="br">right where it belongs.</span></h1>'
         +'<p class="subhead gridonly">Gives you a grid and lets every window claim whatever rectangle of cells you want.</p>',
     title:'Every window, right where it belongs.',
@@ -1271,9 +1279,24 @@ function defaultDims(){
    is given, which is what stops small screens from being a page of dropped
    tiles. */
 function narrowBoard(){return cols<=6;}
+/* THE FLOOR BELOW WHICH A TILE IS NOT ALLOWED TO GO.
+   With a 24px padding floor, an honest tile needs 30px of titlebar + 48px of
+   padding + one 24px line = 102px tall, and about 150px across to hold the
+   shortest sentence any tile carries. Rather than degrade a tile past the point
+   where it can say anything — 8px padding, or a negative content box — the tile
+   simply refuses to be that small. Expressed in px and converted to cells at
+   the current cell size, because the same 1×1 footprint is 138px tall on a 12×6
+   board and 79px on a 20×10 one: the constraint is the pixels, not the cells. */
+const MIN_TILE_W=150, MIN_TILE_H=102;
+function minCells(){
+  const{uw,uh}=unit();
+  return{w:Math.max(1,Math.min(cols,Math.ceil((MIN_TILE_W+gap)/(uw+gap)))),
+         h:Math.max(1,Math.min(rows,Math.ceil((MIN_TILE_H+gap)/(uh+gap))))};
+}
 function cardSize(c){
   const s=narrowBoard()&&c.sm?c.sm:[c.w,c.h];
-  return{w:Math.min(s[0],cols),h:Math.min(s[1],rows)};
+  const m=minCells();
+  return{w:Math.min(Math.max(s[0],m.w),cols),h:Math.min(Math.max(s[1],m.h),rows)};
 }
 let cols=12,rows=6,gap=10,radius=10,mode='reflow',ovf='drop';
 const PAD=24;
@@ -1736,12 +1759,16 @@ function resizeStart(e,id){
     // free size, bounded by one cell and by the edge of the board
     const spanW=cols-rez.col,spanH=rows-rez.row;
     const maxW=uw*spanW+gap*(spanW-1),maxH=uh*spanH+gap*(spanH-1);
-    const pw=Math.max(uw,Math.min(maxW,ev.clientX-x0));
-    const ph=Math.max(uh,Math.min(maxH,ev.clientY-y0));
+    /* the grip stops at the tile's floor, so you cannot drag a tile down to a
+       size at which it has nothing honest to show — it resists instead */
+    const mc=minCells();
+    const floorW=uw*mc.w+gap*(mc.w-1), floorH=uh*mc.h+gap*(mc.h-1);
+    const pw=Math.max(floorW,Math.min(maxW,ev.clientX-x0));
+    const ph=Math.max(floorH,Math.min(maxH,ev.clientY-y0));
     el.style.width=pw+'px';el.style.height=ph+'px';
     padFor(el,pw,ph);
-    const w=Math.max(1,Math.min(spanW,Math.round((pw+gap)/(uw+gap))));
-    const h=Math.max(1,Math.min(spanH,Math.round((ph+gap)/(uh+gap))));
+    const w=Math.max(mc.w,Math.min(spanW,Math.round((pw+gap)/(uw+gap))));
+    const h=Math.max(mc.h,Math.min(spanH,Math.round((ph+gap)/(uh+gap))));
     if(w!==rez.w||h!==rez.h){
       rez.w=w;rez.h=h;
       showPreview(rez.col,rez.row,w,h);
@@ -1777,7 +1804,9 @@ function resizeKey(e,id){
   // bounded by the extent, not the visible page — in a scrolling mode a tile is
   // allowed to grow into the spill, same as it is allowed to be dropped there
   const kx=extent();
-  const w=Math.max(1,Math.min(cols,kx.c-t.col,t.w+d[0])),h=Math.max(1,Math.min(rows,kx.r-t.row,t.h+d[1]));
+  const mk=minCells();   // the keyboard grip honours the same floor as the drag
+  const w=Math.max(mk.w,Math.min(cols,kx.c-t.col,t.w+d[0])),
+        h=Math.max(mk.h,Math.min(rows,kx.r-t.row,t.h+d[1]));
   if(w===t.w&&h===t.h)return;
   const snap=grid.toJSON();
   if(!commitResize(id,w,h,snap))return;
