@@ -153,6 +153,15 @@ html.pristine[data-phase="grid"] .card[data-id="headline"]::before{background:va
 .titlebar{height:30px;flex:none;display:flex;align-items:center;gap:8px;padding:0 11px;
   border-bottom:1px solid transparent;opacity:0;transition:opacity 420ms ease,border-color 620ms ease;
   cursor:grab;user-select:none;touch-action:none}
+/* The whole card swallows touch gestures, because the drag zone is now a third
+   of it rather than the titlebar alone — without this the browser claims the
+   drag as a scroll and the tile never moves on a phone. Safe here: the page
+   itself never scrolls (html/body are overflow:hidden). */
+.card{touch-action:none}
+/* the grab cursor follows the real zone: the top third, not the strip */
+[data-phase="grid"] .card{cursor:grab}
+[data-phase="grid"] .card .content,[data-phase="grid"] .card .detail{cursor:default}
+html.panning .card,.card.dragging{cursor:grabbing}
 [data-phase="grid"] .titlebar{opacity:1;border-bottom-color:var(--line-soft)}
 [data-phase="hero"] .card.inhero .titlebar{height:0;overflow:hidden}
 [data-phase="hero"] .card.inhero[data-id="headline"] .titlebar{height:30px;overflow:visible;
@@ -633,6 +642,50 @@ select.mode{font-family:var(--text);font-size:12px;background:var(--surface-2);c
    anyway and the caption alone says more */
 @container tile (max-height:120px){
   .tgal{display:none}
+}
+
+/* ---- the control bar on touch ----
+   Every target in the bar was sized for a mouse: 22px steppers, 20px pager
+   arrows, a 3px-padded select. The guidance floor for a finger is 44px, and
+   missing a 22px button on a phone is the difference between changing a setting
+   and expanding a tile by accident.
+   Everything grows to ~44px, and the bar is allowed to WRAP — at 390px there is
+   no arrangement where tabs, a control, the pager and Reset fit on one line at
+   finger size, and wrapping to a second row is far better than shrinking back
+   below the floor or hiding a control. */
+@media (pointer:coarse),(max-width:760px){
+  .controls{bottom:12px;gap:6px;padding:8px;border-radius:15px;
+    flex-wrap:wrap;justify-content:center;max-width:calc(100vw - 20px)}
+  .tabs{margin-right:0;padding:3px;order:1}
+  .tabs::after{display:none}          /* the wrap already separates the groups */
+  .tab{padding:0 16px;min-height:44px;display:flex;align-items:center;
+    font-size:13.5px;border-radius:9px}
+  /* TWO rows, not three. Left to itself the flex order (tabs, panes, pager,
+     reset) puts the pane on its own line and strands the pager and Reset on a
+     third — a control bar three rows tall on a phone is most of the screen.
+     Reorder so the two group-level controls share row one and everything that
+     acts on the selected group shares row two, with a zero-height full-width
+     item forcing the break exactly where we want it. */
+  .ctl.reset{order:2}
+  .controls::after{content:'';flex-basis:100%;height:0;order:3}
+  .panes{order:4;flex:0 1 auto;justify-content:center}
+  .pager{order:5}
+  .ctl{gap:9px;padding:2px 6px}
+  .ctl+.ctl{border-left:0}
+  .ctl label{font-size:10.5px}
+  .step{gap:3px}
+  .step button{width:44px;height:44px;font-size:19px;border-radius:11px}
+  .step .val{min-width:38px;font-size:15px}
+  select.mode{font-size:15px;padding:11px 12px;min-height:44px;border-radius:9px}
+  .pager{padding-left:0;border-left:0}
+  .pager button{width:40px;height:44px;font-size:17px;border-radius:10px}
+  .pgnum{font-size:13px;min-width:32px}
+  .ctl.reset{border-left:0}
+  .resetbtn{padding:12px 18px;font-size:13.5px;min-height:44px;border-radius:9px}
+  /* The toast has to clear a bar that is now two rows of 44px targets — measured
+     at 128px tall sitting 12px off the bottom, so anything under ~152px sits on
+     top of the controls. 158px leaves a small gap above it. */
+  .toast{bottom:158px}
 }
 
 @media (prefers-reduced-motion:reduce){
@@ -1169,7 +1222,21 @@ function build(){
     el.append(tb,content,det,rh);
     stage.append(el);
     els.set(c.id,{el,tb});
-    tb.addEventListener('pointerdown',e=>dragStart(e,c.id));
+    /* THE DRAG ZONE IS THE TOP THIRD OF THE CARD, not the 30px titlebar.
+       A titlebar is a mouse target: on a phone it is a 30px strip you have to
+       hit exactly, and on the shortest tiles it is most of the tile anyway. The
+       top third scales with the tile, so the grab area grows with the thing it
+       grabs, and it never eats the resize grip in the bottom-right corner.
+       Still floored at the titlebar height so a very short tile keeps a usable
+       strip, and capped so a tall tile does not become almost entirely handle.
+       Click-to-expand is unaffected: a press that never moves leaves didDrag
+       false, and the card's click handler runs as before. */
+    el.addEventListener('pointerdown',e=>{
+      if(e.target.closest('.rhandle,a,button,[data-tpl],select'))return;
+      const r=el.getBoundingClientRect();
+      const zone=Math.max(30,Math.min(r.height/3,120));
+      if(e.clientY-r.top<=zone)dragStart(e,c.id);
+    });
     rh.addEventListener('pointerdown',e=>resizeStart(e,c.id));
     rh.addEventListener('keydown',e=>resizeKey(e,c.id));
     /* The headline stays highlighted until you show interest in another tile —
@@ -2192,7 +2259,13 @@ function layoutPager(){
   // to show it — that feedback loop oscillates)
   const fixed=[...document.querySelectorAll('.controls .tabs,.controls .ctl.reset')]
     .reduce((s,e)=>s+e.getBoundingClientRect().width,0);
-  const budget=Math.max(90,innerWidth-28-fixed-78);
+  /* On touch the bar wraps and the pane gets a row to itself, so it is NOT
+     competing with the tabs and Reset for width — budgeting as if it were would
+     page a control that comfortably fits. Same query as the CSS, so the two can
+     never disagree about whether the bar is wrapped. */
+  const wrapped=matchMedia('(pointer:coarse),(max-width:760px)').matches;
+  const budget=wrapped?Math.max(150,innerWidth-40-96)
+                      :Math.max(90,innerWidth-28-fixed-78);
   let per=0,acc=0;
   for(const w of widths){if(acc+w>budget&&per>0)break;acc+=w;per++;}
   per=Math.max(1,per);
