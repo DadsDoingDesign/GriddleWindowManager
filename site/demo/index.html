@@ -799,6 +799,49 @@ select.mode{font-family:var(--text);font-size:12px;background:var(--surface-2);c
   .notiny{display:block}
   a.cta.notiny{display:inline-flex}
 }
+/* ---- from the Figma iteration rounds (R1-R3, 78 specimens audited) ----
+   Four failures the audit caught that the eye had not:
+
+   1. A fourth padding step. Below ~110px a tile cannot hold one 16px line at
+      pad 24 — 30 titlebar + 48 padding + 24 line is 102, more than the tile —
+      so the 72-79px one-row tiles had a NEGATIVE content box. 8 is the largest
+      padding that still leaves a full line at 72px. */
+@container card (max-height:109px){ .content{padding:8px} }
+
+/* 2. The 400px measure is for PROSE. Applying it to the template gallery
+      squeezed four thumbnails into one column and overflowed the tile by
+      288px. A gallery is not a line of text and does not read like one. */
+.content > .tgal{max-width:none}
+
+/* 3. Row budget, retuned for fixed type. At 16px/150% a row is 24px for one
+      line and 48px for two, so the old thresholds — written when type shrank
+      to fit — let four rows into a box that holds one. Measured against the
+      content box, which is what the rows actually live in. */
+@container tile (max-height:219px){ .feat .frow:nth-child(n+4){display:none} }
+@container tile (max-height:169px){ .feat .frow:nth-child(n+3){display:none} }
+@container tile (max-height:109px){ .feat .frow:nth-child(n+2){display:none} }
+/* 4. No tile may render empty. Below one row the tile states its subject
+      instead of listing things it has no room to list. */
+.feat-sum{display:none}
+@container tile (max-height:59px){
+  .feat .frow{display:none}
+  .feat-sum{display:block}
+}
+@container tile (max-width:150px){ .feat-sum .long{display:none} }
+@container tile (min-width:151px){ .feat-sum .short{display:none} }
+
+/* Keys are capped at eight characters and the column is fixed, so a 14px mono
+   label can never wrap. REORGANIZE measured 84px in an 80px column and broke
+   across three lines; REORDER is 59px. */
+.fkey{flex:none;width:84px;min-width:0}
+@container tile (max-width:239px){
+  .frow{flex-direction:column;gap:2px}
+  .fkey{width:auto}
+}
+/* Values come in two lengths, like the approved sections' prose. */
+.fval .lo{display:none}
+@container tile (max-width:330px){ .fval .hi{display:none} .fval .lo{display:inline} }
+
 /* the licence link: quiet, underlined on approach, never competing with the CTA */
 .seelink{align-self:flex-start;font-family:var(--text);font-size:14px;line-height:1.4;
   color:var(--accent);text-decoration:none;border-bottom:1px solid transparent;
@@ -1092,10 +1135,19 @@ const CARDS=[
       +'</div>' },
   { id:'modes', app:'Placement', tier:1, w:4, h:3, sm:[4,3], accent:'#4A9EDB',
     html:'<div class="feat">'
-      +'<div class="frow"><span class="fkey">Reorganize</span><span class="fval">lands <b>exactly</b> where you aimed; the others reorganise around it, as few moving as possible</span></div>'
-      +'<div class="frow"><span class="fkey">Linear shove</span><span class="fval">neighbours shoved aside one at a time; equal-size windows swap</span></div>'
-      +'<div class="frow"><span class="fkey">Overlap</span><span class="fval">no contest for space — tiles lie over each other, most recent on top</span></div>'
-      +'<div class="frow gridonly"><span class="fkey">Overflow</span><span class="fval">separately: when the board runs out of room, tiles either <b>drop</b> off it or the move is <b>refused</b></span></div>'
+      +'<div class="frow"><span class="fkey">Reorder</span><span class="fval">'
+        +'<span class="hi">lands <b>exactly</b> where you aimed; the others move as little as possible</span>'
+        +'<span class="lo">lands where you aimed</span></span></div>'
+      +'<div class="frow"><span class="fkey">Shove</span><span class="fval">'
+        +'<span class="hi">neighbours shoved aside one at a time; equal sizes swap</span>'
+        +'<span class="lo">neighbours shift one step</span></span></div>'
+      +'<div class="frow"><span class="fkey">Overlap</span><span class="fval">'
+        +'<span class="hi">no contest for space — tiles lie over each other, most recent on top</span>'
+        +'<span class="lo">tiles lie over each other</span></span></div>'
+      +'<div class="frow gridonly"><span class="fkey">Overflow</span><span class="fval">'
+        +'<span class="hi">when the board runs out of room, tiles <b>drop</b> off or the move is <b>refused</b></span>'
+        +'<span class="lo">spill drops, or is refused</span></span></div>'
+      +'<p class="feat-sum"><span class="long">Four ways to resolve a drop</span><span class="short">4 modes</span></p>'
       +'</div>',
     title:'Placement &amp; overflow',
     detail:'<p class="dlead">Every grid decides for itself what happens when you drop a window on cells someone else is already using.</p>'
@@ -1120,8 +1172,13 @@ const CARDS=[
       +'<p class="dbody">There were three more: the board carrying on past its edge, vertically, horizontally, or both, with the spill a scroll away. They are <b>held back on purpose</b>. Scrolling only means something when the board sits inside a viewport smaller than itself — true of this page, false of a desktop, where the monitor <i>is</i> the viewport and there is nowhere to scroll to. Shipping a setting the app could not honour would make this page a brochure rather than a demo. The engine still expresses it, and it returns the day Griddle can page a board across virtual desktops.</p>' },
   { id:'views',  app:'Views',  tier:1, w:4, h:2, sm:[4,2], accent:'#A259FF',
     html:'<div class="feat">'
-      +'<div class="frow"><span class="fkey">Save</span><span class="fval">every grid, its spacing, and which program sits where</span></div>'
-      +'<div class="frow"><span class="fkey">Restore</span><span class="fval">your whole desktop reassembles itself after a reboot</span></div>'
+      +'<div class="frow"><span class="fkey">Save</span><span class="fval">'
+        +'<span class="hi">every grid, its spacing, and which program sits where</span>'
+        +'<span class="lo">every grid and program</span></span></div>'
+      +'<div class="frow"><span class="fkey">Restore</span><span class="fval">'
+        +'<span class="hi">your whole desktop reassembles itself after a reboot</span>'
+        +'<span class="lo">your desktop comes back</span></span></div>'
+      +'<p class="feat-sum"><span class="long">Save your desktop, restore it later</span><span class="short">Save · restore</span></p>'
       +'</div>',
     title:'Views',
     detail:'<p class="dlead">Where a template saves one grid&rsquo;s slots, a <b>view</b> saves your whole desktop — every enabled grid, and which program sits on which cells.</p>'
