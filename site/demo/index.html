@@ -169,13 +169,13 @@ html.pristine[data-phase="grid"] .card[data-id="headline"]::before{background:va
   margin:0;text-wrap:balance;transition:font-size var(--dur) var(--ease),line-height var(--dur) var(--ease)}
 /* vh term keeps the intro type from outgrowing the window on short viewports */
 [data-phase="hero"] .headline{font-size:clamp(30px,min(5.6vw,11.5vh),76px);line-height:.95;letter-spacing:-.048em}
-[data-phase="grid"] .headline{font-size:clamp(15px,1.95vw,34px);line-height:1.08}
+[data-phase="grid"] .headline{font-size:clamp(15px,6.6cqi,38px);line-height:1.08}
 .headline .br{display:block}
 
 .dek{color:var(--muted);margin:0;text-wrap:pretty;overflow:hidden;
   transition:font-size var(--dur) var(--ease)}
 [data-phase="hero"] .dek{font-size:clamp(13.5px,1.3vw,17px);line-height:1.5;max-width:32em}
-[data-phase="grid"] .dek{font-size:clamp(11px,1.02vw,17px);line-height:1.5}
+[data-phase="grid"] .dek{font-size:clamp(11px,4.4cqi,19px);line-height:1.5}
 
 .eyebrow{font-family:var(--mono);color:var(--accent);text-transform:uppercase;font-weight:600;
   white-space:nowrap;transition:font-size var(--dur) var(--ease),letter-spacing var(--dur) var(--ease)}
@@ -211,7 +211,7 @@ html.pristine[data-phase="grid"] .card[data-id="headline"]::before{background:va
 [data-phase="hero"] .meta{font-size:11px}
 [data-phase="grid"] .meta{font-size:9.5px}
 
-.applabel{font-size:clamp(11px,.9vw,15px);color:var(--muted);line-height:1.45;overflow:hidden}
+.applabel{font-size:clamp(10px,4.6cqi,17px);color:var(--muted);line-height:1.45;overflow:hidden}
 .applabel b{color:var(--ink);font-weight:650}
 
 /* ---- in-tile content ----
@@ -223,17 +223,17 @@ html.pristine[data-phase="grid"] .card[data-id="headline"]::before{background:va
    tile — the claim needs a supporting sentence at tile scale, and the hero
    cannot afford one */
 .subhead{color:var(--muted);margin:clamp(10px,1.4vh,20px) 0 0;line-height:1.5;text-wrap:pretty;
-  font-size:clamp(10.5px,.95vw,16.5px);max-width:38em}
+  font-size:clamp(10px,3.5cqi,17px);max-width:38em}
 /* content that only makes sense once the card is a tile. The hero is one
    sentence and a headline by design; these would crowd it. */
 [data-phase="hero"] .gridonly{display:none}
 
 /* key/value feature rows — the label is the term, the value is what it does */
-.feat{display:flex;flex-direction:column;gap:clamp(5px,1.6vh,18px);overflow:hidden}
+.feat{display:flex;flex-direction:column;gap:clamp(4px,2.6cqb,18px);overflow:hidden}
 .frow{display:flex;gap:9px;align-items:baseline;line-height:1.4}
-.fkey{flex:none;min-width:clamp(52px,4.4vw,74px);font-family:var(--mono);font-size:clamp(8.5px,.7vw,12px);
+.fkey{flex:none;min-width:clamp(46px,17cqi,80px);font-family:var(--mono);font-size:clamp(8px,2.7cqi,12.5px);
   color:var(--accent);text-transform:uppercase;letter-spacing:.08em;font-weight:600}
-.fval{font-size:clamp(10.5px,.95vw,16.5px);color:var(--muted);text-wrap:pretty}
+.fval{font-size:clamp(10px,3.7cqi,17px);color:var(--muted);text-wrap:pretty}
 .fval b{color:var(--ink);font-weight:600}
 
 /* template thumbnails: real built-ins, drawn as the layouts they are */
@@ -281,8 +281,8 @@ html.pristine[data-phase="grid"] .card[data-id="headline"]::before{background:va
 .tcap{font-size:clamp(9.5px,3cqi,15px);color:var(--muted);line-height:1.45;margin:clamp(5px,1.6cqb,12px) 0 0;text-wrap:pretty}
 
 /* a compact stat strip for the short tiles */
-.kv{display:flex;flex-wrap:wrap;gap:clamp(3px,.8vh,8px) clamp(14px,1.4vw,26px);
-  font-size:clamp(10px,.9vw,15px);color:var(--muted);line-height:1.5;margin-top:clamp(8px,1.4vh,18px)}
+.kv{display:flex;flex-wrap:wrap;gap:clamp(3px,1.4cqb,8px) clamp(10px,4cqi,26px);
+  font-size:clamp(9.5px,3.4cqi,15px);color:var(--muted);line-height:1.5;margin-top:clamp(6px,2.4cqb,18px)}
 .kv b{color:var(--ink);font-weight:600}
 
 /* detail layer — genuinely different content, so it is an overlay that
@@ -442,7 +442,15 @@ html.pristine[data-phase="grid"] .card[data-id="headline"]::before{background:va
    viewport, it pages rather than dropping anything. Reset sits OUTSIDE both, so
    the escape hatch is never a tab away — a demo that can strand you in a state
    you cannot undo is worse than one with a crowded bar. */
-.tabs{display:flex;gap:2px;padding:2px;background:var(--surface-2);border-radius:8px;flex:none}
+/* The tabs govern everything to their right, so they read as a section rather
+   than as the first control in a row of equals: their own well, a wider gutter
+   than the between-control dividers, and a full-height rule in --line (the
+   dividers between controls are --line-soft). Without it the eye groups
+   "Behaviour" with "Columns" and the tabs look like just another setting. */
+.tabs{display:flex;gap:2px;padding:2px;background:var(--surface-2);border-radius:8px;flex:none;
+  position:relative;margin-right:11px}
+.tabs::after{content:"";position:absolute;right:-11px;top:-4px;bottom:-4px;width:1px;
+  background:var(--line)}
 .tab{font-family:var(--text);font-size:11px;font-weight:600;color:var(--faint);
   background:none;border:0;border-radius:6px;padding:4px 9px;cursor:pointer;line-height:1.3;
   transition:color 160ms ease,background 160ms ease}
@@ -542,6 +550,42 @@ select.mode{font-family:var(--text);font-size:12px;background:var(--surface-2);c
      it may as well not exist */
   [data-phase="grid"].tools-on .rhandle::after{border-color:var(--faint)}
   .rhandle.grabbing::after{border-color:var(--accent);border-width:2.5px}
+}
+
+/* ---- progressive disclosure, by TILE ----
+   A tile never truncates: when it runs out of room it drops the least important
+   thing it is carrying rather than clipping the most important one. These are
+   container queries, so they fire on the TILE's own size — the same card is
+   verbose at 5x3 and terse at 3x1 on one screen, which a media query cannot
+   express because both have the same viewport.
+   Ordered least-important-first, so a shrinking tile sheds supporting detail,
+   then secondary rows, and gives up the headline last. */
+@container tile (max-height:130px){
+  .subhead,.tcap{display:none}
+}
+@container tile (max-height:104px){
+  .kv{display:none}
+}
+/* key/value rows go from the bottom up — the first row of any .feat is the one
+   that names the feature, so it is the last to leave */
+@container tile (max-height:96px){
+  .feat .frow:nth-child(n+4){display:none}
+}
+@container tile (max-height:70px){
+  .feat .frow:nth-child(n+3){display:none}
+}
+@container tile (max-height:50px){
+  .feat .frow:nth-child(n+2){display:none}
+}
+/* narrow tiles cannot hold a mono key beside its value, so stack the pair */
+@container tile (max-width:190px){
+  .frow{flex-direction:column;gap:1px}
+  .fkey{min-width:0}
+}
+/* the template gallery is supporting material; below this it is unreadable
+   anyway and the caption alone says more */
+@container tile (max-height:120px){
+  .tgal{display:none}
 }
 
 @media (prefers-reduced-motion:reduce){
@@ -755,7 +799,7 @@ function monitorsFig(){
 }
 /* Content authored ONCE, for the grid. The hero reuses these very nodes. */
 const CARDS=[
-  { id:'headline', app:'Griddle Window Manager', tier:0, w:5, h:3, hero:1,
+  { id:'headline', app:'Griddle Window Manager', tier:0, w:5, h:3, sm:[4,3], hero:1,
     html:'<h1 class="headline">Every window,<span class="br">right where it belongs.</span></h1>'
         +'<p class="subhead gridonly">Windows 11 gives you halves and quarters. Griddle gives you a grid —'
         +' 12 columns by 6 rows out of the box — and lets every window claim whatever rectangle of cells you want.</p>',
@@ -766,7 +810,7 @@ const CARDS=[
       +'<div class="drow"><span class="dkey">Preview</span><span class="dval">Drag one and an overlay shows exactly where it will land and which neighbours will move, <b>before</b> you let go.</span></div>'
       +'<div class="drow"><span class="dkey">Same engine</span><span class="dval"><b>Which is what you are doing right now.</b> This page is not a mockup — the solver arranging these tiles is the same file the desktop app ships.</span></div>'
       +'</div>' },
-  { id:'foss', app:'License', tier:0, w:3, h:1, hero:1,
+  { id:'foss', app:'License', tier:0, w:3, h:1, sm:[4,1], hero:1,
     html:'<div class="eyebrow">Free · Open source · Windows 11</div>',
     title:'MIT licensed',
     detail:'<p class="dlead">Free and open source under the MIT licence. No account, no paid tier, no trial.</p>'
@@ -775,7 +819,7 @@ const CARDS=[
       +'<div class="drow"><span class="dkey">Public</span><span class="dval">The full source, the design specs, and the <b>entire commit history</b> — including how it was built and what was rejected.</span></div>'
       +'<div class="drow"><span class="dkey">Windows 11</span><span class="dval">Built for Windows 11 on x64. It is not cross-platform and does not pretend to be.</span></div>'
       +'</div>' },
-  { id:'dek', app:'What it does', tier:0, w:4, h:2, hero:1,
+  { id:'dek', app:'What it does', tier:0, w:4, h:2, sm:[4,2], hero:1,
     html:'<p class="dek">A grid you design yourself — and every window exactly where you meant it to go.</p>'
         +'<div class="kv gridonly"><span><b>12 × 6</b> by default</span><span>gap and padding <b>0–64px</b></span>'
         +'<span>per monitor, or <b>spanning several</b></span></div>',
@@ -790,7 +834,7 @@ const CARDS=[
   /* No `hero` flag on purpose: the intro is text only. A download button there is
      dead UI — any key or click starts the arrangement and carries it off, so it
      can never be clicked. It arrives as a real tile once the grid has landed. */
-  { id:'cta', app:'Download', tier:0, w:4, h:2,
+  { id:'cta', app:'Download', tier:0, w:4, h:2, sm:[4,2],
     html:'<a class="cta" href="https://github.com/DadsDoingDesign/GriddleWindowManager/releases/latest" target="_blank" rel="noopener">Download for Windows 11</a><div class="meta">v0.2.0 · 3.1 MB · x64</div>',
     title:'Download',
     detail:'<p class="dlead">Version 0.2.0 — 3.1 MB, x64, and it installs for you alone.</p>'
@@ -801,7 +845,7 @@ const CARDS=[
       +'<div class="drow"><span class="dkey">SmartScreen</span><span class="dval">The installer is not code-signed, so Windows warns once: choose <b>More info → Run anyway</b>. That means Windows does not recognise the publisher — not that anything is wrong.</span></div>'
       +'<div class="drow"><span class="dkey">Updates</span><span class="dval">Checked against GitHub Releases only if you ask. The setting is <b>off by default</b>.</span></div>'
       +'</div>' },
-  { id:'modes', app:'Placement', tier:1, w:4, h:3, accent:'#4A9EDB',
+  { id:'modes', app:'Placement', tier:1, w:4, h:3, sm:[4,3], accent:'#4A9EDB',
     html:'<div class="feat">'
       +'<div class="frow"><span class="fkey">Reorganize</span><span class="fval">lands <b>exactly</b> where you aimed; the others reorganise around it, as few moving as possible</span></div>'
       +'<div class="frow"><span class="fkey">Linear shove</span><span class="fval">neighbours shoved aside one at a time; equal-size windows swap</span></div>'
@@ -829,7 +873,7 @@ const CARDS=[
       +'</div>'
       +'<p class="dbody">Under <b>Overlap</b> the question disappears entirely — windows never compete for space, so nothing can fail to fit. The overflow control switches itself off and says so.</p>'
       +'<p class="dbody">There were three more: the board carrying on past its edge, vertically, horizontally, or both, with the spill a scroll away. They are <b>held back on purpose</b>. Scrolling only means something when the board sits inside a viewport smaller than itself — true of this page, false of a desktop, where the monitor <i>is</i> the viewport and there is nowhere to scroll to. Shipping a setting the app could not honour would make this page a brochure rather than a demo. The engine still expresses it, and it returns the day Griddle can page a board across virtual desktops.</p>' },
-  { id:'views',  app:'Views',  tier:1, w:4, h:2, accent:'#A259FF',
+  { id:'views',  app:'Views',  tier:1, w:4, h:2, sm:[4,2], accent:'#A259FF',
     html:'<div class="feat">'
       +'<div class="frow"><span class="fkey">Save</span><span class="fval">every grid, its spacing, and which program sits where</span></div>'
       +'<div class="frow"><span class="fkey">Restore</span><span class="fval">your whole desktop reassembles itself after a reboot</span></div>'
@@ -842,7 +886,7 @@ const CARDS=[
       +'<div class="drow"><span class="dkey">At startup</span><span class="dval">Mark one <b>Load at startup</b> and the desktop reassembles itself as programs launch, each claiming the slot it had.</span></div>'
       +'<div class="drow"><span class="dkey">Then stops</span><span class="dval">Claims stay open for two minutes. After that, normal placement resumes — a view restores your desktop without governing it forever.</span></div>'
       +'</div>' },
-  { id:'templates', app:'Templates', tier:2, w:3, h:3, accent:'#F5A623',
+  { id:'templates', app:'Templates', tier:2, w:3, h:3, sm:[4,3], accent:'#F5A623',
     html:'<div class="tgal">'+tplButtons('tmini',96,0)+'</div>'
       +'<p class="tcap gridonly"><b>Click one</b> to lay this grid out with it — right here, on this page.</p>',
     title:'Templates',
@@ -852,7 +896,7 @@ const CARDS=[
       +'<div class="drow"><span class="dkey">Apply</span><span class="dval">Your open windows map onto the slots <b>by recency</b>, most recent to the first slot. Anything left over is auto-placed by the usual rules.</span></div>'
       +'<div class="drow"><span class="dkey">Re-dimension</span><span class="dval">Each template carries <b>its own columns and rows</b>, and applying one sets the grid to them. A shape needs its own axes — squeezing Cockpit into a 6&times;4 board would round its rails into something that is no longer a cockpit. Every thumbnail states the dimensions it will set.</span></div>'
       +'</div>'+templatesFig()+'</div>' },
-  { id:'monitors', app:'Monitors', tier:3, w:3, h:1, accent:'#E01E5A',
+  { id:'monitors', app:'Monitors', tier:3, w:3, h:1, sm:[4,1], accent:'#E01E5A',
     html:'<div class="applabel"><b>One grid across several screens.</b> Or a separate grid on each.</div>',
     title:'Monitors',
     detail:'<p class="dlead">A grid per monitor, each with its own dimensions, spacing and placement mode — or one grid stretched across several screens at once.</p>'
@@ -863,7 +907,7 @@ const CARDS=[
       +'<div class="drow"><span class="dkey">Unplugging</span><span class="dval">A spanning grid whose member is gone goes inert rather than guessing, and revives when the screen comes back.</span></div>'
       +'</div>'+monitorsFig()+'</div>'
       +'<p class="dbody">Spanning grids are the newest feature here and the least field-tested — please report anything odd.</p>' },
-  { id:'local', app:'Privacy', tier:3, w:3, h:1,
+  { id:'local', app:'Privacy', tier:3, w:3, h:1, sm:[4,1],
     html:'<div class="applabel"><b>Stays on your machine.</b> No telemetry, no account.</div>',
     title:'It stays on your machine',
     detail:'<p class="dlead">No telemetry, no analytics, no account. Your window titles never leave your machine.</p>'
@@ -872,7 +916,7 @@ const CARDS=[
       +'<div class="drow"><span class="dkey">Network</span><span class="dval">Exactly one feature can make an outbound request — the update check — and it is <b>opt-in and off by default</b>.</span></div>'
       +'<div class="drow"><span class="dkey">Titles</span><span class="dval">Window titles are read to show you a list. They are never stored, never sent, and never written to a log.</span></div>'
       +'</div>' },
-  { id:'safe', app:'Reversible', tier:3, w:3, h:1,
+  { id:'safe', app:'Reversible', tier:3, w:3, h:1, sm:[4,1],
     html:'<div class="applabel"><b>Nothing is destroyed.</b> Turn a grid off, windows stay put.</div>',
     title:'Nothing is destroyed',
     detail:'<p class="dlead">Nothing Griddle does is destructive. Every way of stopping it leaves your windows exactly where they are.</p>'
@@ -892,6 +936,33 @@ const solveMinimalMoves=GriddleLib.solveMinimalMoves;
    `ovf` is TILE OVERFLOW — what happens when that rearrangement needs room the
    board does not have. They are genuinely independent: every pair means
    something, except under Overlap, where nothing ever fails to fit. */
+/* The DEFAULT board scales with the screen. 12x6 is a fine grid on a 27" and a
+   nonsense one on a phone, where each cell would be about 30px across and every
+   tile would be a truncated sliver. Fewer, bigger cells is what "responsive"
+   means for a grid — not the same grid drawn smaller. Paired with tierLimit(),
+   which decides how many tiles there are to place, this keeps the cell-per-tile
+   ratio roughly constant across every screen. */
+function defaultDims(){
+  const w=innerWidth;
+  // 4, not 5: every narrow footprint is 4 wide, so a 5-column board leaves a
+  // dead column down the whole right-hand side. The board should be full.
+  if(w<760)return{cols:4,rows:8};
+  if(w<1060)return{cols:8,rows:7};
+  if(w<1400)return{cols:10,rows:7};
+  return{cols:12,rows:6};
+}
+/* A narrow board is not the same board drawn smaller — a 5-cell-wide tile does
+   not exist on a 4-column grid, and clamping it to 4 while leaving its height at
+   3 gives you a shape nobody designed. So the cards carry a NARROW footprint as
+   well as a wide one: same content, a shape that suits a column instead of a
+   room. Chosen so the tier that survives at each width still fits the board it
+   is given, which is what stops small screens from being a page of dropped
+   tiles. */
+function narrowBoard(){return cols<=6;}
+function cardSize(c){
+  const s=narrowBoard()&&c.sm?c.sm:[c.w,c.h];
+  return{w:Math.min(s[0],cols),h:Math.min(s[1],rows)};
+}
 let cols=12,rows=6,gap=10,radius=10,mode='reflow',ovf='drop';
 const PAD=24;
 
@@ -973,7 +1044,12 @@ let grid=null,expandedId=null,started=false,didDrag=false,drag=null,rez=null,und
 /* Reset compares against the page as it first arranged itself, not against a
    hardcoded board — the seed depends on viewport tier, so the only honest
    baseline is the one this visitor actually got. */
-const DEFAULTS={cols:12,rows:6,gap:10,radius:10,mode:'reflow',ovf:'drop'};
+/* Captured once, at the size the visitor arrived at. Reset means "back to the
+   board this page gave me", and re-deriving it on every resize would silently
+   move the goalposts — you would drag a window, widen the window, and find the
+   Reset button had gone grey because the defaults had walked to meet you. */
+const DEFAULTS={...defaultDims(),gap:10,radius:10,mode:'reflow',ovf:'drop'};
+cols=DEFAULTS.cols;rows=DEFAULTS.rows;
 let seedKey='';
 const els=new Map();
 const stage=document.getElementById('stage'),gridwrap=document.getElementById('gridwrap'),
@@ -1134,7 +1210,7 @@ function seedGrid(){
   for(const c of CARDS){
     if(c.tier>lim)continue;
     const[sc,sr]=SEATS[c.id];
-    const w=Math.min(c.w,cols),h=Math.min(c.h,rows);
+    const{w,h}=cardSize(c);
     grid.addTileWithDisplacement({id:c.id,col:Math.min(sc,cols-w),row:Math.min(sr,rows-h),w,h});
   }
 }
@@ -1534,7 +1610,8 @@ function reorderRepack(id,to,size){
      Only a tile that is off the board comes back at its authored size. */
   const reading=CARDS.filter(c=>c.tier<=lim&&c.id!==id).map(c=>{
     const t=onBoard.get(c.id);
-    return{id:c.id,tier:c.tier,w:Math.min(t?t.w:c.w,cols),h:Math.min(t?t.h:c.h,rows),
+    const cs=cardSize(c);
+    return{id:c.id,tier:c.tier,w:Math.min(t?t.w:cs.w,cols),h:Math.min(t?t.h:cs.h,rows),
            row:t?t.row:Infinity,col:t?t.col:Infinity};
   }).sort((a,b)=>a.row-b.row||a.col-b.col||(a.id<b.id?-1:1));
   /* LINEAR, one pass. Reading order, each tile into the first slot that fits;
@@ -1828,7 +1905,7 @@ function applyTemplateById(id){
       const s=slots[i];
       if(grid.addTileWithDisplacement({id:cid,col:s.col,row:s.row,w:s.w,h:s.h}))return;
     }
-    const w=Math.min(card?card.w:1,cols),h=Math.min(card?card.h:1,rows);
+    const{w,h}=card?cardSize(card):{w:1,h:1};
     const pos=firstFit(grid.tiles.map(x=>({col:x.col,row:x.row,w:x.w,h:x.h})),w,h);
     if(pos)grid.addTile({id:cid,col:pos.col,row:pos.row,w,h});else dropped++;
   });
@@ -2042,6 +2119,11 @@ let rt;addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(()=>{
 
 root.dataset.phase='hero';
 root.classList.add('pristine');   // the headline holds the highlight until you look elsewhere
+// the markup ships 12 / 6; the real defaults depend on the screen, so the
+// steppers have to be told what they are actually showing before anyone reads them
+document.getElementById('colsVal').textContent=cols;
+document.getElementById('rowsVal').textContent=rows;
+btns();
 build();
 renderCells();   // the intro floats over a real, empty grid — so it must exist first
 requestAnimationFrame(()=>layoutHeroSettled(()=>{
