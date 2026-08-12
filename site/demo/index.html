@@ -651,13 +651,25 @@ select.mode{font-family:var(--text);font-size:12px;background:var(--surface-2);c
   .tgal{display:none}
 }
 
-/* the pill: live state on the left, a chevron on the right */
+/* The pill NAMES the thing it opens, then reports its state underneath.
+   It used to show only "Reorganize · 8×7", which tells you what the board is
+   doing but never says that tapping it is how you change any of it — a status
+   line masquerading as a control. The name is the accessible name of the button
+   too, so a screen reader announces "Grid settings, collapsed" rather than
+   reading out two values with no indication of what they belong to. */
 .sheetbtn{display:none;align-items:center;justify-content:space-between;gap:12px;
   min-height:56px;padding:0 16px;border:0;background:none;cursor:pointer;
-  font:inherit;color:var(--ink);border-radius:13px;width:100%}
+  font:inherit;color:var(--ink);border-radius:13px;width:100%;text-align:left}
 .sheetbtn:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-.sheetstate{font-family:var(--text);font-size:14.5px;font-weight:600;letter-spacing:-.01em}
-.sheetchev{font-size:15px;color:var(--faint);line-height:1;transition:transform 260ms var(--ease-out)}
+.sheetlabel{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:0}
+.sheetname{font-family:var(--text);font-size:14.5px;font-weight:600;color:var(--ink);
+  letter-spacing:-.01em;line-height:1.2}
+/* the state stays, demoted: mono and muted, so it reads as a readout of the
+   board rather than as a second label competing with the name */
+.sheetstate{font-family:var(--mono);font-size:11.5px;color:var(--faint);letter-spacing:.02em;
+  line-height:1.3;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sheetchev{flex:none;font-size:15px;color:var(--faint);line-height:1;
+  transition:transform 260ms var(--ease-out)}
 
 /* ---- mobile: the bar becomes a bottom sheet ----
    Wrapping the desktop bar to fit 44px targets produced a 233px blob on an
@@ -738,12 +750,16 @@ select.mode{font-family:var(--text);font-size:12px;background:var(--surface-2);c
      ever unreachable at any width: that was the old bar's real bug, not its
      width — Gap and Corners were display:none below 1100px, so on a laptop you
      simply could not change them. -->
-<div class="controls" id="controls" role="group" aria-label="Grid controls">
-  <!-- Mobile only. The bar collapses to this pill, which reads the live state so
-       it is worth its 56px even closed; tapping it raises the whole set. On a
+<div class="controls" id="controls" role="group" aria-label="Grid settings">
+  <!-- Mobile only. The bar collapses to this pill: it NAMES what it opens, and
+       reports the board's state underneath, so it earns its 56px closed and
+       still says plainly that tapping it is how you change any of this. On a
        pointer device it never renders and the bar behaves exactly as before. -->
   <button class="sheetbtn" id="sheetBtn" type="button" aria-expanded="false" aria-controls="panes">
-    <span class="sheetstate" id="sheetState">Reorganize · 12×6</span>
+    <span class="sheetlabel">
+      <span class="sheetname">Grid settings</span>
+      <span class="sheetstate" id="sheetState">Reorganize · 12×6</span>
+    </span>
     <span class="sheetchev" aria-hidden="true">⌃</span>
   </button>
   <div class="tabs" role="tablist" aria-label="Setting group">
