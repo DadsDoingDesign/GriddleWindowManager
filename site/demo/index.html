@@ -724,6 +724,88 @@ select.mode{font-family:var(--text);font-size:12px;background:var(--surface-2);c
   .toast{bottom:84px}
 }
 
+/* ============================================================
+   APPROVED TILE SPEC — Figma "Tile Ideation", sections 01-04
+   (headline, foss, dek, cta), each annotated "ready for review".
+   These rules deliberately come last and override the fluid cqi
+   clamps above: the approved design is a FIXED type scale with a
+   capped measure, not type that shrinks with its tile.
+   ============================================================ */
+
+/* The card is its own query container, so padding can respond to the tile's
+   size without a container trying to query a box its own padding defines.
+   .content keeps the `tile` container for content-box questions. */
+.card{container:card / size}
+
+/* Padding steps: 24 / 40 / 80, read off the approved sections. */
+@container card (max-height:209px){ .content{padding:24px} }
+@container card (min-height:210px){ .content{padding:40px} }
+@container card (min-height:400px){ .content{padding:80px} }
+
+/* Measure. Every text block stops at 400px — on the largest specimen the
+   content box is 1292px wide and the type is still set to 400. Line length is
+   an editorial constant here, not a function of the container. */
+.content > *{max-width:400px}
+@container card (min-height:600px){ .content > *{max-width:800px} }
+
+/* Display type: three fixed steps, and the second line always sets smaller. */
+[data-phase="grid"] .headline{font-size:24px;line-height:1.4;letter-spacing:-.67px}
+[data-phase="grid"] .headline .br{font-size:20px}
+@container card (min-height:400px){
+  [data-phase="grid"] .headline{font-size:40px}
+  [data-phase="grid"] .headline .br{font-size:32px}
+}
+@container card (min-height:600px){
+  [data-phase="grid"] .headline{font-size:80px}
+  [data-phase="grid"] .headline .br{font-size:64px}
+}
+/* Body: one size, everywhere, until the very largest tile doubles it. */
+[data-phase="grid"] .subhead,[data-phase="grid"] .dek,
+.applabel,.fval,.kv,.tcap{font-size:16px;line-height:1.5;letter-spacing:0}
+@container card (min-height:600px){
+  [data-phase="grid"] .subhead,[data-phase="grid"] .dek,.applabel,.fval{font-size:32px}
+}
+/* Mono: the licence line is 14, the download meta 12. */
+[data-phase="grid"] .eyebrow{font-size:14px;line-height:1.5;letter-spacing:.18em}
+.fkey{font-size:14px;line-height:1.5}
+[data-phase="grid"] .meta{font-size:12px;line-height:1.5;text-align:left}
+[data-phase="grid"] .cta{font-size:12px;height:34px}
+
+/* ---- copy that changes with the tile, not just visibility ----
+   The approved sections carry three lengths of the same sentence and show the
+   one the width can hold. A tile too narrow for the full line gets a shorter
+   TRUE sentence rather than the same sentence clipped or shrunk. */
+.v-xs,.v-sm,.v-lg{display:none}
+@container card (max-width:199px){ .v-xs{display:block} }
+@container card (min-width:200px) and (max-width:379px){ .v-sm{display:block} }
+@container card (min-width:380px){ .v-lg{display:block} }
+/* dek's middle length runs a little longer before it needs the full sentence */
+@container card (min-width:200px) and (max-width:329px){ .dek .v-sm{display:block} }
+@container card (min-width:330px){ .dek .v-sm{display:none} .dek .v-lg{display:block} }
+/* secondary affordances arrive only when the tile is tall enough to hold them */
+.ondeep{display:none}
+@container card (min-height:200px){ .ondeep{display:block} }
+.ondeeper{display:none}
+@container card (min-height:270px){ .ondeeper{display:flex} }
+
+/* The download tile has its own gate, because below 200px the button LABEL is
+   wider than the whole tile — there is no honest way to draw a call to action,
+   so the narrowest form is the version string and nothing else. These cannot
+   use .v-* because that forces display:block, which would flatten the button's
+   inline-flex and drop its centring. */
+.tinyonly,.notiny{display:none}
+@container card (max-width:199px){ .tinyonly{display:block} }
+@container card (min-width:200px){
+  .notiny{display:block}
+  a.cta.notiny{display:inline-flex}
+}
+/* the licence link: quiet, underlined on approach, never competing with the CTA */
+.seelink{align-self:flex-start;font-family:var(--text);font-size:14px;line-height:1.4;
+  color:var(--accent);text-decoration:none;border-bottom:1px solid transparent;
+  transition:border-color 160ms ease}
+.seelink:hover{border-bottom-color:var(--accent-line)}
+.seelink:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+
 @media (prefers-reduced-motion:reduce){
   .card,.headline,.dek,.eyebrow,.cta,.meta,.content{transition-duration:1ms !important}
   .rhandle{transition-duration:1ms !important}
@@ -948,8 +1030,7 @@ function monitorsFig(){
 const CARDS=[
   { id:'headline', app:'Griddle Window Manager', tier:0, w:5, h:3, sm:[4,3], hero:1,
     html:'<h1 class="headline">Every window,<span class="br">right where it belongs.</span></h1>'
-        +'<p class="subhead gridonly">Windows 11 gives you halves and quarters. Griddle gives you a grid —'
-        +' 12 columns by 6 rows out of the box — and lets every window claim whatever rectangle of cells you want.</p>',
+        +'<p class="subhead gridonly">Gives you a grid and lets every window claim whatever rectangle of cells you want.</p>',
     title:'Every window, right where it belongs.',
     detail:'<p class="dlead">Windows 11 gives you halves and quarters. Griddle gives you a real grid — say 12 columns by 6 rows — and lets any window claim any rectangle of cells.</p>'
       +'<div class="drows">'
@@ -958,7 +1039,15 @@ const CARDS=[
       +'<div class="drow"><span class="dkey">Same engine</span><span class="dval"><b>Which is what you are doing right now.</b> This page is not a mockup — the solver arranging these tiles is the same file the desktop app ships.</span></div>'
       +'</div>' },
   { id:'foss', app:'License', tier:0, w:3, h:1, sm:[4,1], hero:1,
-    html:'<div class="eyebrow">Free · Open source · Windows 11</div>',
+    /* Three true sentences, not one sentence clipped — the tile shows the
+       longest its width can hold. "See license" arrives only once the tile is
+       tall enough to carry a second line. */
+    html:'<div class="eyebrow">'
+      +'<span class="v-xs">FOSS</span>'
+      +'<span class="v-sm">FOSS · Windows 11</span>'
+      +'<span class="v-lg">Free · Open source · Windows 11</span>'
+      +'</div>'
+      +'<a class="seelink ondeep gridonly" href="https://github.com/DadsDoingDesign/GriddleWindowManager/blob/master/LICENSE" target="_blank" rel="noopener">See license &rarr;</a>',
     title:'MIT licensed',
     detail:'<p class="dlead">Free and open source under the MIT licence. No account, no paid tier, no trial.</p>'
       +'<div class="drows">'
@@ -967,8 +1056,12 @@ const CARDS=[
       +'<div class="drow"><span class="dkey">Windows 11</span><span class="dval">Built for Windows 11 on x64. It is not cross-platform and does not pretend to be.</span></div>'
       +'</div>' },
   { id:'dek', app:'What it does', tier:0, w:4, h:2, sm:[4,2], hero:1,
-    html:'<p class="dek">A grid you design yourself — and every window exactly where you meant it to go.</p>'
-        +'<div class="kv gridonly"><span><b>12 × 6</b> by default</span><span>gap and padding <b>0–64px</b></span>'
+    html:'<p class="dek">'
+        +'<span class="v-xs">A grid for your windows</span>'
+        +'<span class="v-sm">A grid for every window, where it&rsquo;s meant to be.</span>'
+        +'<span class="v-lg">A grid you design yourself — and every window exactly where you meant it to go.</span>'
+        +'</p>'
+        +'<div class="kv ondeeper gridonly"><span><b>12 × 6</b> by default</span><span>gap and padding <b>0–64px</b></span>'
         +'<span>per monitor, or <b>spanning several</b></span></div>',
     title:'What it does',
     detail:'<p class="dlead">Enable a grid on any monitor and every eligible window snaps into it. Everything after that is about not having to arrange it twice.</p>'
@@ -982,7 +1075,12 @@ const CARDS=[
      dead UI — any key or click starts the arrangement and carries it off, so it
      can never be clicked. It arrives as a real tile once the grid has landed. */
   { id:'cta', app:'Download', tier:0, w:4, h:2, sm:[4,2],
-    html:'<a class="cta" href="https://github.com/DadsDoingDesign/GriddleWindowManager/releases/latest" target="_blank" rel="noopener">Download for Windows 11</a><div class="meta">v0.2.0 · 3.1 MB · x64</div>',
+    /* Below 200px there is no honest way to show a button — the label alone is
+       wider than the tile — so the narrowest form is the version string and
+       nothing else, and the tile stops pretending to be a call to action. */
+    html:'<span class="meta tinyonly">v0.2.0</span>'
+      +'<a class="cta notiny" href="https://github.com/DadsDoingDesign/GriddleWindowManager/releases/latest" target="_blank" rel="noopener">Download for Windows 11</a>'
+      +'<div class="meta notiny">v0.2.0 · 3.1 MB · x64</div>',
     title:'Download',
     detail:'<p class="dlead">Version 0.2.0 — 3.1 MB, x64, and it installs for you alone.</p>'
       +'<div class="dbuy"><a class="cta" href="https://github.com/DadsDoingDesign/GriddleWindowManager/releases/latest" target="_blank" rel="noopener">Download for Windows 11</a>'
