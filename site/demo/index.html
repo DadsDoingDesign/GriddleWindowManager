@@ -629,27 +629,25 @@ select.mode{font-family:var(--text);font-size:12px;background:var(--surface-2);c
 @container tile (max-height:104px){
   .kv{display:none}
 }
-/* key/value rows go from the bottom up — the first row of any .feat is the one
-   that names the feature, so it is the last to leave */
-@container tile (max-height:96px){
-  .feat .frow:nth-child(n+4){display:none}
-}
-@container tile (max-height:70px){
-  .feat .frow:nth-child(n+3){display:none}
-}
-@container tile (max-height:50px){
-  .feat .frow:nth-child(n+2){display:none}
-}
+/* Key/value rows used to shed from the bottom up here. They no longer do: these
+   rows are a list of OPTIONS, and showing two of four does not read as "no room
+   for the rest", it reads as "there are two". The description gives way instead
+   — see the three-step ladder further down, which owns this behaviour now. */
 /* narrow tiles cannot hold a mono key beside its value, so stack the pair */
 @container tile (max-width:190px){
   .frow{flex-direction:column;gap:1px}
   .fkey{min-width:0}
 }
-/* the template gallery is supporting material; below this it is unreadable
-   anyway and the caption alone says more */
+/* Below this the gallery is unreadable, so the tile says what it is for instead
+   of showing thumbnails nobody can read — same rule as the option lists: never
+   render empty, and never imply there is less here than there is. */
+.tgal-sum{display:none}
 @container tile (max-height:120px){
   .tgal{display:none}
+  .tgal-sum{display:block}
 }
+@container tile (max-width:150px){ .tgal-sum .long{display:none} }
+@container tile (min-width:151px){ .tgal-sum .short{display:none} }
 
 /* The pill NAMES the thing it opens, then reports its state underneath.
    It used to show only "Reorganize · 8×7", which tells you what the board is
@@ -813,18 +811,28 @@ select.mode{font-family:var(--text);font-size:12px;background:var(--surface-2);c
       288px. A gallery is not a line of text and does not read like one. */
 .content > .tgal{max-width:none}
 
-/* 3. Row budget, retuned for fixed type. At 16px/150% a row is 24px for one
-      line and 48px for two, so the old thresholds — written when type shrank
-      to fit — let four rows into a box that holds one. Measured against the
-      content box, which is what the rows actually live in. */
-@container tile (max-height:219px){ .feat .frow:nth-child(n+4){display:none} }
-@container tile (max-height:169px){ .feat .frow:nth-child(n+3){display:none} }
-@container tile (max-height:109px){ .feat .frow:nth-child(n+2){display:none} }
-/* 4. No tile may render empty. Below one row the tile states its subject
-      instead of listing things it has no room to list. */
+/* 3. COMPLETENESS BEATS DETAIL. These rows are a list of OPTIONS, and dropping
+      two of four does not say "there was no room" — it says "there are two
+      modes", which is false. So the list never loses an item; the description
+      gives way instead, in three steps:
+        · roomy   — every option, full description
+        · tighter — every option, short description
+        · tight   — every option, name only, set inline as a wrapped list
+      Names alone still carry the meaning here: Reorder, Shove, Overlap and
+      Overflow each say what they do, which is what makes dropping the prose
+      survivable and dropping a row not. */
+@container tile (max-height:219px){ .fval .hi{display:none} .fval .lo{display:inline} }
+@container tile (max-height:149px){
+  .feat{flex-direction:row;flex-wrap:wrap;gap:5px 14px;align-items:baseline}
+  .frow{display:contents}          /* lift the keys into the wrapped list */
+  .fkey{width:auto}
+  .fval{display:none}
+}
+/* 4. No tile may render empty. Below even a wrapped list of names the tile
+      states its subject rather than listing what it cannot show. */
 .feat-sum{display:none}
 @container tile (max-height:59px){
-  .feat .frow{display:none}
+  .feat .frow,.feat .fkey{display:none}
   .feat-sum{display:block}
 }
 @container tile (max-width:150px){ .feat-sum .long{display:none} }
@@ -1190,6 +1198,8 @@ const CARDS=[
       +'</div>' },
   { id:'templates', app:'Templates', tier:2, w:3, h:3, sm:[4,3], accent:'#F5A623',
     html:'<div class="tgal">'+tplButtons('tmini',96,0)+'</div>'
+      +'<p class="tgal-sum"><span class="long">Use templated layouts, or capture your own</span>'
+        +'<span class="short">4 layouts</span></p>'
       +'<p class="tcap gridonly"><b>Click one</b> to lay this grid out with it — right here, on this page.</p>',
     title:'Templates',
     detail:'<p class="dlead">Four layouts built in, plus any arrangement you have already made and want to keep. Click one and this grid rearranges into it.</p>'
