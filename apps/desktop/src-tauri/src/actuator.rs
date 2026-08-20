@@ -396,7 +396,21 @@ mod win {
                     Err(e) => {
                         // Per Win32 docs the HDWP is invalid after a failure;
                         // abandon the whole batch.
-                        log::error!("DeferWindowPos failed for hwnd {}: {e}", p.key);
+                        //
+                        // Carry the rect: a bare "the parameter is incorrect"
+                        // says nothing, and this line is the only record of
+                        // why a batch fell back to per-window moves. Rects are
+                        // Griddle's own geometry, never window content, so
+                        // this stays within the log privacy rule.
+                        log::error!(
+                            "DeferWindowPos failed for hwnd {} at {}x{}+{}+{}                              (batch of {}): {e}",
+                            p.key,
+                            p.raw.width,
+                            p.raw.height,
+                            p.raw.x,
+                            p.raw.y,
+                            prepared.len(),
+                        );
                         return false;
                     }
                 }

@@ -32,14 +32,37 @@ const CONFIG_FILE: &str = "config.json";
 const TMP_FILE: &str = "config.json.tmp";
 const BAK_FILE: &str = "config.json.bak";
 
-/// `%APPDATA%/griddle-wm`, or `None` when APPDATA is unset (not a real
-/// Windows session; commands degrade to "no config").
+/// Folder name under `%APPDATA%`. A dev build gets its own so a contributor
+/// running `npm run tauri:dev` cannot fight — or corrupt — the config of the
+/// copy they have installed. Both sides ran a 500 ms debounced writer against
+/// one hardcoded path before this (docs/qa-handoff-2026-08-19.md, defect 4).
+///
+/// `dev` is the cfg alias `tauri-build` emits: true exactly when the
+/// `custom-protocol` feature is off, i.e. every `tauri dev` build and no
+/// shipped one.
+pub const APP_DIR: &str = if cfg!(dev) { "griddle-wm-dev" } else { "griddle-wm" };
+
+/// `%APPDATA%/griddle-wm` (`griddle-wm-dev` in a dev build), or `None` when
+/// APPDATA is unset (not a real Windows session; commands degrade to "no
+/// config").
 pub fn config_dir() -> Option<PathBuf> {
     let appdata = std::env::var_os("APPDATA")?;
     if appdata.is_empty() {
         return None;
     }
-    Some(PathBuf::from(appdata).join("griddle-wm"))
+    Some(PathBuf::from(appdata).join(APP_DIR))
+}
+
+/// `%APPDATA%/griddle-wm/logs` — the log file lives beside the config rather
+/// than in Tauri's identifier-keyed `LogDir`, so everything Griddle writes
+/// about you sits in exactly one folder you can inspect or delete.
+///
+/// Privacy rule for anything logged here (see README "What Griddle records"):
+/// the log may name Griddle's own state — hwnds, monitor device names, config
+/// paths, error text — and must never contain a window title, an executable
+/// name or a path to your documents. Nothing is ever transmitted.
+pub fn logs_dir() -> Option<PathBuf> {
+    config_dir().map(|dir| dir.join("logs"))
 }
 
 /// Read + validate the config under `dir`. Missing file → `None`. Corrupt or
@@ -643,7 +666,7 @@ mod tests {
         .unwrap();
 
         let read = read_config_from(dir.path()).expect("v3 config must stay readable");
-        assert_eq!(read.version, 4, "re-stamped to v4");
+        assert_eq!(read.version, CONFIG_VERSION, "re-stamped to current");
         assert_eq!(
             read.grids[0].mode,
             GridMode::Push,
@@ -841,11 +864,23 @@ mod tests {
     }
 
     #[test]
-    fn config_dir_is_appdata_griddle_wm() {
+    fn config_dir_is_appdata_app_dir() {
         // APPDATA is always set on Windows CI/dev boxes; on other platforms
         // the function may return None, which callers treat as "no config".
         if let Some(dir) = config_dir() {
-            assert!(dir.ends_with("griddle-wm"), "{}", dir.display());
+            assert!(dir.ends_with(APP_DIR), "{}", dir.display());
+        }
+        // Tests are a dev build by construction (`custom-protocol` is off), so
+        // this also pins the namespacing: a contributor running the test suite
+        // or `tauri dev` must never be pointed at the installed copy's config.
+        assert_eq!(APP_DIR, "griddle-wm-dev");
+    }
+
+    #[test]
+    fn logs_live_beside_the_config() {
+        if let (Some(cfg), Some(logs)) = (config_dir(), logs_dir()) {
+            assert_eq!(logs.parent(), Some(cfg.as_path()), "{}", logs.display());
+            assert!(logs.ends_with("logs"), "{}", logs.display());
         }
     }
 }

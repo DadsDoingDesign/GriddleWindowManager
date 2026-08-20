@@ -264,14 +264,38 @@ pub fn list_windows(window: tauri::Window) -> Vec<WindowInfo> {
     if crate::guard::authorize("list_windows", window.label()).is_err() {
         return Vec::new();
     }
-    if window.label() == crate::guard::MAIN_LABEL {
+    let out = if window.label() == crate::guard::MAIN_LABEL {
         // A sweep request proves the brain page's event loop is alive —
         // count it as a heartbeat (see shell::note_brain_activity).
         crate::shell::note_brain_activity();
         snapshot()
     } else {
         snapshot_readonly()
+    };
+    // Debug-only tally. Counts per monitor and how many are minimized —
+    // never a title or an exe, per the log privacy rule in `config::logs_dir`.
+    if log::log_enabled!(log::Level::Debug) {
+        let mut per: std::collections::BTreeMap<&str, (usize, usize)> =
+            std::collections::BTreeMap::new();
+        for w in &out {
+            let e = per.entry(w.monitor_id.as_str()).or_default();
+            e.0 += 1;
+            if w.minimized {
+                e.1 += 1;
+            }
+        }
+        let tally: Vec<String> = per
+            .iter()
+            .map(|(m, (n, min))| format!("{m} => {n} ({min} minimized)"))
+            .collect();
+        log::debug!(
+            "list_windows for {:?}: {} window(s) [{}]",
+            window.label(),
+            out.len(),
+            tally.join(", "),
+        );
     }
+    out
 }
 
 /// Contract C2 extension (critique fix, event-storm hardening): is `hwnd`
@@ -896,6 +920,7 @@ mod win {
         }
         let key = hwnd.0 as isize;
         if is_tracked(key) {
+            log::debug!("movesize-start: hwnd {key} is tracked; starting drag sampler");
             emit(
                 events::MOVESIZE_START,
                 HwndPayload {
@@ -904,6 +929,10 @@ mod win {
             );
             // Task 14: start the 16 ms drag sampler emitting `drag-pos`.
             crate::drag_pump::on_move_size_start(key);
+        } else {
+            // The commonest reason a drag "does nothing": the window is not in
+            // the live eligible set, so no overlay and no placement can follow.
+            log::debug!("movesize-start: hwnd {key} is NOT tracked; ignoring the drag");
         }
     }
 

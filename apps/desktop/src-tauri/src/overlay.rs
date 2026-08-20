@@ -168,7 +168,7 @@ fn ensure_overlay(app: &AppHandle, monitor_id: &str) -> Result<WebviewWindow, St
     }
 
     let label = format!("overlay-{}", NEXT_LABEL.fetch_add(1, Ordering::SeqCst));
-    let win = WebviewWindowBuilder::new(app, &label, WebviewUrl::App(overlay_url(monitor_id).into()))
+    let mut builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::App(overlay_url(monitor_id).into()))
         .title("Griddle Window Manager Overlay")
         .transparent(true)
         .decorations(false)
@@ -181,7 +181,14 @@ fn ensure_overlay(app: &AppHandle, monitor_id: &str) -> Result<WebviewWindow, St
         .minimizable(false)
         .closable(false)
         .accept_first_mouse(false)
-        .visible(false)
+        .visible(false);
+    // Same WebView2 constraint the settings window hit: an overlay built
+    // without the brain's browser args is refused by the already-running
+    // browser process, so the drag preview would never appear.
+    if let Some(args) = crate::shell::brain_browser_args(app) {
+        builder = builder.additional_browser_args(&args);
+    }
+    let win = builder
         .build()
         .map_err(|e| format!("overlay window build failed: {e}"))?;
     position_to(&win, &mon)?;
@@ -202,6 +209,10 @@ pub async fn show_overlay(
 ) -> Result<(), String> {
     crate::guard::authorize("show_overlay", window.label())?;
     let win = ensure_overlay(&app, &monitor_id)?;
+    // `ensure_overlay` is shared with `hide_overlay`'s pre-warm, so its
+    // "created overlay window" line alone never proves a drag happened.
+    // Say which way it went.
+    log::debug!("show_overlay: {monitor_id}");
     win.show()
         .map_err(|e| format!("overlay show failed: {e}"))
 }
@@ -217,6 +228,7 @@ pub async fn hide_overlay(
 ) -> Result<(), String> {
     crate::guard::authorize("hide_overlay", window.label())?;
     let win = ensure_overlay(&app, &monitor_id)?;
+    log::debug!("hide_overlay: {monitor_id}");
     win.hide()
         .map_err(|e| format!("overlay hide failed: {e}"))
 }

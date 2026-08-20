@@ -11,7 +11,53 @@ v0.2.0 tasks append their GUI-only checks to this file as they land.
 
 Build under test:
 `apps/desktop/src-tauri/target/release/bundle/nsis/Griddle Window
-Manager_0.2.0_x64-setup.exe` from a clean `npx tauri build`.
+Manager_0.2.0_x64-setup.exe` from a clean `npm run tauri:build`
+(or `npm run tauri:build:local` when you do not hold the signing key).
+
+> **Do not verify with a `cargo build --release` binary.** Tauri sets
+> `dev = !custom_protocol` and only the Tauri CLI passes that feature, so a
+> bare cargo build points every window at `http://localhost:5173` and shows
+> "can't reach this page". It looks exactly like a broken app.
+
+---
+
+## P0 — the v0.2.0 dead-on-arrival regression (run before anything else)
+
+Added 2026-08-19 after the WebView2 browser-argument bug
+([`qa-handoff-2026-08-19.md`](qa-handoff-2026-08-19.md)) made every release to
+date unusable: no window built at runtime could create its webview, so Settings,
+the drag overlays and the brain's respawn path all failed silently. These three
+boxes are the ones that would have caught it.
+
+- [ ] **Settings opens at all.** With no `%APPDATA%\griddle-wm\config.json`,
+      launch the app. The first-run welcome window appears *and stays*. A frame
+      that flashes and vanishes within a second is the exact failure signature.
+- [ ] **Settings opens again.** Close it, then reopen from the tray item, then
+      from `Ctrl+Win+G`, then by launching the exe a second time. All three
+      routes must work *every* time — the old bug bricked all of them
+      permanently after the first failure.
+- [ ] **The drag overlay appears.** With a grid enabled on a monitor that has
+      windows on it, drag one. The grid preview must fade in. This is a
+      separate webview from Settings and failed for the same reason.
+
+## P0 — diagnosability (added 2026-08-19)
+
+- [ ] `%APPDATA%\griddle-wm\logs\` exists after a run and contains a log file
+      naming the version at startup. A shipped build that writes no log is the
+      reason the above went undiagnosed for two releases.
+- [ ] Open the log and confirm it contains **no window titles, no executable
+      names and no document paths** — only Griddle's own state. This is a
+      privacy promise in the README, not just a nicety.
+- [ ] Launch with `GRIDDLE_DEBUG=1` set: the internal brain window becomes
+      visible and the log gains debug-level lines.
+
+## P0 — build isolation (added 2026-08-19)
+
+- [ ] With a copy installed, run `npm run tauri:dev`. It must write to
+      `%APPDATA%\griddle-wm-dev\`, leaving the installed copy's
+      `%APPDATA%\griddle-wm\config.json` untouched.
+- [ ] Toggling "Start with Windows" in that dev build must refuse and log why,
+      rather than pointing the logon entry at `target\debug`.
 
 ---
 

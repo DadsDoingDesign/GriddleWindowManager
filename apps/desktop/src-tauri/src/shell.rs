@@ -50,6 +50,48 @@ const MENU_ID_UPDATE: &str = "update";
 const MENU_ID_TOGGLE_PREFIX: &str = "toggle:";
 
 // ---------------------------------------------------------------------------
+// WebView2 browser arguments (QA 2026-08-19: the dead-on-arrival root cause)
+// ---------------------------------------------------------------------------
+//
+// Every webview in one process shares a single WebView2 *browser process*,
+// keyed by the user-data folder. WebView2 pins that process to the
+// `additionalBrowserArgs` of whoever created it first and then refuses any
+// later environment whose arguments differ:
+// `CreateCoreWebView2EnvironmentWithOptions` fails with
+// `HRESULT_FROM_WIN32(ERROR_INVALID_STATE)`.
+//
+// The brain window declares custom args in `tauri.conf.json` and boots first,
+// so it wins the race. Any window built later that does *not* repeat those
+// args asks wry for its default set instead (`webview2/mod.rs`,
+// `create_environment`) - a different string - and its `build()` fails after
+// the native window already exists, so the user sees a frame flash and
+// vanish. That killed the settings window, the drag overlays and the brain's
+// own respawn path, and because the failure is `log::error!`-only it was
+// invisible in a release build.
+//
+// Reading the args back out of the parsed config (rather than repeating the
+// literal here) means the two can never drift apart: whatever
+// `tauri.conf.json` declares for the brain is exactly what every other window
+// asks for.
+
+/// The brain window's `additionalBrowserArgs`, as declared in `tauri.conf.json`.
+pub fn brain_browser_args(app: &AppHandle) -> Option<String> {
+    browser_args_of(&app.config().app.windows, crate::guard::MAIN_LABEL)
+}
+
+/// Pure half of [`brain_browser_args`], so the lookup is testable without a
+/// running app.
+pub fn browser_args_of(
+    windows: &[tauri::utils::config::WindowConfig],
+    label: &str,
+) -> Option<String> {
+    windows
+        .iter()
+        .find(|w| w.label == label)
+        .and_then(|w| w.additional_browser_args.clone())
+}
+
+// ---------------------------------------------------------------------------
 // Pause flag (authority; tracker + actuator consult it)
 // ---------------------------------------------------------------------------
 
@@ -96,15 +138,20 @@ pub fn should_respawn_brain(label: &str, exiting: bool) -> bool {
 /// silently ends all window management while the tray keeps looking healthy.
 pub fn respawn_brain_host(app: &AppHandle) {
     log::error!("brain host window died unexpectedly; respawning");
-    match WebviewWindowBuilder::new(
+    let mut builder = WebviewWindowBuilder::new(
         app,
         crate::guard::MAIN_LABEL,
         WebviewUrl::App("/brain".into()),
     )
     .title("Griddle Window Manager Brain")
     .inner_size(800.0, 600.0)
-    .visible(false)
-    .build()
+    .visible(false);
+    // Without the original args this respawn is refused by the running
+    // WebView2 browser process, so a dead brain could never come back.
+    if let Some(args) = brain_browser_args(app) {
+        builder = builder.additional_browser_args(&args);
+    }
+    match builder.build()
     {
         Ok(_) => log::info!("brain host respawned; rehydrating from config"),
         Err(e) => log::error!("failed to respawn brain host: {e}"),
@@ -312,18 +359,52 @@ pub fn set_paused(app: AppHandle, window: tauri::Window, paused: bool) {
 /// exists. Called by the `show_settings` command, the tray menu, the global
 /// hotkey and the single-instance guard.
 pub fn open_settings(app: &AppHandle) -> tauri::Result<()> {
+    // A window that exists but can no longer be shown is worse than none:
+    // the old code returned Ok here unconditionally, so once a build left a
+    // corpse behind under this label, *every* later route in - tray item,
+    // hotkey, second launch - silently no-opped forever. Prove the window is
+    // really usable; if it is not, tear it down and build a fresh one.
     if let Some(win) = app.get_webview_window(SETTINGS_LABEL) {
-        win.unminimize()?;
-        win.show()?;
-        win.set_focus()?;
-        return Ok(());
+        match revive_settings(&win) {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                log::error!(
+                    "settings window exists but will not show ({e}); rebuilding it"
+                );
+                // Best-effort: a corpse may fail to destroy too, but the
+                // rebuild below is the only path back to a usable window.
+                if let Err(e) = win.destroy() {
+                    log::error!("failed to destroy the stale settings window: {e}");
+                }
+            }
+        }
     }
-    WebviewWindowBuilder::new(app, SETTINGS_LABEL, WebviewUrl::App("/settings".into()))
-        .title("Griddle Window Manager Settings")
-        .inner_size(900.0, 720.0)
-        .min_inner_size(560.0, 400.0)
-        .center()
-        .build()?;
+    let mut builder =
+        WebviewWindowBuilder::new(app, SETTINGS_LABEL, WebviewUrl::App("/settings".into()))
+            .title("Griddle Window Manager Settings")
+            .inner_size(900.0, 720.0)
+            .min_inner_size(560.0, 400.0)
+            .center();
+    // Must match the brain's args or WebView2 refuses the environment and
+    // this build() fails after the native window is already on screen -
+    // exactly the "frame flashed for a second" report.
+    if let Some(args) = brain_browser_args(app) {
+        builder = builder.additional_browser_args(&args);
+    }
+    builder.build()?;
+    Ok(())
+}
+
+/// Surface an existing settings window, failing loudly if it is a corpse.
+/// `is_visible` is the probe that matters: it round-trips to the real HWND,
+/// so a destroyed window reports an error rather than a cheerful `Ok`.
+fn revive_settings(win: &tauri::WebviewWindow) -> tauri::Result<()> {
+    win.unminimize()?;
+    win.show()?;
+    win.set_focus()?;
+    if !win.is_visible()? {
+        return Err(tauri::Error::WebviewNotFound);
+    }
     Ok(())
 }
 
@@ -371,11 +452,19 @@ pub fn monitor_menu_label(m: &MonitorInfo) -> String {
 /// This is the one sanctioned place for the short form "Griddle WM": a tray
 /// tooltip is a single cramped line that also has to carry the grid-full
 /// sentence. Everywhere else the product is "Griddle Window Manager".
-pub fn tray_tooltip(floating: usize) -> String {
-    match floating {
-        0 => "Griddle WM".to_string(),
-        1 => "Griddle WM — 1 window didn't fit its grid and floats free".to_string(),
-        n => format!("Griddle WM — {n} windows didn't fit their grid and float free"),
+pub fn tray_tooltip(floating: usize, idle_grids: usize) -> String {
+    // Floating windows come first: a window that did not fit is a live
+    // misbehaviour, while an idle grid is merely waiting.
+    match (floating, idle_grids) {
+        (0, 0) => "Griddle WM".to_string(),
+        (0, 1) => {
+            "Griddle WM — a grid is enabled on a monitor with no windows on it yet".to_string()
+        }
+        (0, n) => format!(
+            "Griddle WM — {n} grids are enabled on monitors with no windows on them yet"
+        ),
+        (1, _) => "Griddle WM — 1 window didn't fit its grid and floats free".to_string(),
+        (n, _) => format!("Griddle WM — {n} windows didn't fit their grid and float free"),
     }
 }
 
@@ -579,14 +668,19 @@ fn on_menu_event(app: &AppHandle, menu_id: &str) {
 /// rebuild the item list when the topology changed. Runs on every brain
 /// snapshot, so it reads the watcher-maintained monitor cache instead of
 /// re-enumerating displays each time.
-fn sync_tray(app: &AppHandle, enabled_monitor_ids: &[String], floating: usize) {
+fn sync_tray(
+    app: &AppHandle,
+    enabled_monitor_ids: &[String],
+    floating: usize,
+    idle_grids: usize,
+) {
     let monitors = cached_monitors();
     let mut guard = tray_state().lock().unwrap_or_else(|p| p.into_inner());
     let Some(state) = guard.as_mut() else {
         return; // tray never came up (init_tray failed); nothing to sync
     };
     state.enabled_monitor_ids = enabled_monitor_ids.to_vec();
-    if let Err(e) = state.tray.set_tooltip(Some(tray_tooltip(floating))) {
+    if let Err(e) = state.tray.set_tooltip(Some(tray_tooltip(floating, idle_grids))) {
         log::error!("failed to set tray tooltip: {e}");
     }
     let same_monitors = state.monitor_items.len() == monitors.len()
@@ -633,11 +727,19 @@ pub fn update_tray(
     window: tauri::Window,
     enabled_monitor_ids: Vec<String>,
     floating_count: Option<usize>,
+    // Enabled grids holding no windows. Optional so an older brain bundle
+    // that omits it still deserializes (it simply reports none).
+    idle_grid_count: Option<usize>,
 ) {
     if crate::guard::authorize("update_tray", window.label()).is_err() {
         return;
     }
-    sync_tray(&app, &enabled_monitor_ids, floating_count.unwrap_or(0));
+    sync_tray(
+        &app,
+        &enabled_monitor_ids,
+        floating_count.unwrap_or(0),
+        idle_grid_count.unwrap_or(0),
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -809,7 +911,14 @@ pub fn apply_hotkey(app: &AppHandle, hotkey: &str) {
         Err(e) => {
             // Likely taken by another app; try to fall back to the previous
             // binding so the user is not left with none at all.
-            log::error!("failed to register hotkey {hotkey:?}: {e}");
+            //
+            // The commonest cause during development is a second Griddle
+            // already holding the chord: only one process can own a global
+            // hotkey, and the loser used to fail silently because release
+            // builds registered no logger at all.
+            log::error!(
+                "failed to register hotkey {hotkey:?}: {e} - another process                  already owns this chord (often a second copy of Griddle                  Window Manager); pressing it will act on that process, not                  this one"
+            );
             if let Some(old) = current.clone() {
                 if let Ok(old_shortcut) = old.parse::<Shortcut>() {
                     if app.global_shortcut().register(old_shortcut).is_ok() {
@@ -872,6 +981,17 @@ pub fn sync_from_config(app: &AppHandle, cfg: &AppConfig) {
 /// Converge the OS autostart registration onto `wanted` (the config value the
 /// settings toggle writes).
 fn sync_autostart(app: &AppHandle, wanted: bool) {
+    // A dev build's exe lives in `target\debug`, and the plugin writes an
+    // `HKCU\...\Run` entry pointing at whichever exe asked. Letting a
+    // contributor's throwaway build claim the user's logon would silently
+    // replace their installed copy at next sign-in, so a dev build declines
+    // and says why (docs/qa-handoff-2026-08-19.md, defect 4).
+    if cfg!(dev) && wanted {
+        log::warn!(
+            "autostart requested but refused: this is a dev build, and              registering it would hijack sign-in from any installed copy"
+        );
+        return;
+    }
     let manager = app.autolaunch();
     match (manager.is_enabled(), wanted) {
         (Ok(true), true) | (Ok(false), false) => {}
@@ -1074,14 +1194,34 @@ mod tests {
     // -- tray tooltip (spec §5.4 grid-full hint) ------------------------------
 
     #[test]
-    fn tray_tooltip_names_grid_full_floating_windows() {
-        assert_eq!(tray_tooltip(0), "Griddle WM");
+    fn tray_tooltip_names_idle_grids_and_prefers_floating() {
+        // An enabled grid with no windows on its monitor is the "I clicked
+        // the tray item and nothing happened" case (defect 3): it must say so.
         assert_eq!(
-            tray_tooltip(1),
+            tray_tooltip(0, 1),
+            "Griddle WM — a grid is enabled on a monitor with no windows on it yet",
+        );
+        assert_eq!(
+            tray_tooltip(0, 2),
+            "Griddle WM — 2 grids are enabled on monitors with no windows on them yet",
+        );
+        // A window that did not fit is a live misbehaviour and outranks an
+        // idle grid, which is merely waiting.
+        assert_eq!(
+            tray_tooltip(1, 3),
+            "Griddle WM — 1 window didn't fit its grid and floats free",
+        );
+    }
+
+    #[test]
+    fn tray_tooltip_names_grid_full_floating_windows() {
+        assert_eq!(tray_tooltip(0, 0), "Griddle WM");
+        assert_eq!(
+            tray_tooltip(1, 0),
             "Griddle WM — 1 window didn't fit its grid and floats free"
         );
         assert_eq!(
-            tray_tooltip(3),
+            tray_tooltip(3, 0),
             "Griddle WM — 3 windows didn't fit their grid and float free"
         );
     }
@@ -1102,5 +1242,58 @@ mod tests {
         for bad in ["", "Ctrl+", "NotAKey+G", "Ctrl+Super+NoSuchKey"] {
             assert!(bad.parse::<Shortcut>().is_err(), "{bad} should not parse");
         }
+    }
+
+    // -- WebView2 browser args (QA 2026-08-19 regression) --------------------
+
+    fn window_cfg(label: &str, args: Option<&str>) -> tauri::utils::config::WindowConfig {
+        tauri::utils::config::WindowConfig {
+            label: label.into(),
+            additional_browser_args: args.map(Into::into),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn browser_args_come_from_the_named_window() {
+        let windows = vec![
+            window_cfg("other", Some("--nope")),
+            window_cfg(crate::guard::MAIN_LABEL, Some("--disable-features=X --flag")),
+        ];
+        assert_eq!(
+            browser_args_of(&windows, crate::guard::MAIN_LABEL).as_deref(),
+            Some("--disable-features=X --flag"),
+        );
+    }
+
+    #[test]
+    fn browser_args_absent_when_unset_or_unknown() {
+        let windows = vec![window_cfg(crate::guard::MAIN_LABEL, None)];
+        assert_eq!(browser_args_of(&windows, crate::guard::MAIN_LABEL), None);
+        assert_eq!(browser_args_of(&windows, "settings"), None);
+    }
+
+    /// The whole fix rests on the brain declaring args that every other window
+    /// must then repeat: WebView2 pins its browser process to the first
+    /// environment's arguments and refuses any later one that differs, so a
+    /// window built without them dies right after its native frame appears.
+    /// If this assertion ever fails the helper has quietly become a no-op --
+    /// either restore the declaration or drop the args everywhere at once.
+    #[test]
+    fn the_shipped_config_declares_brain_browser_args() {
+        let raw = include_str!("../tauri.conf.json");
+        let cfg: serde_json::Value = serde_json::from_str(raw).expect("tauri.conf.json parses");
+        let windows = cfg["app"]["windows"].as_array().expect("app.windows array");
+        let brain = windows
+            .iter()
+            .find(|w| w["label"] == crate::guard::MAIN_LABEL)
+            .expect("a window labelled `main`");
+        let args = brain["additionalBrowserArgs"]
+            .as_str()
+            .expect("the brain declares additionalBrowserArgs");
+        assert!(
+            args.contains("--disable-background-timer-throttling"),
+            "the hidden brain must stay unthrottled; got {args:?}",
+        );
     }
 }

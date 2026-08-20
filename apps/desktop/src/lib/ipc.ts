@@ -277,8 +277,9 @@ export function showSettings(): Promise<void> {
 export function updateTray(
   enabledMonitorIds: string[],
   floatingCount = 0,
+  idleGridCount = 0,
 ): Promise<void> {
-  return invoke('update_tray', { enabledMonitorIds, floatingCount });
+  return invoke('update_tray', { enabledMonitorIds, floatingCount, idleGridCount });
 }
 
 /**

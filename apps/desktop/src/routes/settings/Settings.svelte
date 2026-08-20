@@ -123,6 +123,22 @@
   }
 
   let monitors: MonitorInfo[] = $state([]);
+  /**
+   * Eligible windows per monitor id, for the first-run picker: how many are
+   * there at all, and how many a grid could actually take right now.
+   *
+   * Enabling a grid that then does nothing visible is the single most
+   * misleading thing this app can do (docs/qa-handoff-2026-08-19.md, defect
+   * 3), and there are two separate ways to walk into it: pick a monitor with
+   * no windows, or pick one whose windows are all maximized. `enableGrid`
+   * skips both — it sweeps only matching, non-`minimized` windows, and
+   * `minimized` is `IsIconic || WS_MAXIMIZE`, so a maximized window is
+   * invisible to it. Saying which case you are in costs one `list_windows`
+   * call, which the settings window is already allowed to make. `null` while
+   * still unknown, so the hint never guesses.
+   */
+  let monitorWindowCounts: Record<string, { total: number; tileable: number }> | null =
+    $state(null);
   let snapshot: StateSnapshot | null = $state(null);
   /** Monitors ticked in the span-monitors multi-select (plan Task 17). */
   let spanSelection: Record<string, boolean> = $state({});
@@ -200,6 +216,7 @@
     monitors = await listMonitors();
     firstRunPick =
       (monitors.find((m) => m.primary) ?? monitors[0])?.id ?? null;
+    void refreshMonitorWindowCounts();
     const cfg = await readConfig();
     if (cfg) {
       autostart = cfg.autostart;
@@ -411,6 +428,18 @@
     return Math.round((m.dpi / 96) * 100);
   }
 
+  /**
+   * Why picking the currently-selected monitor would look like nothing
+   * happened: `'empty'`, `'maximized'`, or `null` when it will actually tile.
+   */
+  const firstRunPickIsIdle = $derived.by(() => {
+    if (monitorWindowCounts === null || firstRunPick === null) return null;
+    const c = monitorWindowCounts[firstRunPick] ?? { total: 0, tileable: 0 };
+    if (c.total === 0) return 'empty';
+    if (c.tileable === 0) return 'maximized';
+    return null;
+  });
+
   const sortedMonitors = $derived(
     [...monitors].sort((a, b) => Number(b.primary) - Number(a.primary) || a.x - b.x),
   );
@@ -563,6 +592,24 @@
     void emitSettingsSetExclusions({
       exclusions: exclusions.filter((e) => e !== exe),
     });
+  }
+
+  async function refreshMonitorWindowCounts(): Promise<void> {
+    try {
+      const ws = await listWindows();
+      const counts: Record<string, { total: number; tileable: number }> = {};
+      for (const w of ws) {
+        const c = (counts[w.monitorId] ??= { total: 0, tileable: 0 });
+        c.total += 1;
+        if (!w.minimized) c.tileable += 1;
+      }
+      monitorWindowCounts = counts;
+    } catch (e) {
+      // A failed count is not worth blocking first run over — fall back to
+      // showing no hint at all rather than a wrong one.
+      console.error('list_windows failed:', e);
+      monitorWindowCounts = null;
+    }
   }
 
   function togglePicker(): void {
@@ -843,6 +890,20 @@
               <span class="fr-mon-meta">
                 {mon.width}×{mon.height}{mon.primary ? ' · primary' : ''}
               </span>
+              {#if monitorWindowCounts !== null}
+                {@const c = monitorWindowCounts[mon.id] ?? { total: 0, tileable: 0 }}
+                <span class="fr-mon-windows" class:empty={c.tileable === 0}>
+                  {#if c.total === 0}
+                    no windows here yet
+                  {:else if c.tileable === 0}
+                    {c.total}
+                    {c.total === 1 ? 'window' : 'windows'}, all maximized
+                  {:else}
+                    {c.tileable}
+                    {c.tileable === 1 ? 'window' : 'windows'} ready to tile
+                  {/if}
+                </span>
+              {/if}
             </label>
           {/each}
         </div>
@@ -860,8 +921,18 @@
           onclick={enableFirstRun}>Enable grid</button
         >
         <span class="hint">
-          Starts as a 12×6 grid — your windows on this monitor snap into
-          place right away, and you can change everything later.
+          {#if firstRunPickIsIdle === 'empty'}
+            Starts as a 12×6 grid. There are no windows on this monitor yet, so
+            it will look empty until you move one over — that is expected, not a
+            failure.
+          {:else if firstRunPickIsIdle === 'maximized'}
+            Starts as a 12×6 grid. Every window on this monitor is maximized and
+            a grid leaves maximized windows alone, so nothing will move until
+            you restore one.
+          {:else}
+            Starts as a 12×6 grid — your windows on this monitor snap into
+            place right away, and you can change everything later.
+          {/if}
         </span>
         <!-- Honest label: this page never returns (the first config write
              ends first-run for good) — skipping simply lands on the full
@@ -2343,6 +2414,20 @@
   .fr-mon-meta {
     font-size: 12px;
     color: var(--text-dim);
+  }
+
+  /* The "no windows here yet" hint. Both states use the existing palette:
+     dim when it is merely context, and the normal text colour when it is
+     telling you the pick will look idle. Deliberately not a red or an alert
+     tone — picking an empty monitor is allowed, just worth knowing first. */
+  .fr-mon-windows {
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.35;
+  }
+
+  .fr-mon-windows.empty {
+    color: var(--text);
   }
 
   /* Exclusions editor (plan Task 19) */

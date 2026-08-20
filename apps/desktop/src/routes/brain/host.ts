@@ -225,10 +225,21 @@ export async function startBrainHost(): Promise<BrainHost> {
     ...new Set(grids.filter((g) => g.enabled).flatMap((g) => g.monitorIds)),
   ];
 
+  /**
+   * Enabled grids that currently hold no windows. Enabling a grid on a
+   * monitor you have no windows on is a legitimate no-op — `enableGrid`
+   * sweeps only windows whose `monitorId` matches — but it used to be a
+   * *silent* one, which read as "the app is broken"
+   * (docs/qa-handoff-2026-08-19.md, defect 3). Counting them lets the tray
+   * say so.
+   */
+  const idleGridCountOf = (grids: GridSettings[]): number =>
+    grids.filter((g) => g.enabled && (lastSnapshot?.tiles[g.id]?.length ?? 0) === 0).length;
+
   const pushTrayState = (grids?: GridSettings[], floatingCount?: number) => {
     const source = grids ?? lastSnapshot?.grids ?? brain.exportConfig().grids;
     const floating = floatingCount ?? lastSnapshot?.floating.length ?? 0;
-    updateTray(enabledMonitorIdsOf(source), floating).catch((e) =>
+    updateTray(enabledMonitorIdsOf(source), floating, idleGridCountOf(source)).catch((e) =>
       console.error('update_tray failed:', e),
     );
   };

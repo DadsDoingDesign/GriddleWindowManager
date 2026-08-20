@@ -245,14 +245,28 @@ npm run test -w packages/brain                        # layout brain (vitest)
 cd apps/desktop/src-tauri; cargo test; cd ../../..    # Rust shell
 npm run build -w apps/desktop                         # webview bundles
 
-# dev build with devtools (from apps/desktop)
-cd apps/desktop
-npx tauri dev
+# dev build with devtools
+npm run tauri:dev
 
-# release build + NSIS installer
-npx tauri build
-# → src-tauri/target/release/bundle/nsis/Griddle Window Manager_0.2.0_x64-setup.exe
+# release build + NSIS installer, without the maintainer's signing key
+npm run tauri:build:local
+# → apps/desktop/src-tauri/target/release/bundle/nsis/Griddle Window Manager_0.2.0_x64-setup.exe
 ```
+
+Use the npm scripts rather than calling `tauri` directly:
+
+- `npm run tauri:dev` applies `tauri.dev.conf.json`, which gives the dev build
+  its own app identifier and its own `%APPDATA%\griddle-wm-dev\` folder. Without
+  it a local build shares the single-instance lock, config file and WebView2
+  profile with any copy you have installed, and the two overwrite each other.
+- `npm run tauri:build:local` turns off updater artifacts, which otherwise
+  require `TAURI_SIGNING_PRIVATE_KEY` — a key only the maintainer holds. Plain
+  `npm run tauri:build` is the release path and will fail at the last step
+  without it, *after* writing a perfectly good exe and installer.
+- Never build the app with a bare `cargo build --release`. Tauri sets
+  `dev = !custom_protocol`, and only the Tauri CLI passes that feature, so the
+  result silently points at `http://localhost:5173` and shows "can't reach this
+  page" in every window.
 
 Repository layout:
 
@@ -298,6 +312,17 @@ connections to GitHub accordingly. Your configuration — grids, templates,
 views, app defaults — stays in `%APPDATA%\griddle-wm\config.json` on your
 machine. Nothing about your windows, your applications, or your settings is
 ever transmitted anywhere.
+
+**What Griddle records on disk.** Alongside the config, Griddle keeps a plain-text
+diagnostic log in `%APPDATA%\griddle-wm\logs\`. It exists so a failure in a
+shipped build can be diagnosed at all — earlier releases registered no logger,
+which is why a bug that made the app unusable went unexplained for two
+versions. The log deliberately never contains a window title, an executable
+name, or a path to any of your documents: it records only Griddle's own state —
+window handles, monitor device names, its own config path, and error text. It
+is capped at three files of 2 MiB, it is never uploaded, and you can delete the
+folder at any time. Set `GRIDDLE_DEBUG=1` before launching to raise the log
+level and un-hide the internal brain window.
 
 **Updates are opt-in and off by default.** With the toggle off, the app makes
 no network requests at all; that guarantee is a pure function in the layout
