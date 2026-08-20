@@ -159,6 +159,14 @@ export interface PreviewState {
   visible: boolean;
   footprint: Slot | null; // where the dragged window would land
   ghosts: GhostMove[]; // neighbor reflow preview (push + reflow modes)
+  /**
+   * Spec 2026-08-20: why the previewed placement cannot happen ("No room —
+   * this grid is full"). Present only when the placement is impossible; the
+   * overlay renders it so a refused gesture is never silent. Absent —
+   * not null — on every possible placement, so payloads predating the field
+   * compare equal.
+   */
+  refusal?: string;
 }
 
 export interface DragPos {

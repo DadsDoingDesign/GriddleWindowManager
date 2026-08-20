@@ -63,6 +63,12 @@
   let monitors: MonitorInfo[] = $state([]);
   let grids: GridSettings[] = $state([]);
   let visible = $state(false);
+  /**
+   * Spec 2026-08-20: why the previewed placement cannot happen. The overlay
+   * is the product's voice during a drag — a refused gesture must say so
+   * here, in the moment, not in a tray tooltip nobody hovers.
+   */
+  let refusal = $state<string | null>(null);
   let footprint: Slot | null = $state(null);
   /** hwnd -> currently displayed ghost rect (reassigned to trigger updates). */
   let ghostRects: ReadonlyMap<string, Rect> = $state(new Map());
@@ -217,6 +223,7 @@
     if (!visible) ghostRects = new Map(); // fresh drag: forget stale ghosts
     visible = true;
     footprint = p.footprint;
+    refusal = p.refusal ?? null;
     syncGhosts(p.ghosts);
   }
 
@@ -295,12 +302,31 @@
     {#if footprintRect}
       <rect
         class="footprint"
+        class:refused={refusal !== null}
         x={footprintRect.x}
         y={footprintRect.y}
         width={footprintRect.width}
         height={footprintRect.height}
         rx="8"
       />
+    {/if}
+
+    <!-- 4. refusal message (spec 2026-08-20): centered in the work area,
+         auto-sized by real CSS via foreignObject. -->
+    {#if refusal}
+      <foreignObject
+        x={workRect.x}
+        y={workRect.y}
+        width={workRect.width}
+        height={workRect.height}
+        pointer-events="none"
+      >
+        <div class="refusal-wrap" xmlns="http://www.w3.org/1999/xhtml">
+          <div class="refusal" style:font-size="{Math.max(20, Math.round(mon.width / 80))}px">
+            {refusal}
+          </div>
+        </div>
+      </foreignObject>
     {/if}
   </svg>
 {/if}
@@ -356,6 +382,38 @@
     stroke: var(--ov-accent);
     stroke-opacity: 0.9;
     stroke-width: 2;
+  }
+
+  /* A footprint that cannot be committed: same shape, drained of promise —
+     desaturated and dimmer, so the message below carries the verdict. */
+  .footprint.refused {
+    fill: #8a8f9a;
+    fill-opacity: 0.15;
+    stroke: #8a8f9a;
+    stroke-opacity: 0.6;
+    filter: none;
+  }
+
+  .refusal-wrap {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .refusal {
+    padding: 0.55em 1.1em;
+    border-radius: 999px;
+    background: rgba(23, 26, 33, 0.88);
+    border: 1px solid rgba(138, 143, 154, 0.6);
+    color: #eef0f4;
+    font-family: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .footprint {
     filter: drop-shadow(0 0 6px rgba(180, 77, 255, 0.35));
     transition:
       x 120ms var(--ease-out),

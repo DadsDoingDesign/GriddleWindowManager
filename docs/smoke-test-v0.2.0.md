@@ -64,6 +64,18 @@ boxes are the ones that would have caught it.
 - [ ] First-run wizard shows the unchecked "Turn off Windows edge-snap"
       checkbox and honours it when checked.
 
+## P0 — drag intake + spoken refusals (spec 2026-08-20)
+
+- [ ] Fill a grid so a newly opened window floats. Drag that floating window:
+      the overlay appears immediately (the grab itself, not the first move).
+- [ ] Drop it on a grid with room: it becomes a tile, snapped to the aimed
+      cell.
+- [ ] Drop it on the full push grid: the window stays where you dropped it
+      and the overlay says "No room — this grid is full" for about 1.5 s.
+- [ ] While hovering an impossible drop, the footprint turns grey and the
+      message shows live — before you release.
+- [ ] Drop on an ungridded monitor: nothing happens and nothing is said.
+
 ## P0 — build isolation (added 2026-08-19)
 
 - [ ] With a copy installed, run `npm run tauri:dev`. It must write to

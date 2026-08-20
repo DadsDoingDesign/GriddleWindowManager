@@ -105,6 +105,13 @@ const MONITORS_DEBOUNCE_MS = 250;
  */
 const OVERLAY_FADE_OUT_MS = 200;
 
+/**
+ * How long a drop-refusal message stays on screen after the drag ended
+ * (spec 2026-08-20). Long enough to read six words, short enough to never
+ * feel like a dialog.
+ */
+const REFUSAL_LINGER_MS = 1500;
+
 export interface BrainHost {
   brain: WindowManagerBrain;
   /** Last snapshot the brain emitted (for debug display). */
@@ -176,6 +183,9 @@ export async function startBrainHost(): Promise<BrainHost> {
     if (gridId.startsWith('grid:')) return [gridId.slice('grid:'.length)];
     return [];
   };
+
+  /** Pending auto-hide for a lingering drop-refusal message. */
+  let refusalLinger: ReturnType<typeof setTimeout> | null = null;
 
   const syncOverlays = (gridId: string, visible: boolean) => {
     for (const monitorId of monitorIdsForGrid(gridId)) {
@@ -251,6 +261,26 @@ export async function startBrainHost(): Promise<BrainHost> {
       },
       onPreview(p) {
         emitPreviewState(p).catch((e) => console.error('preview-state emit failed:', e));
+        if (refusalLinger !== null) {
+          clearTimeout(refusalLinger);
+          refusalLinger = null;
+        }
+        // A terminal refusal (spec 2026-08-20): the drop was refused after
+        // the drag ended, so nothing else will hide the overlay. Let the
+        // message linger long enough to read, then fade it out ourselves.
+        // Any newer preview event cancels the linger above.
+        if (p.visible && p.refusal !== undefined && p.footprint === null) {
+          syncOverlays(p.gridId, true);
+          const gridId = p.gridId;
+          refusalLinger = setTimeout(() => {
+            refusalLinger = null;
+            emitPreviewState({ gridId, visible: false, footprint: null, ghosts: [] }).catch(
+              (e) => console.error('preview-state emit failed:', e),
+            );
+            syncOverlays(gridId, false);
+          }, REFUSAL_LINGER_MS);
+          return;
+        }
         syncOverlays(p.gridId, p.visible);
       },
       onSnapshot(s) {

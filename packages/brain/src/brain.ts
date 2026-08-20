@@ -81,8 +81,15 @@ interface RememberedSlot {
 
 interface DragState {
   hwnd: Hwnd;
-  /** Grid holding the tile when the drag started. */
-  sourceGridId: string;
+  /**
+   * Grid holding the tile when the drag started — `null` for an *intake*
+   * drag (spec 2026-08-20): the window is floating, and the drag is the
+   * user's attempt to put it onto a grid. Every existing cross-grid code
+   * path (`dragFootprint`, `simulateGhosts`) already treats "target ≠
+   * source" as a foreign-tile preview, so `null` simply makes every grid a
+   * foreign target.
+   */
+  sourceGridId: string | null;
   startSlot: Slot;
   /** Window rect when the drag started, to tell moves from resizes. */
   startRect: Rect;
@@ -100,9 +107,18 @@ interface DragState {
   lastDragPos: DragPos | null;
   /** Whether the last preview was computed on the resize path. */
   lastResizing: boolean;
+  /** Whether the last preview carried a refusal (part of the change check). */
+  lastRefused: boolean;
 }
 
 const DEFAULT_HOTKEY = 'Ctrl+Super+G';
+
+/**
+ * What the overlay says when the previewed placement cannot happen. One
+ * message for every refusal cause: from the user's side the situation is
+ * identical — the grid has no room for this window here.
+ */
+export const REFUSAL_NO_ROOM = 'No room — this grid is full';
 
 /**
  * Placement mode a grid gets when nothing says otherwise. New grids only —
@@ -618,7 +634,10 @@ export class WindowManagerBrain {
 
   moveSizeStart(hwnd: Hwnd): void {
     const gridId = this.tileGrid.get(hwnd);
-    if (gridId === undefined) return;
+    if (gridId === undefined) {
+      this.beginIntakeDrag(hwnd);
+      return;
+    }
     const mg = this.grids.get(gridId);
     const tile = mg?.grid.getTile(hwnd);
     if (!mg || !tile) return;
@@ -645,8 +664,63 @@ export class WindowManagerBrain {
       lastGhosts: [],
       lastDragPos: null,
       lastResizing: false,
+      lastRefused: false,
     };
     this.cb.onPreview({ gridId, visible: true, footprint: slot, ghosts: [] });
+  }
+
+  /**
+   * Spec 2026-08-20 (drag intake): a drag starting on a *floating* window —
+   * one the brain vetted on appearance but had no room for — previews and
+   * can place, so the first gesture everyone tries is never dead air.
+   * Unknown hwnds stay ignored: the brain acts only on windows that went
+   * through `windowAppeared`'s eligibility path.
+   */
+  private beginIntakeDrag(hwnd: Hwnd): void {
+    if (!this.floating.has(hwnd)) return;
+    const info = this.windows.get(hwnd);
+    const startRect: Rect = info
+      ? { x: info.x, y: info.y, width: info.width, height: info.height }
+      : { x: 0, y: 0, width: 0, height: 0 };
+    this.drag = {
+      hwnd,
+      sourceGridId: null,
+      startSlot: { col: 0, row: 0, w: 1, h: 1 }, // never read: intake always takes the foreign-target path
+      startRect,
+      absolute: info ? !info.resizable : false,
+      previewGridId: null,
+      lastFootprint: null,
+      lastGhosts: [],
+      lastDragPos: null,
+      lastResizing: false,
+      lastRefused: false,
+    };
+    // Immediate response on the grid under the window, so the overlay reacts
+    // to the grab itself rather than the first movement.
+    const mg = info ? this.gridForMonitor(info.monitorId) : undefined;
+    const mon = mg ? this.monitorFor(mg.settings) : undefined;
+    if (!mg || !mon || !info) return;
+    const d = this.drag;
+    const computed = this.dragFootprint(
+      mg,
+      mon,
+      d,
+      info.x + info.width / 2,
+      info.y + info.height / 2,
+      startRect,
+    );
+    if (!computed) return;
+    const refused = this.placementRefused(mg, d, computed.footprint);
+    d.previewGridId = mg.settings.id;
+    d.lastFootprint = computed.footprint;
+    d.lastRefused = refused;
+    this.cb.onPreview({
+      gridId: mg.settings.id,
+      visible: true,
+      footprint: computed.footprint,
+      ghosts: [],
+      ...(refused ? { refusal: REFUSAL_NO_ROOM } : {}),
+    });
   }
 
   dragMoved(p: DragPos): void {
@@ -672,11 +746,13 @@ export class WindowManagerBrain {
     // During a drag the grid is frozen, so the ghosts are a pure function of
     // (target grid, footprint, resize-mode): identical inputs mean the last
     // preview still stands — skip the simulation entirely.
+    const refused = this.placementRefused(mg, d, footprint);
     const unchanged =
       d.previewGridId === mg.settings.id &&
       d.lastFootprint !== null &&
       sameSlot(d.lastFootprint, footprint) &&
-      d.lastResizing === resizing;
+      d.lastResizing === resizing &&
+      d.lastRefused === refused;
     if (unchanged) return;
 
     // Stack-mode targets never reflow neighbors; absolute tiles displace
@@ -692,7 +768,8 @@ export class WindowManagerBrain {
       d.previewGridId === mg.settings.id &&
       d.lastFootprint !== null &&
       sameSlot(d.lastFootprint, footprint) &&
-      sameGhosts(d.lastGhosts, ghosts)
+      sameGhosts(d.lastGhosts, ghosts) &&
+      d.lastRefused === refused
     ) {
       d.lastResizing = resizing;
       return;
@@ -710,7 +787,51 @@ export class WindowManagerBrain {
     d.lastFootprint = footprint;
     d.lastGhosts = ghosts;
     d.lastResizing = resizing;
-    this.cb.onPreview({ gridId: mg.settings.id, visible: true, footprint, ghosts });
+    d.lastRefused = refused;
+    this.cb.onPreview({
+      gridId: mg.settings.id,
+      visible: true,
+      footprint,
+      ghosts,
+      ...(refused ? { refusal: REFUSAL_NO_ROOM } : {}),
+    });
+  }
+
+  /**
+   * Would committing `hwnd` at `footprint` on `target` be refused? Pure —
+   * preview and drop both ask, so the message the user watches and the
+   * outcome they get can never disagree (the same WYSIWYG rule the footprint
+   * itself follows).
+   */
+  private placementRefused(target: ManagedGrid, d: DragState, footprint: Slot): boolean {
+    // Absolute placements (stack grids, non-resizable windows) always land.
+    if (target.settings.mode === 'stack' || d.absolute) return false;
+    // A free slot is a free slot.
+    const occupied = target.grid
+      .tilesIn({ col: footprint.col, row: footprint.row, w: footprint.w, h: footprint.h })
+      .filter((t) => t.id !== d.hwnd && isInFlow(t));
+    if (occupied.length === 0) return false;
+    // Reflow: possible iff the solver has a plan (its own commit falls back
+    // to push when it declines, so check push next either way).
+    if (target.settings.mode === 'reflow' && this.solveReflow(target, d.hwnd, footprint)) {
+      return false;
+    }
+    // Push: dry-run the exact engine op the commit runs, on a clone.
+    const clone = Grid.fromJSON(target.grid.toJSON());
+    if (target.settings.id === d.sourceGridId) clone.removeTile(d.hwnd);
+    try {
+      // addTileWithDisplacement reports success as a boolean; false means
+      // the victims had nowhere to go and nothing was added.
+      return !clone.addTileWithDisplacement({
+        id: d.hwnd,
+        col: footprint.col,
+        row: footprint.row,
+        w: footprint.w,
+        h: footprint.h,
+      });
+    } catch {
+      return true;
+    }
   }
 
   /**
@@ -756,6 +877,10 @@ export class WindowManagerBrain {
     this.drag = null;
     this.hidePreview(d);
 
+    if (d.sourceGridId === null) {
+      this.intakeDrop(d, rect);
+      return;
+    }
     const source = this.grids.get(d.sourceGridId);
     if (!source || !source.grid.getTile(hwnd)) return; // grid vanished mid-drag
 
@@ -2127,6 +2252,105 @@ export class WindowManagerBrain {
     }
     // Drop slot unusable: fall back to first-fit / displacement / floating.
     if (info) this.placeWindow(target, info);
+  }
+
+  /**
+   * Commit an intake drag (spec 2026-08-20): a floating window dropped over
+   * a grid either becomes a tile there — under the grid's own mode, exactly
+   * like a cross-grid transfer — or stays floating where the user left it,
+   * with the overlay saying why. A drop over ungridded space is a silent
+   * no-op: the user did not aim at a grid.
+   */
+  private intakeDrop(
+    d: DragState,
+    rect: { x: number; y: number; width: number; height: number },
+  ): void {
+    const hwnd = d.hwnd;
+    // Same commit anchor as managed drops: re-run the slot function the
+    // preview used, cursor extrapolated by any post-sample movement.
+    const lp = d.lastDragPos;
+    const cursorX = lp ? lp.cursorX + (rect.x - lp.x) : rect.x + rect.width / 2;
+    const cursorY = lp ? lp.cursorY + (rect.y - lp.y) : rect.y + rect.height / 2;
+    const hitMon = this.monitorAt(cursorX, cursorY);
+
+    // The window physically sits where the user dropped it either way.
+    const info = this.windows.get(hwnd);
+    if (info) {
+      this.windows.set(hwnd, {
+        ...info,
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+        monitorId: hitMon?.id ?? info.monitorId,
+      });
+    }
+
+    const at = this.gridAtPoint(cursorX, cursorY);
+    if (!at) return; // ungridded target: stays floating, says nothing
+    const computed = this.dragFootprint(at.mg, at.mon, d, cursorX, cursorY, rect);
+    if (!computed) return;
+    const target = at.mg;
+    const snapped = computed.footprint;
+
+    if (this.placementRefused(target, d, snapped)) {
+      // The refusal the preview showed, restated at the drop so releasing
+      // the button is answered too. The host hides the overlay on a timer.
+      this.cb.onPreview({
+        gridId: target.settings.id,
+        visible: true,
+        footprint: null,
+        ghosts: [],
+        refusal: REFUSAL_NO_ROOM,
+      });
+      return;
+    }
+
+    const resizable = info?.resizable ?? true;
+    let placed = false;
+    if (target.settings.mode === 'stack' || !resizable) {
+      target.grid.addTile({
+        id: hwnd,
+        col: snapped.col,
+        row: snapped.row,
+        w: snapped.w,
+        h: snapped.h,
+        position: 'absolute',
+        pinned: { x: snapped.col, y: snapped.row },
+      });
+      placed = true;
+    } else if (target.settings.mode === 'reflow' && this.commitReflow(target, hwnd, snapped)) {
+      placed = true;
+    } else {
+      placed = !!this.runEngineOp(target, (g) =>
+        g.addTileWithDisplacement({
+          id: hwnd,
+          col: snapped.col,
+          row: snapped.row,
+          w: snapped.w,
+          h: snapped.h,
+        }),
+      );
+    }
+    if (!placed) {
+      // placementRefused said yes but the engine said no (a spanning-grid
+      // dead-space edge the dry-run cannot see). Same outcome as a refusal.
+      this.cb.onPreview({
+        gridId: target.settings.id,
+        visible: true,
+        footprint: null,
+        ghosts: [],
+        refusal: REFUSAL_NO_ROOM,
+      });
+      return;
+    }
+
+    this.tileGrid.set(hwnd, target.settings.id);
+    this.floating.delete(hwnd);
+    this.touch(hwnd);
+    this.appliedRects.delete(hwnd);
+    this.flush();
+    this.emitSnapshot();
   }
 
   /**
