@@ -23,8 +23,10 @@ use std::path::{Path, PathBuf};
 /// version on read. v4 also renames the two original placement modes, which
 /// the `GridMode` serde aliases absorb: a pre-v4 file's `collision`/`overlay`
 /// read as `push`/`stack` and persist under the new names, with no change in
-/// behavior. Only *future* versions are quarantined.
-const CONFIG_VERSION: u32 = 4;
+/// behavior. v5 adds `suppress_windows_snap` + `windows_snap_original`
+/// (spec 2026-08-19), both `#[serde(default)]` like every addition before
+/// them. Only *future* versions are quarantined.
+const CONFIG_VERSION: u32 = 5;
 /// Oldest schema version the migration path accepts.
 const MIN_CONFIG_VERSION: u32 = 1;
 
@@ -169,6 +171,12 @@ pub(crate) fn enforce_authoritative_fields(config: &mut AppConfig) {
         config.paused = live;
     }
     sanitize_hotkey(config, &crate::shell::current_hotkey());
+    // The snap capture's authority is Rust too (spec 2026-08-19 §4): it is
+    // Some exactly while Griddle has modified the OS, a fact only the sync
+    // in `shell::sync_from_config` knows. Stamping it here means the webview
+    // can never persist a stale or forged capture — and it is how the
+    // capture reaches disk at all, since the brain merely echoes the config.
+    config.windows_snap_original = crate::shell::snap_capture();
 }
 
 /// Security review deferred item 2 (now fixed): never persist an accelerator
@@ -241,6 +249,12 @@ pub fn write_config(
         crate::tracker::resync();
     }
     crate::shell::sync_from_config(&app, &config);
+    // Re-stamp AFTER the sync: the write that first enables snap suppression
+    // is the write that must carry the fresh capture to disk. Stamping only
+    // before the sync (in enforce_authoritative_fields) would persist None on
+    // exactly that write, and a crash before the next debounced save would
+    // strand the OS suppressed with no restore data (spec 2026-08-19 §4).
+    config.windows_snap_original = crate::shell::snap_capture();
     let dir = config_dir().ok_or_else(|| "APPDATA is not set".to_string())?;
     write_config_to(&dir, &config).map_err(|e| {
         log::error!("write_config: {e}");
@@ -292,7 +306,7 @@ mod tests {
     fn sample_config() -> AppConfig {
         use crate::ipc::{AppRule, GridMode, GridSettings, Slot, Template};
         AppConfig {
-            version: 4,
+            version: 5,
             grids: vec![GridSettings {
                 id: "grid:\\\\.\\DISPLAY1@0,0".into(),
                 monitor_ids: vec!["\\\\.\\DISPLAY1@0,0".into()],
@@ -363,6 +377,8 @@ mod tests {
             }],
             startup_view_id: Some("view:1".into()),
             auto_check_updates: false,
+            suppress_windows_snap: false,
+            windows_snap_original: None,
         }
     }
 
@@ -527,6 +543,47 @@ mod tests {
     /// `appRules`, `views`, `startupViewId`, `autoCheckUpdates`, no spacing
     /// fields) migrates in place: version re-stamped, the new fields
     /// defaulted, everything it did carry intact, no `.bak` quarantine.
+    #[test]
+    fn v4_config_without_snap_fields_reads_as_untouched() {
+        // Every config written before spec 2026-08-19 lacks the two snap
+        // fields; they must read as "preference off, OS never modified" —
+        // anything else would let an upgrade silently edit the user's OS.
+        let dir = ScratchDir::new();
+        fs::create_dir_all(dir.path()).unwrap();
+        let mut json = serde_json::to_value(sample_config()).unwrap();
+        let obj = json.as_object_mut().unwrap();
+        obj.insert("version".into(), serde_json::json!(4));
+        obj.remove("suppressWindowsSnap");
+        obj.remove("windowsSnapOriginal");
+        fs::write(
+            dir.path().join(CONFIG_FILE),
+            serde_json::to_vec(&json).unwrap(),
+        )
+        .unwrap();
+
+        let read = read_config_from(dir.path()).expect("v4 config must stay readable");
+        assert_eq!(read.version, CONFIG_VERSION, "re-stamped to v5");
+        assert!(!read.suppress_windows_snap, "opt-in: absent reads as off");
+        assert_eq!(read.windows_snap_original, None, "no capture = never touched");
+    }
+
+    #[test]
+    fn snap_fields_round_trip_through_disk() {
+        use crate::ipc::SnapState;
+        let dir = ScratchDir::new();
+        let mut cfg = sample_config();
+        cfg.suppress_windows_snap = true;
+        cfg.windows_snap_original = Some(SnapState {
+            dock_moving: true,
+            snap_sizing: false,
+            snap_assist_flyout: true,
+        });
+        write_config_to(dir.path(), &cfg).unwrap();
+        let read = read_config_from(dir.path()).expect("v5 round-trips");
+        assert!(read.suppress_windows_snap);
+        assert_eq!(read.windows_snap_original, cfg.windows_snap_original);
+    }
+
     #[test]
     fn v1_config_migrates_to_current_with_defaults() {
         let dir = ScratchDir::new();

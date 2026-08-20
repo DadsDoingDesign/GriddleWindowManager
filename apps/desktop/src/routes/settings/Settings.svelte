@@ -164,6 +164,13 @@
   // window is the only writer, so local state stays truthful. Hotkey state is
   // kept in display form ('Win'); only the emitted pref is canonical.
   let autostart = $state(false);
+  /**
+   * Suppress Windows' own drag-to-edge snapping while Griddle runs (spec
+   * 2026-08-19). Same single-writer shape as autostart. Mirrors the config;
+   * the OS side effect lives in Rust.
+   */
+  let suppressWindowsSnap = $state(false);
+  let firstRunSuppressSnap = $state(false);
   let hotkeyDraft = $state(DISPLAY_DEFAULT_HOTKEY);
   let savedHotkey = $state(DISPLAY_DEFAULT_HOTKEY);
   let hotkeyError: string | null = $state(null);
@@ -220,6 +227,7 @@
     const cfg = await readConfig();
     if (cfg) {
       autostart = cfg.autostart;
+      suppressWindowsSnap = cfg.suppressWindowsSnap;
       hotkeyDraft = toDisplayHotkey(cfg.hotkey);
       savedHotkey = toDisplayHotkey(cfg.hotkey);
       seedExclusions = cfg.exclusions;
@@ -453,6 +461,11 @@
   function toggleAutostart(enabled: boolean): void {
     autostart = enabled;
     void emitSettingsSetPrefs({ autostart: enabled });
+  }
+
+  function toggleSuppressSnap(enabled: boolean): void {
+    suppressWindowsSnap = enabled;
+    void emitSettingsSetPrefs({ suppressWindowsSnap: enabled });
   }
 
   // ── updates (spec §7) ────────────────────────────────────────────────────
@@ -813,6 +826,10 @@
       autostart = true;
       void emitSettingsSetPrefs({ autostart: true });
     }
+    if (firstRunSuppressSnap) {
+      suppressWindowsSnap = true;
+      void emitSettingsSetPrefs({ suppressWindowsSnap: true });
+    }
     void emitSettingsEnableGrid({
       monitorId: firstRunPick,
       cols: DEFAULT_DIMS.cols,
@@ -912,6 +929,17 @@
       <label class="pick">
         <input type="checkbox" bind:checked={firstRunAutostart} />
         <span>Start with Windows — keep your grids working after a reboot</span>
+      </label>
+
+      <!-- Opt-in, unchecked (spec 2026-08-19): changing a Windows setting is
+           the user's call, and the copy promises the undo. -->
+      <label class="pick">
+        <input type="checkbox" bind:checked={firstRunSuppressSnap} />
+        <span>
+          Turn off Windows edge-snap while Griddle runs — stops Windows' own
+          drag-to-edge snap from fighting the grid. Griddle puts it back when
+          it quits.
+        </span>
       </label>
 
       <div class="controls">
@@ -1742,6 +1770,22 @@
         <span class="switch-label wide">Start with Windows</span>
       </label>
     </div>
+    <div class="controls">
+      <label class="switch">
+        <input
+          type="checkbox"
+          checked={suppressWindowsSnap}
+          onchange={(e) => toggleSuppressSnap(e.currentTarget.checked)}
+        />
+        <span class="track"><span class="thumb"></span></span>
+        <span class="switch-label wide">Turn off Windows edge-snap while Griddle runs</span>
+      </label>
+    </div>
+    <p class="hint">
+      Stops Windows' own drag-to-edge snap and the Snap Layouts flyout from
+      fighting the grid. Win+Arrow keeps working. Griddle restores your
+      Windows settings when it quits.
+    </p>
     <div class="controls">
       <label class="field">
         <span class="lbl">Settings hotkey</span>

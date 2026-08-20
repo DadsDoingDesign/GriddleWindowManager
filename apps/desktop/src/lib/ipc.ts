@@ -200,6 +200,8 @@ export interface SettingsSetPrefsPayload {
   hotkey?: string;
   autostart?: boolean;
   autoCheckUpdates?: boolean;
+  /** Spec 2026-08-19: suppress Windows' mouse-driven snapping while running. */
+  suppressWindowsSnap?: boolean;
 }
 
 // ---------------------------------------------------------------------------

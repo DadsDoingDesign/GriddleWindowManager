@@ -274,6 +274,30 @@ pub struct AppConfig {
     /// `app_rules`/`views`).
     #[serde(default)]
     pub auto_check_updates: bool,
+    /// Suppress Windows' own mouse-driven snapping (drag-to-edge dock, edge
+    /// resize, Snap Layouts flyout) while Griddle runs, so the OS stops
+    /// fighting the grid over the same gesture (spec 2026-08-19). Off by
+    /// default: changing a user's OS settings is opt-in. `Win+Arrow` is
+    /// deliberately untouched.
+    #[serde(default)]
+    pub suppress_windows_snap: bool,
+    /// The pre-Griddle values of those OS settings, captured at the moment of
+    /// first suppression and persisted so restore survives a crash. `Some`
+    /// exactly while Griddle believes it has modified the OS.
+    #[serde(default)]
+    pub windows_snap_original: Option<SnapState>,
+}
+
+/// Captured pre-Griddle Windows snap settings (spec 2026-08-19 §3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapState {
+    /// `SPI_GETDOCKMOVING` — drag a window to a screen edge to dock it.
+    pub dock_moving: bool,
+    /// `SPI_GETSNAPSIZING` — drag to the top/bottom edge to resize.
+    pub snap_sizing: bool,
+    /// `EnableSnapAssistFlyout` — the Snap Layouts flyout on maximize hover.
+    pub snap_assist_flyout: bool,
 }
 
 /// Payload of the hwnd-only events (`window-destroyed`, `window-minimized`,

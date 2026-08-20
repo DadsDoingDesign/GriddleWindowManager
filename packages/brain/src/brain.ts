@@ -312,6 +312,10 @@ export class WindowManagerBrain {
    * `true` from the loader is opted out.
    */
   private autoCheckUpdates: boolean;
+  /** Spec 2026-08-19: stored + echoed; the Rust shell owns the OS effects. */
+  private suppressWindowsSnap: boolean;
+  /** Rust-authoritative capture; the brain only round-trips it. */
+  private windowsSnapOriginal: import('./types').SnapState | null;
 
   constructor(cb: BrainCallbacks, cfg?: AppConfig, opts?: { now?: () => number }) {
     this.cb = cb;
@@ -323,6 +327,8 @@ export class WindowManagerBrain {
     this.autostart = cfg?.autostart ?? false;
     this.paused = cfg?.paused ?? false;
     this.autoCheckUpdates = cfg?.autoCheckUpdates === true;
+    this.suppressWindowsSnap = cfg?.suppressWindowsSnap === true;
+    this.windowsSnapOriginal = cfg?.windowsSnapOriginal ?? null;
     // A pause that survived a restart (config `paused: true`) is already
     // running when the constructor returns — start its clock here so the
     // startup view's claim window is not eaten by it.
@@ -1210,7 +1216,7 @@ export class WindowManagerBrain {
     const layouts: Record<string, unknown> = { ...this.storedLayouts };
     for (const [id, mg] of this.grids) layouts[id] = mg.grid.toJSON();
     return {
-      version: 4,
+      version: 5,
       grids: [...this.gridSettings.values()].map((g) => ({ ...g })),
       templates: [...this.templates],
       exclusions: [...this.exclusions],
@@ -1222,6 +1228,8 @@ export class WindowManagerBrain {
       views: this.views.map((v) => copyView(v)),
       startupViewId: this.startupViewId,
       autoCheckUpdates: this.autoCheckUpdates,
+      suppressWindowsSnap: this.suppressWindowsSnap,
+      windowsSnapOriginal: this.windowsSnapOriginal,
     };
   }
 
@@ -1253,6 +1261,7 @@ export class WindowManagerBrain {
     autostart?: boolean;
     hotkey?: string;
     autoCheckUpdates?: boolean;
+    suppressWindowsSnap?: boolean;
   }): void {
     let changed = false;
     if (prefs.paused !== undefined && prefs.paused !== this.paused) {
@@ -1284,6 +1293,15 @@ export class WindowManagerBrain {
       prefs.autoCheckUpdates !== this.autoCheckUpdates
     ) {
       this.autoCheckUpdates = prefs.autoCheckUpdates;
+      changed = true;
+    }
+    if (
+      prefs.suppressWindowsSnap !== undefined &&
+      prefs.suppressWindowsSnap !== this.suppressWindowsSnap
+    ) {
+      this.suppressWindowsSnap = prefs.suppressWindowsSnap;
+      // The OS side effect happens in Rust when the resulting config write
+      // is synced (shell::sync_from_config); the brain only persists intent.
       changed = true;
     }
     if (

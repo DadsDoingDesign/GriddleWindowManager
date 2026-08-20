@@ -51,6 +51,19 @@ boxes are the ones that would have caught it.
 - [ ] Launch with `GRIDDLE_DEBUG=1` set: the internal brain window becomes
       visible and the log gains debug-level lines.
 
+## P0 — Windows-snap suppression (spec 2026-08-19)
+
+- [ ] Settings → General → "Turn off Windows edge-snap while Griddle runs" on:
+      dragging a window to a screen edge no longer triggers Windows' own snap,
+      and Griddle's grid preview handles the drag instead.
+- [ ] `Win+Arrow` still snaps (deliberately untouched).
+- [ ] Tray Quit: drag-to-edge works again immediately in stock Windows.
+- [ ] Relaunch: suppression re-applies without touching the toggle.
+- [ ] Toggle off: drag-to-edge restored immediately, and
+      `%APPDATA%\griddle-wm\config.json` shows `windowsSnapOriginal: null`.
+- [ ] First-run wizard shows the unchecked "Turn off Windows edge-snap"
+      checkbox and honours it when checked.
+
 ## P0 — build isolation (added 2026-08-19)
 
 - [ ] With a copy installed, run `npm run tauri:dev`. It must write to

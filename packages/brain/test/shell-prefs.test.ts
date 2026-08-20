@@ -43,6 +43,26 @@ describe('setShellPrefs (contract C3 extension, Task 18)', () => {
     expect(snapshots).toHaveLength(1);
   });
 
+  it('suppressWindowsSnap round-trips and only fires on change (spec 2026-08-19)', () => {
+    const { brain, snapshots } = makeBrain();
+    expect(brain.exportConfig().suppressWindowsSnap).toBe(false);
+
+    brain.setShellPrefs({ suppressWindowsSnap: true });
+    expect(brain.exportConfig().suppressWindowsSnap).toBe(true);
+    expect(snapshots).toHaveLength(1);
+
+    brain.setShellPrefs({ suppressWindowsSnap: true }); // no-op
+    expect(snapshots).toHaveLength(1);
+
+    brain.setShellPrefs({ suppressWindowsSnap: false });
+    expect(brain.exportConfig().suppressWindowsSnap).toBe(false);
+    expect(snapshots).toHaveLength(2);
+
+    // The capture is Rust-authoritative: the brain merely echoes what the
+    // config carried, and setShellPrefs cannot invent one.
+    expect(brain.exportConfig().windowsSnapOriginal).toBeNull();
+  });
+
   it('no-op updates emit no snapshot', () => {
     const { brain, snapshots } = makeBrain();
     brain.setShellPrefs({}); // nothing at all

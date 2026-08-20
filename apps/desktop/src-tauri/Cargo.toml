@@ -37,6 +37,9 @@ tauri-plugin-process = "2"
 windows = { version = "0.62", features = [
   "Win32_Foundation",
   "Win32_UI_WindowsAndMessaging",
+  # Registry access for the Snap Layouts flyout toggle (snap.rs) — Windows
+  # exposes no SystemParametersInfo action for it.
+  "Win32_System_Registry",
   "Win32_UI_Accessibility",
   "Win32_Graphics_Dwm",
   "Win32_Graphics_Gdi",

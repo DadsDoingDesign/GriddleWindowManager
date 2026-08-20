@@ -7,6 +7,7 @@ pub mod ipc;
 pub mod monitors;
 pub mod overlay;
 pub mod shell;
+pub mod snap;
 #[cfg(all(test, windows))]
 mod test_windows;
 pub mod tracker;

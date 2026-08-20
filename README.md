@@ -324,6 +324,15 @@ is capped at three files of 2 MiB, it is never uploaded, and you can delete the
 folder at any time. Set `GRIDDLE_DEBUG=1` before launching to raise the log
 level and un-hide the internal brain window.
 
+**What Griddle can change on Windows.** One opt-in setting — "Turn off Windows
+edge-snap while Griddle runs" (first-run wizard or Settings → General) — makes
+Griddle disable Windows' own drag-to-edge snapping and the Snap Layouts flyout,
+because they fight the grid over the same drag gesture. It is off by default.
+Before changing anything, Griddle records your original values in its config;
+it restores them when it quits, and if it crashes first, the next launch (or
+turning the toggle off) restores them from that record. `Win+Arrow` snapping is
+never touched. Griddle changes nothing else about your system.
+
 **Updates are opt-in and off by default.** With the toggle off, the app makes
 no network requests at all; that guarantee is a pure function in the layout
 brain with tests pinning it down, not a condition buried in an async driver.

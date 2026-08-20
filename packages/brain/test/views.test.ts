@@ -472,7 +472,7 @@ describe('AppConfig v2 migration (spec v0.2 §4)', () => {
       paused: false,
     });
     expect(cfg).not.toBeNull();
-    expect(cfg!.version).toBe(4);
+    expect(cfg!.version).toBe(5);
     expect(cfg!.appRules).toEqual([]);
     expect(cfg!.views).toEqual([]);
     expect(cfg!.startupViewId).toBeNull();
@@ -485,12 +485,12 @@ describe('AppConfig v2 migration (spec v0.2 §4)', () => {
   });
 
   it('rejects unknown future versions (host quarantines as .bak)', () => {
-    expect(sanitizeConfig({ ...defaultConfig(), version: 5 })).toBeNull();
+    expect(sanitizeConfig({ ...defaultConfig(), version: 6 })).toBeNull();
   });
 
   it('defaultConfig is current and round-trips', () => {
     const cfg = defaultConfig();
-    expect(cfg.version).toBe(4);
+    expect(cfg.version).toBe(5);
     expect(cfg.views).toEqual([]);
     expect(cfg.startupViewId).toBeNull();
     expect(parseConfig(serializeConfig(cfg))).toEqual(cfg);

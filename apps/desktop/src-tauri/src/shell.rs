@@ -98,6 +98,17 @@ pub fn browser_args_of(
 static PAUSED: AtomicBool = AtomicBool::new(false);
 
 // ---------------------------------------------------------------------------
+// Windows-snap suppression (spec 2026-08-19) — live copy for the quit path
+// ---------------------------------------------------------------------------
+
+/// Last synced (preference, captured originals), so tray Quit can restore the
+/// OS synchronously without re-reading the config file.
+fn snap_state_lock() -> &'static Mutex<(bool, Option<crate::ipc::SnapState>)> {
+    static STATE: OnceLock<Mutex<(bool, Option<crate::ipc::SnapState>)>> = OnceLock::new();
+    STATE.get_or_init(|| Mutex::new((false, None)))
+}
+
+// ---------------------------------------------------------------------------
 // Brain-host watchdog (critique fix, resilience / webview death)
 // ---------------------------------------------------------------------------
 
@@ -635,6 +646,14 @@ fn on_menu_event(app: &AppHandle, menu_id: &str) {
         MENU_ID_QUIT => {
             log::info!("tray: quit requested");
             mark_exiting(); // the brain-host watchdog must not respawn now
+            // Give the user their Windows back before the process dies
+            // (spec 2026-08-19: restore on quit; the persisted capture
+            // stays on disk so a crashed restore heals on next launch).
+            {
+                let (wanted, original) =
+                    *snap_state_lock().lock().unwrap_or_else(|p| p.into_inner());
+                crate::snap::restore_on_quit(wanted, original);
+            }
             app.exit(0);
         }
         // Spec §7: the tray never installs anything. It opens Settings,
@@ -976,6 +995,24 @@ pub fn sync_from_config(app: &AppHandle, cfg: &AppConfig) {
     }
     apply_hotkey(app, &cfg.hotkey);
     sync_autostart(app, cfg.autostart);
+    // Windows-snap suppression (spec 2026-08-19): converge the OS onto the
+    // preference, and remember the resulting capture for the quit restore.
+    // The returned capture is what should be on disk; it flows back through
+    // the brain's config writer (write_config passes the config straight
+    // back through here), so a divergence self-heals on the next save.
+    let capture = crate::snap::sync(cfg.suppress_windows_snap, cfg.windows_snap_original);
+    *snap_state_lock().lock().unwrap_or_else(|p| p.into_inner()) =
+        (cfg.suppress_windows_snap, capture);
+}
+
+/// The capture [`sync_from_config`] decided must be persisted — the config
+/// writer stamps it into every save so the on-disk value can never disagree
+/// with what the OS-restore logic believes (crash safety, spec §4).
+pub fn snap_capture() -> Option<crate::ipc::SnapState> {
+    snap_state_lock()
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .1
 }
 
 /// Converge the OS autostart registration onto `wanted` (the config value the

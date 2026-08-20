@@ -50,7 +50,7 @@ export function normalizePlacementMode(raw: unknown): PlacementMode | null {
 
 export function defaultConfig(): AppConfig {
   return {
-    version: 4,
+    version: 5,
     grids: [],
     templates: [],
     exclusions: [],
@@ -63,7 +63,19 @@ export function defaultConfig(): AppConfig {
     startupViewId: null,
     // Opt-in, always (spec §7): a fresh install never reaches the network.
     autoCheckUpdates: false,
+    // Opt-in likewise (spec 2026-08-19): a fresh install never edits the OS.
+    suppressWindowsSnap: false,
+    windowsSnapOriginal: null,
   };
+}
+
+function isSnapState(v: unknown): v is import('./types').SnapState {
+  return (
+    isRecord(v) &&
+    typeof v.dockMoving === 'boolean' &&
+    typeof v.snapSizing === 'boolean' &&
+    typeof v.snapAssistFlyout === 'boolean'
+  );
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -241,7 +253,7 @@ function sanitizeView(raw: unknown): View | null {
 export function sanitizeConfig(raw: unknown): AppConfig | null {
   if (!isRecord(raw)) return null;
   if (typeof raw.version !== 'number') return null;
-  if (raw.version < 1 || raw.version > 4 || !Number.isInteger(raw.version)) {
+  if (raw.version < 1 || raw.version > 5 || !Number.isInteger(raw.version)) {
     return null;
   }
 
@@ -312,7 +324,7 @@ export function sanitizeConfig(raw: unknown): AppConfig | null {
       : null;
 
   return {
-    version: 4,
+    version: 5,
     grids,
     templates,
     exclusions,
@@ -328,6 +340,10 @@ export function sanitizeConfig(raw: unknown): AppConfig | null {
     // Anything other than a literal `true` — including the field being
     // absent, as in every v1/v2 config — reads as opted out (spec §7).
     autoCheckUpdates: raw.autoCheckUpdates === true,
+    // Same opt-in rule (spec 2026-08-19); the capture is Rust-authoritative
+    // and merely round-trips, so shape-validate it and otherwise pass along.
+    suppressWindowsSnap: raw.suppressWindowsSnap === true,
+    windowsSnapOriginal: isSnapState(raw.windowsSnapOriginal) ? raw.windowsSnapOriginal : null,
   };
 }
 

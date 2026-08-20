@@ -217,10 +217,12 @@ export interface AppConfig {
   // `normalizePlacementMode`, the Rust mirror's serde aliases), so a v1–v3
   // config keeps its exact behavior and simply persists the new name next
   // time it is written.
+  // v5 (spec 2026-08-19): adds `suppressWindowsSnap` (default false) +
+  // `windowsSnapOriginal` (default null), the Windows-snap suppression pair.
   // The loaders (persist.ts and the Rust mirror's serde defaults) migrate
   // older configs in place — defaults `appRules: [], views: [],
   // startupViewId: null, autoCheckUpdates: false`, spacing absent-means-0.
-  version: 4;
+  version: 5;
   grids: GridSettings[];
   templates: Template[];
   exclusions: string[]; // lowercase exe names
@@ -242,4 +244,25 @@ export interface AppConfig {
    * on. Absent in every v1/v2 config, which reads as `false`.
    */
   autoCheckUpdates: boolean;
+  /**
+   * v5 (spec 2026-08-19): suppress Windows' mouse-driven snapping
+   * (drag-to-edge dock/resize + Snap Layouts flyout) while Griddle runs, so
+   * the OS stops fighting the grid over the drag gesture. Opt-in; the brain
+   * only stores it — the Rust shell owns the OS side effects.
+   */
+  suppressWindowsSnap: boolean;
+  /**
+   * Pre-Griddle values of those OS settings, captured by Rust at the moment
+   * of first suppression (restore-on-quit crash safety). Opaque to the brain:
+   * it round-trips whatever Rust stamped; Rust re-stamps it on every write
+   * (`enforce_authoritative_fields`), so a webview can never forge it.
+   */
+  windowsSnapOriginal: SnapState | null;
+}
+
+/** Captured pre-Griddle Windows snap settings (spec 2026-08-19 §3). */
+export interface SnapState {
+  dockMoving: boolean;
+  snapSizing: boolean;
+  snapAssistFlyout: boolean;
 }
