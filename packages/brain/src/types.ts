@@ -167,6 +167,13 @@ export interface PreviewState {
    * compare equal.
    */
   refusal?: string;
+  /**
+   * Spec 2026-08-20 (make-room drop zone): the pill offered on a refused
+   * placement whose aimed-at tile can donate half its span. Physical
+   * virtual-desktop pixels; `armed` = the cursor is inside it, at which
+   * point releasing commits the split the ghosts are previewing.
+   */
+  makeRoom?: { x: number; y: number; width: number; height: number; armed: boolean };
 }
 
 export interface DragPos {

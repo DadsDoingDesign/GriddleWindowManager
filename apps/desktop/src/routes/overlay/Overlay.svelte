@@ -69,6 +69,10 @@
    * here, in the moment, not in a tray tooltip nobody hovers.
    */
   let refusal = $state<string | null>(null);
+  /** Spec 2026-08-20 (make-room): the drop-zone pill, virtual-desktop px. */
+  let makeRoom = $state<{ x: number; y: number; width: number; height: number; armed: boolean } | null>(
+    null,
+  );
   let footprint: Slot | null = $state(null);
   /** hwnd -> currently displayed ghost rect (reassigned to trigger updates). */
   let ghostRects: ReadonlyMap<string, Rect> = $state(new Map());
@@ -224,6 +228,7 @@
     visible = true;
     footprint = p.footprint;
     refusal = p.refusal ?? null;
+    makeRoom = p.makeRoom ?? null;
     syncGhosts(p.ghosts);
   }
 
@@ -313,7 +318,30 @@
 
     <!-- 4. refusal message (spec 2026-08-20): centered in the work area,
          auto-sized by real CSS via foreignObject. -->
-    {#if refusal}
+    {#if makeRoom}
+      <!-- Make-room drop-zone pill (spec 2026-08-20): sits at the refused
+           footprint, i.e. under the cursor — release inside it to split the
+           tile you are aiming at. The overlay stays click-through; the
+           "hitbox" is the brain hit-testing the drag cursor, so the pill is
+           purely the visual of that zone. -->
+      <foreignObject
+        x={makeRoom.x - mon.x}
+        y={makeRoom.y - mon.y}
+        width={makeRoom.width}
+        height={makeRoom.height}
+        pointer-events="none"
+      >
+        <div class="refusal-wrap" xmlns="http://www.w3.org/1999/xhtml">
+          <div
+            class="refusal pill"
+            class:armed={makeRoom.armed}
+            style:font-size="{Math.max(18, Math.round(mon.width / 110))}px"
+          >
+            {makeRoom.armed ? (refusal ?? 'Release to make room') : 'Drop here to make room'}
+          </div>
+        </div>
+      </foreignObject>
+    {:else if refusal}
       <foreignObject
         x={workRect.x}
         y={workRect.y}
@@ -400,6 +428,26 @@
     display: flex;
     align-items: center;
     justify-content: center;
+  }
+
+  /* The make-room pill: a real target, so it reads as pressable — dashed
+     border while offered, solid accent + glow while armed. */
+  .refusal.pill {
+    border-style: dashed;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    white-space: nowrap;
+  }
+
+  .refusal.pill.armed {
+    border-style: solid;
+    border-color: var(--ov-accent);
+    box-shadow: 0 0 14px rgba(180, 77, 255, 0.45);
+    color: #fff;
   }
 
   .refusal {

@@ -109,6 +109,8 @@ interface DragState {
   lastResizing: boolean;
   /** Whether the last preview carried a refusal (part of the change check). */
   lastRefused: boolean;
+  /** Whether the last preview's make-room pill was armed (change check). */
+  lastArmed: boolean;
 }
 
 const DEFAULT_HOTKEY = 'Ctrl+Super+G';
@@ -119,6 +121,12 @@ const DEFAULT_HOTKEY = 'Ctrl+Super+G';
  * identical — the grid has no room for this window here.
  */
 export const REFUSAL_NO_ROOM = 'No room — this grid is full';
+
+/** Pill label state while armed (spec 2026-08-20, make-room drop zone). */
+export const REFUSAL_MAKE_ROOM_ARMED = 'Release to make room';
+
+/** Make-room pill size, physical pixels (a comfortably hittable target). */
+const MAKE_ROOM_PILL = { width: 280, height: 64 };
 
 /**
  * Placement mode a grid gets when nothing says otherwise. New grids only —
@@ -665,6 +673,7 @@ export class WindowManagerBrain {
       lastDragPos: null,
       lastResizing: false,
       lastRefused: false,
+      lastArmed: false,
     };
     this.cb.onPreview({ gridId, visible: true, footprint: slot, ghosts: [] });
   }
@@ -694,6 +703,7 @@ export class WindowManagerBrain {
       lastDragPos: null,
       lastResizing: false,
       lastRefused: false,
+      lastArmed: false,
     };
     // Immediate response on the grid under the window, so the overlay reacts
     // to the grab itself rather than the first movement.
@@ -711,15 +721,33 @@ export class WindowManagerBrain {
     );
     if (!computed) return;
     const refused = this.placementRefused(mg, d, computed.footprint);
+    // Same pill logic as dragMoved, with the window's centre standing in for
+    // the cursor: the grab itself must already show the whole story, or the
+    // change-detection in dragMoved would suppress the pill until the first
+    // footprint change.
+    const plan = refused ? this.makeRoomPlan(mg, computed.footprint) : null;
+    const pill = plan ? this.makeRoomPill(mon, this.dims(mg.settings), computed.footprint) : null;
+    const cx = info.x + info.width / 2;
+    const cy = info.y + info.height / 2;
+    const armed =
+      pill !== null &&
+      cx >= pill.x &&
+      cx <= pill.x + pill.width &&
+      cy >= pill.y &&
+      cy <= pill.y + pill.height;
     d.previewGridId = mg.settings.id;
     d.lastFootprint = computed.footprint;
     d.lastRefused = refused;
+    d.lastArmed = armed;
     this.cb.onPreview({
       gridId: mg.settings.id,
       visible: true,
       footprint: computed.footprint,
       ghosts: [],
-      ...(refused ? { refusal: REFUSAL_NO_ROOM } : {}),
+      ...(refused
+        ? { refusal: armed ? REFUSAL_MAKE_ROOM_ARMED : REFUSAL_NO_ROOM }
+        : {}),
+      ...(pill ? { makeRoom: { ...pill, armed } } : {}),
     });
   }
 
@@ -747,12 +775,21 @@ export class WindowManagerBrain {
     // (target grid, footprint, resize-mode): identical inputs mean the last
     // preview still stands — skip the simulation entirely.
     const refused = this.placementRefused(mg, d, footprint);
+    const plan = refused ? this.makeRoomPlan(mg, footprint) : null;
+    const pill = plan ? this.makeRoomPill(mon, this.dims(mg.settings), footprint) : null;
+    const armed =
+      pill !== null &&
+      p.cursorX >= pill.x &&
+      p.cursorX <= pill.x + pill.width &&
+      p.cursorY >= pill.y &&
+      p.cursorY <= pill.y + pill.height;
     const unchanged =
       d.previewGridId === mg.settings.id &&
       d.lastFootprint !== null &&
       sameSlot(d.lastFootprint, footprint) &&
       d.lastResizing === resizing &&
-      d.lastRefused === refused;
+      d.lastRefused === refused &&
+      d.lastArmed === armed;
     if (unchanged) return;
 
     // Stack-mode targets never reflow neighbors; absolute tiles displace
@@ -769,7 +806,8 @@ export class WindowManagerBrain {
       d.lastFootprint !== null &&
       sameSlot(d.lastFootprint, footprint) &&
       sameGhosts(d.lastGhosts, ghosts) &&
-      d.lastRefused === refused
+      d.lastRefused === refused &&
+      d.lastArmed === armed
     ) {
       d.lastResizing = resizing;
       return;
@@ -788,13 +826,111 @@ export class WindowManagerBrain {
     d.lastGhosts = ghosts;
     d.lastResizing = resizing;
     d.lastRefused = refused;
+    d.lastArmed = armed;
+    // Armed: WYSIWYG the split — the footprint becomes the donated half and
+    // the victim's move is the ghost, exactly what releasing will commit.
+    const shownFootprint = armed && plan ? plan.donated : footprint;
+    const shownGhosts =
+      armed && plan
+        ? (() => {
+            const t = mg.grid.getTile(plan.victim);
+            return t ? [{ hwnd: plan.victim, from: tileSlotOf(t), to: plan.kept }] : ghosts;
+          })()
+        : ghosts;
     this.cb.onPreview({
       gridId: mg.settings.id,
       visible: true,
-      footprint,
-      ghosts,
-      ...(refused ? { refusal: REFUSAL_NO_ROOM } : {}),
+      footprint: shownFootprint,
+      ghosts: shownGhosts,
+      ...(refused
+        ? { refusal: armed ? REFUSAL_MAKE_ROOM_ARMED : REFUSAL_NO_ROOM }
+        : {}),
+      ...(pill ? { makeRoom: { ...pill, armed } } : {}),
     });
+  }
+
+  /**
+   * Spec 2026-08-20 (make-room): the split a drop on the pill would commit.
+   * Victim = the in-flow tile covering the refused footprint's origin cell;
+   * splittable iff it spans >= 2 cells on some axis. The donated half is the
+   * half containing the aimed cell (odd spans round in the newcomer's
+   * favour), so the newcomer lands where the user pointed. Pure: preview and
+   * commit run the same computation, so the ghosts are the outcome.
+   */
+  private makeRoomPlan(
+    target: ManagedGrid,
+    footprint: Slot,
+  ): { victim: Hwnd; kept: Slot; donated: Slot } | null {
+    const origin = { col: footprint.col, row: footprint.row, w: 1, h: 1 };
+    const victims = target.grid.tilesIn(origin).filter((t) => isInFlow(t));
+    const victim = victims[0];
+    if (!victim) return null;
+    const v = tileSlotOf(victim);
+    if (v.w < 2 && v.h < 2) return null;
+    if (v.w >= v.h) {
+      // Column split. Aimed side gets ceil(w/2).
+      const donatedW = Math.ceil(v.w / 2);
+      const keptW = v.w - donatedW;
+      const aimLeft = footprint.col < v.col + v.w / 2;
+      const donated: Slot = aimLeft
+        ? { col: v.col, row: v.row, w: donatedW, h: v.h }
+        : { col: v.col + keptW, row: v.row, w: donatedW, h: v.h };
+      const kept: Slot = aimLeft
+        ? { col: v.col + donatedW, row: v.row, w: keptW, h: v.h }
+        : { col: v.col, row: v.row, w: keptW, h: v.h };
+      return { victim: victim.id, kept, donated };
+    }
+    const donatedH = Math.ceil(v.h / 2);
+    const keptH = v.h - donatedH;
+    const aimTop = footprint.row < v.row + v.h / 2;
+    const donated: Slot = aimTop
+      ? { col: v.col, row: v.row, w: v.w, h: donatedH }
+      : { col: v.col, row: v.row + keptH, w: v.w, h: donatedH };
+    const kept: Slot = aimTop
+      ? { col: v.col, row: v.row + donatedH, w: v.w, h: keptH }
+      : { col: v.col, row: v.row, w: v.w, h: keptH };
+    return { victim: victim.id, kept, donated };
+  }
+
+  /** The pill's pixel rect: centered on the footprint, clamped to the monitor. */
+  private makeRoomPill(
+    mon: MonitorInfo,
+    dims: { cols: number; rows: number },
+    footprint: Slot,
+  ): { x: number; y: number; width: number; height: number } {
+    const cell = cellRect(mon, dims, footprint);
+    let x = cell.x + cell.width / 2 - MAKE_ROOM_PILL.width / 2;
+    let y = cell.y + cell.height / 2 - MAKE_ROOM_PILL.height / 2;
+    x = Math.max(mon.x, Math.min(x, mon.x + mon.width - MAKE_ROOM_PILL.width));
+    y = Math.max(mon.y, Math.min(y, mon.y + mon.height - MAKE_ROOM_PILL.height));
+    return { x, y, width: MAKE_ROOM_PILL.width, height: MAKE_ROOM_PILL.height };
+  }
+
+  /** Commit the split an armed drop asked for. True on success. */
+  private commitMakeRoom(
+    target: ManagedGrid,
+    hwnd: Hwnd,
+    plan: { victim: Hwnd; kept: Slot; donated: Slot },
+  ): boolean {
+    // Same wholesale snapshot/restore as the reflow commit: the victim's
+    // resize and the newcomer's arrival land as one batch, so the grid is
+    // never observed half-split.
+    const next = target.grid.snapshotTiles();
+    const victim = next.get(plan.victim);
+    if (!victim) return false; // grid changed under the plan
+    victim.col = plan.kept.col;
+    victim.row = plan.kept.row;
+    victim.w = plan.kept.w;
+    victim.h = plan.kept.h;
+    next.set(hwnd, {
+      id: hwnd,
+      col: plan.donated.col,
+      row: plan.donated.row,
+      w: plan.donated.w,
+      h: plan.donated.h,
+    });
+    target.grid.restoreTiles(next);
+    return true;
   }
 
   /**
@@ -2294,6 +2430,27 @@ export class WindowManagerBrain {
     const snapped = computed.footprint;
 
     if (this.placementRefused(target, d, snapped)) {
+      // Armed drop on the make-room pill (spec 2026-08-20): split the tile
+      // the user aimed at and take the donated half — the same computation
+      // the armed preview ghosted.
+      const plan = this.makeRoomPlan(target, snapped);
+      if (plan) {
+        const pill = this.makeRoomPill(at.mon, this.dims(target.settings), snapped);
+        const armed =
+          cursorX >= pill.x &&
+          cursorX <= pill.x + pill.width &&
+          cursorY >= pill.y &&
+          cursorY <= pill.y + pill.height;
+        if (armed && this.commitMakeRoom(target, hwnd, plan)) {
+          this.tileGrid.set(hwnd, target.settings.id);
+          this.floating.delete(hwnd);
+          this.touch(hwnd);
+          this.appliedRects.delete(hwnd);
+          this.flush();
+          this.emitSnapshot();
+          return;
+        }
+      }
       // The refusal the preview showed, restated at the drop so releasing
       // the button is answered too. The host hides the overlay on a timer.
       this.cb.onPreview({

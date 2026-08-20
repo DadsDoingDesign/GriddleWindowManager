@@ -76,6 +76,17 @@ boxes are the ones that would have caught it.
       message shows live — before you release.
 - [ ] Drop on an ungridded monitor: nothing happens and nothing is said.
 
+## P0 — make-room drop zone (spec 2026-08-20)
+
+- [ ] Drag a window over a full grid: alongside "No room", a dashed
+      "Drop here to make room" pill appears at your footprint.
+- [ ] Move the cursor onto the pill: it arms (solid, glowing), the message
+      becomes "Release to make room", and the ghosts preview the split — the
+      aimed tile shrinking to half, your window taking the other half.
+- [ ] Release while armed: exactly that split commits.
+- [ ] Release elsewhere: nothing splits; the plain refusal stands.
+- [ ] Over a grid whose aimed tile is 1×1 (nothing to donate): no pill.
+
 ## P0 — window-eligibility carve-outs (spec 2026-08-20)
 
 - [ ] Open Griddle's Settings window on a gridded monitor: it tiles like any
