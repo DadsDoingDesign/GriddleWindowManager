@@ -28,6 +28,15 @@ export interface WindowInfo {
   monitorId: string;
   minimized: boolean;
   resizable: boolean;
+  /**
+   * Spec 2026-08-20 (minimum window sizes): the window's minimum tracking
+   * size in physical pixels (WM_GETMINMAXINFO), 0/absent when unknown.
+   * Windows clamps any smaller resize at the OS level, so a footprint below
+   * this overflows its cells — the brain must grant at least these pixels'
+   * worth of cells or refuse.
+   */
+  minWidth?: number;
+  minHeight?: number;
 }
 
 export interface Slot {

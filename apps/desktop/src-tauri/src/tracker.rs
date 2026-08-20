@@ -596,6 +596,7 @@ mod win {
     pub(super) fn window_info(hwnd: HWND, probe: &WindowProbe) -> Option<WindowInfo> {
         let rect = extended_frame_bounds(hwnd)?;
         let exe = probe.exe.clone()?;
+        let (min_width, min_height) = min_track_size(hwnd);
         Some(WindowInfo {
             hwnd: (hwnd.0 as isize).to_string(),
             title: window_title(hwnd),
@@ -608,7 +609,38 @@ mod win {
             minimized: unsafe { IsIconic(hwnd) }.as_bool()
                 || probe.style & style_bits::WS_MAXIMIZE != 0,
             resizable: probe.style & style_bits::WS_THICKFRAME != 0,
+            min_width,
+            min_height,
         })
+    }
+
+    /// The window's minimum tracking size via `WM_GETMINMAXINFO` (spec
+    /// 2026-08-20): Electron apps in particular enforce a minimum the OS
+    /// clamps every resize to, so a cell smaller than this overflows —
+    /// famously Discord in a thin column. Sent with a short abort-if-hung
+    /// timeout so one wedged app cannot stall a resync; a window that never
+    /// touches the zeroed struct reports (0, 0) = no known minimum.
+    fn min_track_size(hwnd: HWND) -> (i32, i32) {
+        use windows::Win32::Foundation::{LPARAM, WPARAM};
+        use windows::Win32::UI::WindowsAndMessaging::{
+            SendMessageTimeoutW, MINMAXINFO, SMTO_ABORTIFHUNG, WM_GETMINMAXINFO,
+        };
+        let mut mmi = MINMAXINFO::default();
+        let ok = unsafe {
+            SendMessageTimeoutW(
+                hwnd,
+                WM_GETMINMAXINFO,
+                WPARAM(0),
+                LPARAM(&mut mmi as *mut _ as isize),
+                SMTO_ABORTIFHUNG,
+                100,
+                None,
+            )
+        };
+        if ok.0 == 0 {
+            return (0, 0);
+        }
+        (mmi.ptMinTrackSize.x.max(0), mmi.ptMinTrackSize.y.max(0))
     }
 
     // -- snapshotting -------------------------------------------------------
@@ -1228,6 +1260,8 @@ mod tests {
             height: 100,
             monitor_id: "m".into(),
             minimized: false,
+            min_width: 0,
+            min_height: 0,
             resizable: true,
         }
     }
@@ -1458,7 +1492,9 @@ mod win_tests {
                 height: 100,
                 monitor_id: "m".into(),
                 minimized: false,
-                resizable: true,
+                min_width: 0,
+            min_height: 0,
+            resizable: true,
             },
         );
 

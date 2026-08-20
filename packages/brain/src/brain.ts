@@ -125,6 +125,14 @@ export const REFUSAL_NO_ROOM = 'No room — this grid is full';
 /** Pill label state while armed (spec 2026-08-20, make-room drop zone). */
 export const REFUSAL_MAKE_ROOM_ARMED = 'Release to make room';
 
+/**
+ * Spec 2026-08-20 (minimum window sizes): the refusal when the window's
+ * OS-enforced minimum cannot fit even the whole grid span — naming the real
+ * cause instead of claiming a possibly-empty grid is "full".
+ */
+export const REFUSAL_MIN_SIZE =
+  "This window's minimum size doesn't fit — it needs bigger cells";
+
 /** Make-room pill size, physical pixels (a comfortably hittable target). */
 const MAKE_ROOM_PILL = { width: 280, height: 64 };
 
@@ -720,12 +728,16 @@ export class WindowManagerBrain {
       startRect,
     );
     if (!computed) return;
-    const refused = this.placementRefused(mg, d, computed.footprint);
+    const unfittable = this.minUnfittable(mon, this.dims(mg.settings), info);
+    const refused = unfittable || this.placementRefused(mg, d, computed.footprint);
     // Same pill logic as dragMoved, with the window's centre standing in for
     // the cursor: the grab itself must already show the whole story, or the
     // change-detection in dragMoved would suppress the pill until the first
     // footprint change.
-    const plan = refused ? this.makeRoomPlan(mg, computed.footprint) : null;
+    const plan =
+      refused && !unfittable
+        ? this.makeRoomPlan(mg, computed.footprint, this.minCellsFor(mon, this.dims(mg.settings), info))
+        : null;
     const pill = plan ? this.makeRoomPill(mon, this.dims(mg.settings), computed.footprint) : null;
     const cx = info.x + info.width / 2;
     const cy = info.y + info.height / 2;
@@ -745,7 +757,13 @@ export class WindowManagerBrain {
       footprint: computed.footprint,
       ghosts: [],
       ...(refused
-        ? { refusal: armed ? REFUSAL_MAKE_ROOM_ARMED : REFUSAL_NO_ROOM }
+        ? {
+            refusal: armed
+              ? REFUSAL_MAKE_ROOM_ARMED
+              : unfittable
+                ? REFUSAL_MIN_SIZE
+                : REFUSAL_NO_ROOM,
+          }
         : {}),
       ...(pill ? { makeRoom: { ...pill, armed } } : {}),
     });
@@ -774,8 +792,13 @@ export class WindowManagerBrain {
     // During a drag the grid is frozen, so the ghosts are a pure function of
     // (target grid, footprint, resize-mode): identical inputs mean the last
     // preview still stands — skip the simulation entirely.
-    const refused = this.placementRefused(mg, d, footprint);
-    const plan = refused ? this.makeRoomPlan(mg, footprint) : null;
+    const dragInfo = this.windows.get(d.hwnd);
+    const unfittable = this.minUnfittable(mon, this.dims(mg.settings), dragInfo);
+    const refused = unfittable || this.placementRefused(mg, d, footprint);
+    const plan =
+      refused && !unfittable
+        ? this.makeRoomPlan(mg, footprint, this.minCellsFor(mon, this.dims(mg.settings), dragInfo))
+        : null;
     const pill = plan ? this.makeRoomPill(mon, this.dims(mg.settings), footprint) : null;
     const armed =
       pill !== null &&
@@ -843,10 +866,49 @@ export class WindowManagerBrain {
       footprint: shownFootprint,
       ghosts: shownGhosts,
       ...(refused
-        ? { refusal: armed ? REFUSAL_MAKE_ROOM_ARMED : REFUSAL_NO_ROOM }
+        ? {
+            refusal: armed
+              ? REFUSAL_MAKE_ROOM_ARMED
+              : unfittable
+                ? REFUSAL_MIN_SIZE
+                : REFUSAL_NO_ROOM,
+          }
         : {}),
       ...(pill ? { makeRoom: { ...pill, armed } } : {}),
     });
+  }
+
+  /**
+   * Spec 2026-08-20 (minimum window sizes): the cells `info`'s OS-enforced
+   * minimum needs on this grid. Unclamped on purpose — a result exceeding
+   * the grid's dims is how callers detect "cannot fit at all". Same pitch
+   * math as snapRectToSlot: a w-cell footprint is w*pitch - gap pixels.
+   */
+  private minCellsFor(
+    mon: MonitorInfo,
+    dims: { cols: number; rows: number },
+    info: WindowInfo | undefined,
+  ): { w: number; h: number } {
+    const minW = info?.minWidth ?? 0;
+    const minH = info?.minHeight ?? 0;
+    if (minW <= 0 && minH <= 0) return { w: 1, h: 1 };
+    const eff = effectiveSpacing(mon, dims);
+    const pitchW = (eff.width - eff.gapX * (dims.cols - 1)) / dims.cols + eff.gapX;
+    const pitchH = (eff.height - eff.gapY * (dims.rows - 1)) / dims.rows + eff.gapY;
+    return {
+      w: Math.max(1, Math.ceil((minW + eff.gapX) / pitchW)),
+      h: Math.max(1, Math.ceil((minH + eff.gapY) / pitchH)),
+    };
+  }
+
+  /** Does `info`'s minimum exceed what this whole grid can offer? */
+  private minUnfittable(
+    mon: MonitorInfo,
+    dims: { cols: number; rows: number },
+    info: WindowInfo | undefined,
+  ): boolean {
+    const need = this.minCellsFor(mon, dims, info);
+    return need.w > dims.cols || need.h > dims.rows;
   }
 
   /**
@@ -860,6 +922,7 @@ export class WindowManagerBrain {
   private makeRoomPlan(
     target: ManagedGrid,
     footprint: Slot,
+    minCells: { w: number; h: number } = { w: 1, h: 1 },
   ): { victim: Hwnd; kept: Slot; donated: Slot } | null {
     const origin = { col: footprint.col, row: footprint.row, w: 1, h: 1 };
     const victims = target.grid.tilesIn(origin).filter((t) => isInFlow(t));
@@ -878,6 +941,7 @@ export class WindowManagerBrain {
       const kept: Slot = aimLeft
         ? { col: v.col + donatedW, row: v.row, w: keptW, h: v.h }
         : { col: v.col, row: v.row, w: keptW, h: v.h };
+      if (donated.w < minCells.w || donated.h < minCells.h) return null;
       return { victim: victim.id, kept, donated };
     }
     const donatedH = Math.ceil(v.h / 2);
@@ -889,6 +953,7 @@ export class WindowManagerBrain {
     const kept: Slot = aimTop
       ? { col: v.col, row: v.row + donatedH, w: v.w, h: keptH }
       : { col: v.col, row: v.row, w: v.w, h: keptH };
+    if (donated.w < minCells.w || donated.h < minCells.h) return null;
     return { victim: victim.id, kept, donated };
   }
 
@@ -999,6 +1064,18 @@ export class WindowManagerBrain {
           : snapRectToSlot(mon, dims, rect); // footprint in the target grid's cells
       footprint = slotFromCursor(mon, dims, cursorX, cursorY, size);
     }
+    // Minimum window sizes (spec 2026-08-20): a footprint below the
+    // window's OS minimum would overflow its cells — Windows clamps the
+    // resize, not us. Grow to at least the minimum's cells, capped at the
+    // grid (the unfittable case refuses separately, with its own message).
+    const need = this.minCellsFor(mon, dims, this.windows.get(d.hwnd));
+    footprint = {
+      ...footprint,
+      w: Math.min(dims.cols, Math.max(footprint.w, need.w)),
+      h: Math.min(dims.rows, Math.max(footprint.h, need.h)),
+    };
+    footprint.col = Math.min(footprint.col, dims.cols - footprint.w);
+    footprint.row = Math.min(footprint.row, dims.rows - footprint.h);
     // Preview and commit snap to usable slots identically (spec §5.7).
     const adjusted = this.nearestUsable(mg, footprint);
     return adjusted ? { footprint: adjusted, resizing } : null;
@@ -2429,11 +2506,19 @@ export class WindowManagerBrain {
     const target = at.mg;
     const snapped = computed.footprint;
 
-    if (this.placementRefused(target, d, snapped)) {
+    const dropInfo = this.windows.get(hwnd);
+    const dropUnfittable = this.minUnfittable(at.mon, this.dims(target.settings), dropInfo);
+    if (dropUnfittable || this.placementRefused(target, d, snapped)) {
       // Armed drop on the make-room pill (spec 2026-08-20): split the tile
       // the user aimed at and take the donated half — the same computation
       // the armed preview ghosted.
-      const plan = this.makeRoomPlan(target, snapped);
+      const plan = dropUnfittable
+        ? null
+        : this.makeRoomPlan(
+            target,
+            snapped,
+            this.minCellsFor(at.mon, this.dims(target.settings), dropInfo),
+          );
       if (plan) {
         const pill = this.makeRoomPill(at.mon, this.dims(target.settings), snapped);
         const armed =
@@ -2458,7 +2543,7 @@ export class WindowManagerBrain {
         visible: true,
         footprint: null,
         ghosts: [],
-        refusal: REFUSAL_NO_ROOM,
+        refusal: dropUnfittable ? REFUSAL_MIN_SIZE : REFUSAL_NO_ROOM,
       });
       return;
     }
@@ -2666,7 +2751,21 @@ export class WindowManagerBrain {
     const dims = this.dims(mg.settings);
     // Dead-space cells (spanning grids, spec §5.7) are excluded from
     // placement: the raw snap moves to the nearest fully usable slot.
-    const snapped = this.nearestUsable(mg, snapRectToSlot(mon, dims, w));
+    const need = this.minCellsFor(mon, dims, w);
+    if (need.w > dims.cols || need.h > dims.rows) {
+      // The minimum cannot fit even the whole grid: floating is the only
+      // honest outcome (drags over this grid say so via REFUSAL_MIN_SIZE).
+      this.floating.set(w.hwnd, mg.settings.id);
+      return false;
+    }
+    const raw = snapRectToSlot(mon, dims, w);
+    const grown: Slot = {
+      col: Math.min(raw.col, dims.cols - Math.max(raw.w, need.w)),
+      row: Math.min(raw.row, dims.rows - Math.max(raw.h, need.h)),
+      w: Math.max(raw.w, need.w),
+      h: Math.max(raw.h, need.h),
+    };
+    const snapped = this.nearestUsable(mg, grown);
     if (!snapped) {
       // Degenerate spanning grid with zero usable cells: nothing can place.
       this.floating.set(w.hwnd, mg.settings.id);

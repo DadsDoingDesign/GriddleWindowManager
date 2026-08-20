@@ -43,6 +43,13 @@ pub struct WindowInfo {
     pub monitor_id: String,
     pub minimized: bool,
     pub resizable: bool,
+    /// Minimum tracking size (WM_GETMINMAXINFO), physical px; 0 = unknown.
+    /// Windows clamps any smaller resize at the OS level, so the brain must
+    /// grant at least this many pixels' worth of cells (spec 2026-08-20).
+    #[serde(default)]
+    pub min_width: i32,
+    #[serde(default)]
+    pub min_height: i32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

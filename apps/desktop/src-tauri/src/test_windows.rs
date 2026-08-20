@@ -112,6 +112,8 @@ pub(crate) fn track_test_window(hwnd: HWND, title: &str) -> isize {
             height: raw.height,
             monitor_id: "m".into(),
             minimized: false,
+            min_width: 0,
+            min_height: 0,
             resizable: true,
         },
     );

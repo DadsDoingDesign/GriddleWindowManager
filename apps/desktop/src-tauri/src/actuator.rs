@@ -1104,7 +1104,9 @@ mod win_tests {
                 height: 300,
                 monitor_id: "m".into(),
                 minimized: false,
-                resizable: true,
+                min_width: 0,
+            min_height: 0,
+            resizable: true,
             },
         );
 
@@ -1186,7 +1188,9 @@ mod win_tests {
                 height: 300,
                 monitor_id: "m".into(),
                 minimized: false,
-                resizable: true,
+                min_width: 0,
+            min_height: 0,
+            resizable: true,
             },
         );
 
