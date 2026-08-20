@@ -59,6 +59,12 @@ import type {
 export interface BrainCallbacks {
   onApply(layout: ApplyLayout): void;
   onPreview(p: PreviewState): void;
+  /**
+   * Spec 2026-08-20 (swap drop zone): ask the shell to minimize a window.
+   * Optional so headless embedders and older hosts keep working; the brain
+   * has already released the window's tile when this fires.
+   */
+  onMinimize?(hwnd: Hwnd): void;
   onSnapshot(s: StateSnapshot): void;
 }
 
@@ -111,6 +117,8 @@ interface DragState {
   lastRefused: boolean;
   /** Whether the last preview's make-room pill was armed (change check). */
   lastArmed: boolean;
+  /** Whether the last preview's swap pill was armed (change check). */
+  lastSwapArmed: boolean;
 }
 
 const DEFAULT_HOTKEY = 'Ctrl+Super+G';
@@ -130,6 +138,9 @@ export const REFUSAL_MAKE_ROOM_ARMED = 'Release to make room';
  * OS-enforced minimum cannot fit even the whole grid span — naming the real
  * cause instead of claiming a possibly-empty grid is "full".
  */
+/** Swap pill label while armed (spec 2026-08-20 addendum). */
+export const REFUSAL_SWAP_ARMED = 'Release to swap — the window there minimizes';
+
 export const REFUSAL_MIN_SIZE =
   "This window's minimum size doesn't fit — it needs bigger cells";
 
@@ -682,6 +693,7 @@ export class WindowManagerBrain {
       lastResizing: false,
       lastRefused: false,
       lastArmed: false,
+      lastSwapArmed: false,
     };
     this.cb.onPreview({ gridId, visible: true, footprint: slot, ghosts: [] });
   }
@@ -712,6 +724,7 @@ export class WindowManagerBrain {
       lastResizing: false,
       lastRefused: false,
       lastArmed: false,
+      lastSwapArmed: false,
     };
     // Immediate response on the grid under the window, so the overlay reacts
     // to the grab itself rather than the first movement.
@@ -734,23 +747,28 @@ export class WindowManagerBrain {
     // the cursor: the grab itself must already show the whole story, or the
     // change-detection in dragMoved would suppress the pill until the first
     // footprint change.
-    const plan =
-      refused && !unfittable
-        ? this.makeRoomPlan(mg, computed.footprint, this.minCellsFor(mon, this.dims(mg.settings), info))
-        : null;
-    const pill = plan ? this.makeRoomPill(mon, this.dims(mg.settings), computed.footprint) : null;
+    const minCells = this.minCellsFor(mon, this.dims(mg.settings), info);
+    const offerPills = refused && !unfittable;
+    const plan = offerPills ? this.makeRoomPlan(mg, computed.footprint, minCells) : null;
+    const swPlan = offerPills ? this.swapPlan(mg, computed.footprint, minCells) : null;
+    const pills = this.pillRects(
+      mon,
+      this.dims(mg.settings),
+      computed.footprint,
+      plan !== null,
+      swPlan !== null,
+    );
     const cx = info.x + info.width / 2;
     const cy = info.y + info.height / 2;
-    const armed =
-      pill !== null &&
-      cx >= pill.x &&
-      cx <= pill.x + pill.width &&
-      cy >= pill.y &&
-      cy <= pill.y + pill.height;
+    const inRect = (r: { x: number; y: number; width: number; height: number } | undefined) =>
+      r !== undefined && cx >= r.x && cx <= r.x + r.width && cy >= r.y && cy <= r.y + r.height;
+    const armed = inRect(pills.makeRoom);
+    const swapArmed = inRect(pills.swap);
     d.previewGridId = mg.settings.id;
     d.lastFootprint = computed.footprint;
     d.lastRefused = refused;
     d.lastArmed = armed;
+    d.lastSwapArmed = swapArmed;
     this.cb.onPreview({
       gridId: mg.settings.id,
       visible: true,
@@ -760,12 +778,15 @@ export class WindowManagerBrain {
         ? {
             refusal: armed
               ? REFUSAL_MAKE_ROOM_ARMED
-              : unfittable
-                ? REFUSAL_MIN_SIZE
-                : REFUSAL_NO_ROOM,
+              : swapArmed
+                ? REFUSAL_SWAP_ARMED
+                : unfittable
+                  ? REFUSAL_MIN_SIZE
+                  : REFUSAL_NO_ROOM,
           }
         : {}),
-      ...(pill ? { makeRoom: { ...pill, armed } } : {}),
+      ...(pills.makeRoom ? { makeRoom: { ...pills.makeRoom, armed } } : {}),
+      ...(pills.swap ? { swap: { ...pills.swap, armed: swapArmed } } : {}),
     });
   }
 
@@ -795,24 +816,30 @@ export class WindowManagerBrain {
     const dragInfo = this.windows.get(d.hwnd);
     const unfittable = this.minUnfittable(mon, this.dims(mg.settings), dragInfo);
     const refused = unfittable || this.placementRefused(mg, d, footprint);
-    const plan =
-      refused && !unfittable
-        ? this.makeRoomPlan(mg, footprint, this.minCellsFor(mon, this.dims(mg.settings), dragInfo))
-        : null;
-    const pill = plan ? this.makeRoomPill(mon, this.dims(mg.settings), footprint) : null;
-    const armed =
-      pill !== null &&
-      p.cursorX >= pill.x &&
-      p.cursorX <= pill.x + pill.width &&
-      p.cursorY >= pill.y &&
-      p.cursorY <= pill.y + pill.height;
+    // Pills are offered for intake drags only: their drop machinery lives in
+    // intakeDrop, and a pill a managed drop would silently ignore is worse
+    // than no pill.
+    const offerPills = refused && !unfittable && d.sourceGridId === null;
+    const minCells = this.minCellsFor(mon, this.dims(mg.settings), dragInfo);
+    const plan = offerPills ? this.makeRoomPlan(mg, footprint, minCells) : null;
+    const swPlan = offerPills ? this.swapPlan(mg, footprint, minCells) : null;
+    const pills = this.pillRects(mon, this.dims(mg.settings), footprint, plan !== null, swPlan !== null);
+    const inRect = (r: { x: number; y: number; width: number; height: number } | undefined) =>
+      r !== undefined &&
+      p.cursorX >= r.x &&
+      p.cursorX <= r.x + r.width &&
+      p.cursorY >= r.y &&
+      p.cursorY <= r.y + r.height;
+    const armed = inRect(pills.makeRoom);
+    const swapArmed = inRect(pills.swap);
     const unchanged =
       d.previewGridId === mg.settings.id &&
       d.lastFootprint !== null &&
       sameSlot(d.lastFootprint, footprint) &&
       d.lastResizing === resizing &&
       d.lastRefused === refused &&
-      d.lastArmed === armed;
+      d.lastArmed === armed &&
+      d.lastSwapArmed === swapArmed;
     if (unchanged) return;
 
     // Stack-mode targets never reflow neighbors; absolute tiles displace
@@ -830,7 +857,8 @@ export class WindowManagerBrain {
       sameSlot(d.lastFootprint, footprint) &&
       sameGhosts(d.lastGhosts, ghosts) &&
       d.lastRefused === refused &&
-      d.lastArmed === armed
+      d.lastArmed === armed &&
+      d.lastSwapArmed === swapArmed
     ) {
       d.lastResizing = resizing;
       return;
@@ -850,16 +878,21 @@ export class WindowManagerBrain {
     d.lastResizing = resizing;
     d.lastRefused = refused;
     d.lastArmed = armed;
-    // Armed: WYSIWYG the split — the footprint becomes the donated half and
-    // the victim's move is the ghost, exactly what releasing will commit.
-    const shownFootprint = armed && plan ? plan.donated : footprint;
+    d.lastSwapArmed = swapArmed;
+    // Armed: WYSIWYG the outcome. Make-room shows the donated half with the
+    // victim's move as a ghost; swap shows the victim's whole slot (the
+    // victim minimizes, so there is no destination to ghost).
+    const shownFootprint =
+      armed && plan ? plan.donated : swapArmed && swPlan ? swPlan.slot : footprint;
     const shownGhosts =
       armed && plan
         ? (() => {
             const t = mg.grid.getTile(plan.victim);
             return t ? [{ hwnd: plan.victim, from: tileSlotOf(t), to: plan.kept }] : ghosts;
           })()
-        : ghosts;
+        : swapArmed
+          ? []
+          : ghosts;
     this.cb.onPreview({
       gridId: mg.settings.id,
       visible: true,
@@ -869,12 +902,15 @@ export class WindowManagerBrain {
         ? {
             refusal: armed
               ? REFUSAL_MAKE_ROOM_ARMED
-              : unfittable
-                ? REFUSAL_MIN_SIZE
-                : REFUSAL_NO_ROOM,
+              : swapArmed
+                ? REFUSAL_SWAP_ARMED
+                : unfittable
+                  ? REFUSAL_MIN_SIZE
+                  : REFUSAL_NO_ROOM,
           }
         : {}),
-      ...(pill ? { makeRoom: { ...pill, armed } } : {}),
+      ...(pills.makeRoom ? { makeRoom: { ...pills.makeRoom, armed } } : {}),
+      ...(pills.swap ? { swap: { ...pills.swap, armed: swapArmed } } : {}),
     });
   }
 
@@ -957,18 +993,55 @@ export class WindowManagerBrain {
     return { victim: victim.id, kept, donated };
   }
 
-  /** The pill's pixel rect: centered on the footprint, clamped to the monitor. */
-  private makeRoomPill(
+  /**
+   * Spec 2026-08-20 addendum (swap): the exchange a drop on the swap pill
+   * commits — the in-flow tile at the aimed cell is minimized and the
+   * newcomer takes its exact slot. Offered only when that slot satisfies
+   * the newcomer's minimum (otherwise the swap would recreate the very
+   * overflow the minimum rules exist to prevent).
+   */
+  private swapPlan(
+    target: ManagedGrid,
+    footprint: Slot,
+    minCells: { w: number; h: number } = { w: 1, h: 1 },
+  ): { victim: Hwnd; slot: Slot } | null {
+    const origin = { col: footprint.col, row: footprint.row, w: 1, h: 1 };
+    const victim = target.grid.tilesIn(origin).filter((t) => isInFlow(t))[0];
+    if (!victim) return null;
+    const slot = tileSlotOf(victim);
+    if (slot.w < minCells.w || slot.h < minCells.h) return null;
+    return { victim: victim.id, slot };
+  }
+
+  /**
+   * Pixel rects for the offered pills, centered on the footprint as a pair
+   * (make-room left, swap right) or alone, clamped into the monitor. The
+   * rects are disjoint by construction — arming is mutually exclusive.
+   */
+  private pillRects(
     mon: MonitorInfo,
     dims: { cols: number; rows: number },
     footprint: Slot,
-  ): { x: number; y: number; width: number; height: number } {
+    wantMakeRoom: boolean,
+    wantSwap: boolean,
+  ): {
+    makeRoom?: { x: number; y: number; width: number; height: number };
+    swap?: { x: number; y: number; width: number; height: number };
+  } {
+    const count = (wantMakeRoom ? 1 : 0) + (wantSwap ? 1 : 0);
+    if (count === 0) return {};
+    const w = count === 2 ? 220 : MAKE_ROOM_PILL.width;
+    const gap = 12;
+    const total = count === 2 ? w * 2 + gap : w;
     const cell = cellRect(mon, dims, footprint);
-    let x = cell.x + cell.width / 2 - MAKE_ROOM_PILL.width / 2;
+    let x = cell.x + cell.width / 2 - total / 2;
     let y = cell.y + cell.height / 2 - MAKE_ROOM_PILL.height / 2;
-    x = Math.max(mon.x, Math.min(x, mon.x + mon.width - MAKE_ROOM_PILL.width));
+    x = Math.max(mon.x, Math.min(x, mon.x + mon.width - total));
     y = Math.max(mon.y, Math.min(y, mon.y + mon.height - MAKE_ROOM_PILL.height));
-    return { x, y, width: MAKE_ROOM_PILL.width, height: MAKE_ROOM_PILL.height };
+    const first = { x, y, width: w, height: MAKE_ROOM_PILL.height };
+    const second = { x: x + w + gap, y, width: w, height: MAKE_ROOM_PILL.height };
+    if (wantMakeRoom && wantSwap) return { makeRoom: first, swap: second };
+    return wantMakeRoom ? { makeRoom: first } : { swap: first };
   }
 
   /** Commit the split an armed drop asked for. True on success. */
@@ -995,6 +1068,41 @@ export class WindowManagerBrain {
       h: plan.donated.h,
     });
     target.grid.restoreTiles(next);
+    return true;
+  }
+
+  /** Commit the exchange an armed swap drop asked for. True on success. */
+  private commitSwap(
+    target: ManagedGrid,
+    hwnd: Hwnd,
+    plan: { victim: Hwnd; slot: Slot },
+    info: WindowInfo | undefined,
+  ): boolean {
+    const victim = target.grid.getTile(plan.victim);
+    if (!victim) return false; // grid changed under the plan
+    target.grid.removeTile(plan.victim);
+    this.tileGrid.delete(plan.victim);
+    this.appliedRects.delete(plan.victim);
+    const resizable = info?.resizable ?? true;
+    if (target.settings.mode === 'stack' || !resizable) {
+      target.grid.addTile({
+        id: hwnd,
+        col: plan.slot.col,
+        row: plan.slot.row,
+        w: plan.slot.w,
+        h: plan.slot.h,
+        position: 'absolute',
+        pinned: { x: plan.slot.col, y: plan.slot.row },
+      });
+    } else {
+      target.grid.addTile({
+        id: hwnd,
+        col: plan.slot.col,
+        row: plan.slot.row,
+        w: plan.slot.w,
+        h: plan.slot.h,
+      });
+    }
     return true;
   }
 
@@ -2512,29 +2620,43 @@ export class WindowManagerBrain {
       // Armed drop on the make-room pill (spec 2026-08-20): split the tile
       // the user aimed at and take the donated half — the same computation
       // the armed preview ghosted.
-      const plan = dropUnfittable
-        ? null
-        : this.makeRoomPlan(
-            target,
-            snapped,
-            this.minCellsFor(at.mon, this.dims(target.settings), dropInfo),
-          );
-      if (plan) {
-        const pill = this.makeRoomPill(at.mon, this.dims(target.settings), snapped);
-        const armed =
-          cursorX >= pill.x &&
-          cursorX <= pill.x + pill.width &&
-          cursorY >= pill.y &&
-          cursorY <= pill.y + pill.height;
-        if (armed && this.commitMakeRoom(target, hwnd, plan)) {
-          this.tileGrid.set(hwnd, target.settings.id);
-          this.floating.delete(hwnd);
-          this.touch(hwnd);
-          this.appliedRects.delete(hwnd);
-          this.flush();
-          this.emitSnapshot();
-          return;
-        }
+      const minCells = this.minCellsFor(at.mon, this.dims(target.settings), dropInfo);
+      const plan = dropUnfittable ? null : this.makeRoomPlan(target, snapped, minCells);
+      const swPlan = dropUnfittable ? null : this.swapPlan(target, snapped, minCells);
+      const pills = this.pillRects(
+        at.mon,
+        this.dims(target.settings),
+        snapped,
+        plan !== null,
+        swPlan !== null,
+      );
+      const inRect = (r: { x: number; y: number; width: number; height: number } | undefined) =>
+        r !== undefined &&
+        cursorX >= r.x &&
+        cursorX <= r.x + r.width &&
+        cursorY >= r.y &&
+        cursorY <= r.y + r.height;
+      if (plan && inRect(pills.makeRoom) && this.commitMakeRoom(target, hwnd, plan)) {
+        this.tileGrid.set(hwnd, target.settings.id);
+        this.floating.delete(hwnd);
+        this.touch(hwnd);
+        this.appliedRects.delete(hwnd);
+        this.flush();
+        this.emitSnapshot();
+        return;
+      }
+      if (swPlan && inRect(pills.swap) && this.commitSwap(target, hwnd, swPlan, dropInfo)) {
+        this.tileGrid.set(hwnd, target.settings.id);
+        this.floating.delete(hwnd);
+        this.touch(hwnd);
+        this.appliedRects.delete(hwnd);
+        this.flush();
+        this.emitSnapshot();
+        // After our state is consistent and the moves are flushed: ask the
+        // shell to minimize the swapped-out window. The tracker's minimize
+        // event that follows finds its tile already released — idempotent.
+        this.cb.onMinimize?.(swPlan.victim);
+        return;
       }
       // The refusal the preview showed, restated at the drop so releasing
       // the button is answered too. The host hides the overlay on a timer.

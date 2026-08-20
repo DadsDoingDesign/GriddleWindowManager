@@ -73,6 +73,10 @@
   let makeRoom = $state<{ x: number; y: number; width: number; height: number; armed: boolean } | null>(
     null,
   );
+  /** Spec 2026-08-20 addendum: the swap pill (victim minimizes, newcomer takes its slot). */
+  let swap = $state<{ x: number; y: number; width: number; height: number; armed: boolean } | null>(
+    null,
+  );
   let footprint: Slot | null = $state(null);
   /** hwnd -> currently displayed ghost rect (reassigned to trigger updates). */
   let ghostRects: ReadonlyMap<string, Rect> = $state(new Map());
@@ -229,6 +233,7 @@
     footprint = p.footprint;
     refusal = p.refusal ?? null;
     makeRoom = p.makeRoom ?? null;
+    swap = p.swap ?? null;
     syncGhosts(p.ghosts);
   }
 
@@ -318,6 +323,25 @@
 
     <!-- 4. refusal message (spec 2026-08-20): centered in the work area,
          auto-sized by real CSS via foreignObject. -->
+    {#if swap}
+      <foreignObject
+        x={swap.x - mon.x}
+        y={swap.y - mon.y}
+        width={swap.width}
+        height={swap.height}
+        pointer-events="none"
+      >
+        <div class="refusal-wrap" xmlns="http://www.w3.org/1999/xhtml">
+          <div
+            class="refusal pill"
+            class:armed={swap.armed}
+            style:font-size="{Math.max(18, Math.round(mon.width / 110))}px"
+          >
+            {swap.armed ? (refusal ?? 'Release to swap') : 'Drop here to swap'}
+          </div>
+        </div>
+      </foreignObject>
+    {/if}
     {#if makeRoom}
       <!-- Make-room drop-zone pill (spec 2026-08-20): sits at the refused
            footprint, i.e. under the cursor — release inside it to split the
@@ -337,11 +361,11 @@
             class:armed={makeRoom.armed}
             style:font-size="{Math.max(18, Math.round(mon.width / 110))}px"
           >
-            {makeRoom.armed ? (refusal ?? 'Release to make room') : 'Drop here to make room'}
+            {makeRoom.armed ? (refusal ?? 'Release to make room') : 'Drop to make room'}
           </div>
         </div>
       </foreignObject>
-    {:else if refusal}
+    {:else if refusal && !swap}
       <foreignObject
         x={workRect.x}
         y={workRect.y}

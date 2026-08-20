@@ -63,3 +63,27 @@ extending make-room to them is mechanical once this shape proves out.
   half, floating cleared, one apply.
 - Un-armed drop: unchanged refusal behaviour (window stays floating).
 - Armed preview ghosts the victim's kept half before any commit.
+
+
+## Addendum (same day): the Swap pill
+
+User request: "two hitboxes 'Make Room' & 'Swap'". Beside make-room a second
+pill appears — **Swap** — whose armed drop minimizes the window occupying the
+aimed slot and places the dragged window in that exact slot. Rules:
+
+- Offered whenever an in-flow tile sits at the aimed cell **and** its slot
+  satisfies the newcomer's OS minimum size (a swap that overflows would
+  recreate the bug the minimum rules fixed). Notably a 1×1 victim — too
+  small to make room — can still swap.
+- The pills render side by side (make-room left, swap right), disjoint by
+  construction, so arming is mutually exclusive. Armed swap previews the
+  victim's whole slot as the footprint with no ghosts (the victim minimizes;
+  there is no destination to ghost) and the message "Release to swap — the
+  window there minimizes".
+- Commit order is deliberate: grid mutated, moves flushed, snapshot emitted,
+  *then* the shell is asked to minimize (new brain callback `onMinimize` →
+  `minimize_window` command, brain-host-only, live-set verified,
+  `ShowWindowAsync` so a hung target cannot stall). The tracker's minimize
+  event that follows finds the tile already released — idempotent.
+- Pills remain intake-only: their drop machinery lives in `intakeDrop`, and a
+  pill a managed drop would silently ignore is worse than no pill.

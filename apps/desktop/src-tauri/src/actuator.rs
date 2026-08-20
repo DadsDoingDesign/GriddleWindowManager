@@ -210,6 +210,40 @@ pub fn apply_layout(app: tauri::AppHandle, window: tauri::Window, layout: ApplyL
     log::debug!("apply_layout: applied {applied}/{requested} move(s)");
 }
 
+/// Spec 2026-08-20 (swap drop zone): `minimize_window(hwnd)`. The brain has
+/// already released the window's tile when it asks; this only performs the
+/// OS action. Same security rules as `focus_window` (brain-host caller +
+/// live-set + actuation-time identity re-verification), and async so a hung
+/// target cannot stall the caller.
+#[tauri::command]
+pub fn minimize_window(window: tauri::Window, hwnd: Hwnd) {
+    if crate::guard::authorize("minimize_window", window.label()).is_err() {
+        return;
+    }
+    let Ok(key) = hwnd.parse::<isize>() else {
+        log::warn!("minimize_window: malformed hwnd {hwnd:?}, skipping");
+        return;
+    };
+    if !crate::tracker::verify_for_actuation(key) {
+        log::info!("minimize_window: hwnd {key} not in live eligible set, skipping");
+        return;
+    }
+    minimize_native(key);
+}
+
+#[cfg(not(windows))]
+fn minimize_native(_key: isize) {}
+
+#[cfg(windows)]
+fn minimize_native(key: isize) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{ShowWindowAsync, SW_MINIMIZE};
+    let h = HWND(key as *mut core::ffi::c_void);
+    if !unsafe { ShowWindowAsync(h, SW_MINIMIZE) }.as_bool() {
+        log::warn!("minimize_window: ShowWindowAsync declined for hwnd {key}");
+    }
+}
+
 /// Contract §C2: `focus_window(hwnd)`. Same security rules as `apply_layout`
 /// (caller label + live-set + actuation-time identity re-verification).
 #[tauri::command]

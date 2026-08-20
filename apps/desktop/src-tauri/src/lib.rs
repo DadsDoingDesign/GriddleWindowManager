@@ -169,6 +169,7 @@ pub fn run() {
             monitors::list_monitors,
             actuator::apply_layout,
             actuator::focus_window,
+            actuator::minimize_window,
             overlay::show_overlay,
             overlay::hide_overlay,
             config::read_config,

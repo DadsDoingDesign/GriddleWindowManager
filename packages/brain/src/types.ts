@@ -183,6 +183,13 @@ export interface PreviewState {
    * point releasing commits the split the ghosts are previewing.
    */
   makeRoom?: { x: number; y: number; width: number; height: number; armed: boolean };
+  /**
+   * Spec 2026-08-20 addendum (swap): the second pill — releasing inside it
+   * minimizes the window occupying the aimed slot and places the dragged
+   * window there instead. Offered when that slot satisfies the newcomer's
+   * minimum size.
+   */
+  swap?: { x: number; y: number; width: number; height: number; armed: boolean };
 }
 
 export interface DragPos {

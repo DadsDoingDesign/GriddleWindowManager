@@ -26,6 +26,7 @@ import {
   hideOverlay,
   listMonitors,
   listWindows,
+  minimizeWindow,
   onDragPos,
   onMonitorsChanged,
   onMoveSizeEnd,
@@ -294,6 +295,9 @@ export async function startBrainHost(): Promise<BrainHost> {
       },
       onPreview(p) {
         publishPreview(p);
+      },
+      onMinimize(hwnd) {
+        minimizeWindow(hwnd).catch((e) => console.error('minimize_window failed:', e));
       },
       onSnapshot(s) {
         lastSnapshot = s;

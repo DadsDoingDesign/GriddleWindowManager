@@ -208,6 +208,14 @@ export interface SettingsSetPrefsPayload {
 // Commands (webview → Rust)
 // ---------------------------------------------------------------------------
 
+/**
+ * Spec 2026-08-20 (swap drop zone): minimize the swapped-out window. The
+ * brain has already released its tile; this is only the OS action.
+ */
+export function minimizeWindow(hwnd: string): Promise<void> {
+  return invoke('minimize_window', { hwnd });
+}
+
 export function listWindows(): Promise<WindowInfo[]> {
   return invoke<WindowInfo[]>('list_windows');
 }

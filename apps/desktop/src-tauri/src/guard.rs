@@ -45,7 +45,7 @@ pub fn caller_allowed(command: &str, label: &str) -> bool {
         // (`set_update_status` drives the tray's update entry and
         // `set_update_handoff` freezes the shell for the installer handoff —
         // both belong to the update driver, which lives in the brain host.)
-        "apply_layout" | "focus_window" | "write_config" | "update_tray" | "show_overlay"
+        "apply_layout" | "focus_window" | "minimize_window" | "write_config" | "update_tray" | "show_overlay"
         | "hide_overlay" | "window_is_tracked" | "brain_alive" | "set_update_status"
         | "set_update_handoff" => main,
         // Brain host + settings UI.

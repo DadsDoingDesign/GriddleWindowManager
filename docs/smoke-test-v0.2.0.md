@@ -85,7 +85,14 @@ boxes are the ones that would have caught it.
       aimed tile shrinking to half, your window taking the other half.
 - [ ] Release while armed: exactly that split commits.
 - [ ] Release elsewhere: nothing splits; the plain refusal stands.
-- [ ] Over a grid whose aimed tile is 1×1 (nothing to donate): no pill.
+- [ ] Over a grid whose aimed tile is 1×1 (nothing to donate): no make-room
+      pill — but the Swap pill still appears.
+- [ ] Two pills show side by side; arming Swap previews the aimed window's
+      whole slot and says "Release to swap — the window there minimizes".
+- [ ] Releasing on Swap: that window minimizes and yours takes its slot.
+- [ ] Dragging a window with a large minimum size (Discord) over a full fine
+      grid: no Swap onto slots smaller than its minimum, and placements give
+      it enough cells instead of letting it overflow.
 
 ## P0 — window-eligibility carve-outs (spec 2026-08-20)
 
