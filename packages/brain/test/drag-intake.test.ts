@@ -157,8 +157,11 @@ describe('intake drags (floating window)', () => {
     floatB(h);
 
     h.brain.moveSizeStart('B');
-    h.brain.dragMoved({ hwnd: 'B', cursorX: 900, cursorY: 500, x: 700, y: 300, width: 500, height: 400 });
-    h.brain.moveSizeEnd('B', { x: 700, y: 300, width: 500, height: 400 });
+    // Drop in the band-free zone near the top of the work area: with the
+    // full-width drop bands (spec revision), a drop *inside* a band is an
+    // armed gesture, not a plain refusal — swap.test.ts covers those.
+    h.brain.dragMoved({ hwnd: 'B', cursorX: 900, cursorY: 100, x: 700, y: 60, width: 500, height: 400 });
+    h.brain.moveSizeEnd('B', { x: 700, y: 60, width: 500, height: 400 });
 
     const snap = last(h.snapshots);
     expect(snap.tiles[GRID1_ID]!.map((t) => t.hwnd)).toEqual(['A']);

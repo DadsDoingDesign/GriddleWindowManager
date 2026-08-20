@@ -87,3 +87,22 @@ aimed slot and places the dragged window in that exact slot. Rules:
   event that follows finds the tile already released — idempotent.
 - Pills remain intake-only: their drop machinery lives in `intakeDrop`, and a
   pill a managed drop would silently ignore is worse than no pill.
+
+
+## Layout revision (same day, after field feedback)
+
+The first shipped layout — two small pills side by side at the footprint —
+overlapped and clipped its own labels. Revised per the user's sketch:
+
+- The zones are **full-width horizontal bands** over the work area, make-room
+  above, swap below, centered as a group with generous band-free space above,
+  between and below (heights/gaps are fractions of the work area with pixel
+  floors), so refusing by dropping outside a band stays easy.
+- Label-only text ("Make room" / "Swap") beside an icon (split / opposing
+  arrows); the icon alone when a band is too small for both.
+- The bands sit at fixed positions instead of tracking the footprint; the
+  cursor's position still picks the aimed cell, so aim keeps choosing the
+  victim.
+- Click safety: arming requires at least one drag-pos sample — the bands
+  cover enough screen that a stationary click-release would otherwise commit
+  a gesture the user never made. Never armed at the grab either.

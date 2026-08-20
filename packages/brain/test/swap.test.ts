@@ -184,6 +184,20 @@ describe('swap drop zone (spec 2026-08-20 addendum)', () => {
     expect(p.swap).toBeDefined();
   });
 
+  it('a drop with no drag samples never arms — a click is not a gesture', () => {
+    const h = harness();
+    floatB(h);
+    // Straight grab-and-release: the full-width bands may well contain the
+    // window's centre, but with zero drag-pos samples nothing must commit.
+    h.brain.moveSizeStart('B');
+    h.brain.moveSizeEnd('B', { x: 5, y: 60, width: 800, height: 700 });
+
+    const snap = last(h.snapshots);
+    expect(snap.tiles[GRID1_ID]!.map((t) => t.hwnd)).toEqual(['A']);
+    expect(snap.floating.map((f) => f.hwnd)).toContain('B');
+    expect(h.minimized).toEqual([]);
+  });
+
   it('no swap pill when the victim slot is below the newcomer minimum', () => {
     const h = harness();
     // 4x1 grid, one window per cell -> full. Z floats with a 900px minimum

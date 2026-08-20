@@ -78,8 +78,9 @@ boxes are the ones that would have caught it.
 
 ## P0 — make-room drop zone (spec 2026-08-20)
 
-- [ ] Drag a window over a full grid: alongside "No room", a dashed
-      "Drop here to make room" pill appears at your footprint.
+- [ ] Drag a window over a full grid: two full-width dashed bands appear —
+      "Make room" above, "Swap" below, each with its icon — with band-free
+      space above, between and below them.
 - [ ] Move the cursor onto the pill: it arms (solid, glowing), the message
       becomes "Release to make room", and the ghosts preview the split — the
       aimed tile shrinking to half, your window taking the other half.
@@ -87,8 +88,9 @@ boxes are the ones that would have caught it.
 - [ ] Release elsewhere: nothing splits; the plain refusal stands.
 - [ ] Over a grid whose aimed tile is 1×1 (nothing to donate): no make-room
       pill — but the Swap pill still appears.
-- [ ] Two pills show side by side; arming Swap previews the aimed window's
-      whole slot and says "Release to swap — the window there minimizes".
+- [ ] Arming the Swap band previews the aimed window's whole slot; the band
+      goes solid and glows. A plain click-and-release (no drag) never
+      triggers either band.
 - [ ] Releasing on Swap: that window minimizes and yours takes its slot.
 - [ ] Dragging a window with a large minimum size (Discord) over a full fine
       grid: no Swap onto slots smaller than its minimum, and placements give

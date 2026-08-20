@@ -323,6 +323,35 @@
 
     <!-- 4. refusal message (spec 2026-08-20): centered in the work area,
          auto-sized by real CSS via foreignObject. -->
+    {#if makeRoom}
+      <!-- Make-room drop band (spec 2026-08-20, revised layout): full-width,
+           stacked above the swap band, generous dead space around both so a
+           plain refusing drop stays easy. Label-only text with an icon; the
+           icon alone when the band is too small for both. The overlay stays
+           click-through — the hitbox is the brain hit-testing the cursor. -->
+      <foreignObject
+        x={makeRoom.x - mon.x}
+        y={makeRoom.y - mon.y}
+        width={makeRoom.width}
+        height={makeRoom.height}
+        pointer-events="none"
+      >
+        <div class="band-wrap" xmlns="http://www.w3.org/1999/xhtml">
+          <div class="band" class:armed={makeRoom.armed}>
+            <svg class="band-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <!-- split: a frame, its divider, and arrows parting -->
+              <rect x="3" y="5" width="18" height="14" rx="2" />
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <path d="M9.5 9.5 7 12l2.5 2.5" />
+              <path d="m14.5 9.5 2.5 2.5-2.5 2.5" />
+            </svg>
+            {#if makeRoom.height >= 56 && makeRoom.width >= 340}
+              <span class="band-label">Make room</span>
+            {/if}
+          </div>
+        </div>
+      </foreignObject>
+    {/if}
     {#if swap}
       <foreignObject
         x={swap.x - mon.x}
@@ -331,41 +360,23 @@
         height={swap.height}
         pointer-events="none"
       >
-        <div class="refusal-wrap" xmlns="http://www.w3.org/1999/xhtml">
-          <div
-            class="refusal pill"
-            class:armed={swap.armed}
-            style:font-size="{Math.max(18, Math.round(mon.width / 110))}px"
-          >
-            {swap.armed ? (refusal ?? 'Release to swap') : 'Drop here to swap'}
+        <div class="band-wrap" xmlns="http://www.w3.org/1999/xhtml">
+          <div class="band" class:armed={swap.armed}>
+            <svg class="band-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <!-- swap: two opposing arrows -->
+              <path d="M17 5h-10l3 -3" />
+              <path d="M7 5l3 3" />
+              <path d="M7 19h10l-3 3" />
+              <path d="M17 19l-3 -3" />
+            </svg>
+            {#if swap.height >= 56 && swap.width >= 340}
+              <span class="band-label">Swap</span>
+            {/if}
           </div>
         </div>
       </foreignObject>
     {/if}
-    {#if makeRoom}
-      <!-- Make-room drop-zone pill (spec 2026-08-20): sits at the refused
-           footprint, i.e. under the cursor — release inside it to split the
-           tile you are aiming at. The overlay stays click-through; the
-           "hitbox" is the brain hit-testing the drag cursor, so the pill is
-           purely the visual of that zone. -->
-      <foreignObject
-        x={makeRoom.x - mon.x}
-        y={makeRoom.y - mon.y}
-        width={makeRoom.width}
-        height={makeRoom.height}
-        pointer-events="none"
-      >
-        <div class="refusal-wrap" xmlns="http://www.w3.org/1999/xhtml">
-          <div
-            class="refusal pill"
-            class:armed={makeRoom.armed}
-            style:font-size="{Math.max(18, Math.round(mon.width / 110))}px"
-          >
-            {makeRoom.armed ? (refusal ?? 'Release to make room') : 'Drop to make room'}
-          </div>
-        </div>
-      </foreignObject>
-    {:else if refusal && !swap}
+    {#if refusal && !swap && !makeRoom}
       <foreignObject
         x={workRect.x}
         y={workRect.y}
@@ -454,24 +465,55 @@
     justify-content: center;
   }
 
-  /* The make-room pill: a real target, so it reads as pressable — dashed
-     border while offered, solid accent + glow while armed. */
-  .refusal.pill {
-    border-style: dashed;
+  /* Drop bands: full-width targets that read as droppable — dashed while
+     offered, solid accent + glow while armed. Label-only text beside an
+     icon; the icon carries the meaning alone when the band is small. */
+  .band-wrap {
     width: 100%;
     height: 100%;
+  }
+
+  .band {
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 0;
-    white-space: nowrap;
+    gap: 0.6em;
+    border: 2px dashed rgba(138, 143, 154, 0.7);
+    border-radius: 18px;
+    background: rgba(23, 26, 33, 0.55);
+    color: #d6d9e0;
+    font-family: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+    font-weight: 600;
+    font-size: clamp(18px, 40cqh, 34px);
+    container-type: size;
   }
 
-  .refusal.pill.armed {
+  .band.armed {
     border-style: solid;
     border-color: var(--ov-accent);
-    box-shadow: 0 0 14px rgba(180, 77, 255, 0.45);
+    background: rgba(53, 40, 90, 0.55);
+    box-shadow: 0 0 18px rgba(180, 77, 255, 0.45);
     color: #fff;
+  }
+
+  .band-icon {
+    height: 42cqh;
+    max-height: 44px;
+    min-height: 22px;
+    width: auto;
+    aspect-ratio: 1;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .band-label {
+    white-space: nowrap;
   }
 
   .refusal {

@@ -144,8 +144,21 @@ export const REFUSAL_SWAP_ARMED = 'Release to swap — the window there minimize
 export const REFUSAL_MIN_SIZE =
   "This window's minimum size doesn't fit — it needs bigger cells";
 
-/** Make-room pill size, physical pixels (a comfortably hittable target). */
-const MAKE_ROOM_PILL = { width: 280, height: 64 };
+/**
+ * Drop-zone band geometry (spec 2026-08-20, revised after the first pill
+ * layout shipped with overlapping, clipped pills). The zones are full-width
+ * horizontal bands over the work area — make-room above, swap below —
+ * stacked with generous dead space between and around them, so refusing by
+ * dropping outside a band stays easy. Fractions of the work area, with
+ * pixel floors so tiny monitors keep hittable targets.
+ */
+const BAND = {
+  insetFrac: 0.04, // horizontal inset each side
+  heightFrac: 0.2, // each band
+  gapFrac: 0.1, // between the two bands
+  minHeight: 56,
+  maxHeight: 440,
+};
 
 /**
  * Placement mode a grid gets when nothing says otherwise. New grids only —
@@ -758,12 +771,11 @@ export class WindowManagerBrain {
       plan !== null,
       swPlan !== null,
     );
-    const cx = info.x + info.width / 2;
-    const cy = info.y + info.height / 2;
-    const inRect = (r: { x: number; y: number; width: number; height: number } | undefined) =>
-      r !== undefined && cx >= r.x && cx <= r.x + r.width && cy >= r.y && cy <= r.y + r.height;
-    const armed = inRect(pills.makeRoom);
-    const swapArmed = inRect(pills.swap);
+    // Never armed at the grab: the full-width bands sit under many windows'
+    // centres, and arming must express drag intent, not a click. Arming
+    // starts with the first real drag sample (see intakeDrop's guard).
+    const armed = false;
+    const swapArmed = false;
     d.previewGridId = mg.settings.id;
     d.lastFootprint = computed.footprint;
     d.lastRefused = refused;
@@ -1014,14 +1026,18 @@ export class WindowManagerBrain {
   }
 
   /**
-   * Pixel rects for the offered pills, centered on the footprint as a pair
-   * (make-room left, swap right) or alone, clamped into the monitor. The
-   * rects are disjoint by construction — arming is mutually exclusive.
+   * Pixel rects for the offered drop-zone bands: full work-area width,
+   * stacked vertically (make-room above, swap below) and centered as a
+   * group, leaving band-free space above, between and below so a plain
+   * refusing drop stays easy. Disjoint by construction — arming is mutually
+   * exclusive. The bands sit at fixed positions rather than tracking the
+   * footprint: the cursor's position inside a band still picks the aimed
+   * cell, so aim keeps choosing the victim.
    */
   private pillRects(
     mon: MonitorInfo,
-    dims: { cols: number; rows: number },
-    footprint: Slot,
+    _dims: { cols: number; rows: number },
+    _footprint: Slot,
     wantMakeRoom: boolean,
     wantSwap: boolean,
   ): {
@@ -1030,16 +1046,18 @@ export class WindowManagerBrain {
   } {
     const count = (wantMakeRoom ? 1 : 0) + (wantSwap ? 1 : 0);
     if (count === 0) return {};
-    const w = count === 2 ? 220 : MAKE_ROOM_PILL.width;
-    const gap = 12;
-    const total = count === 2 ? w * 2 + gap : w;
-    const cell = cellRect(mon, dims, footprint);
-    let x = cell.x + cell.width / 2 - total / 2;
-    let y = cell.y + cell.height / 2 - MAKE_ROOM_PILL.height / 2;
-    x = Math.max(mon.x, Math.min(x, mon.x + mon.width - total));
-    y = Math.max(mon.y, Math.min(y, mon.y + mon.height - MAKE_ROOM_PILL.height));
-    const first = { x, y, width: w, height: MAKE_ROOM_PILL.height };
-    const second = { x: x + w + gap, y, width: w, height: MAKE_ROOM_PILL.height };
+    const inset = Math.round(mon.workWidth * BAND.insetFrac);
+    const x = mon.workX + inset;
+    const width = mon.workWidth - inset * 2;
+    const height = Math.max(
+      BAND.minHeight,
+      Math.min(BAND.maxHeight, Math.round(mon.workHeight * BAND.heightFrac)),
+    );
+    const gap = Math.round(mon.workHeight * BAND.gapFrac);
+    const total = count === 2 ? height * 2 + gap : height;
+    const top = mon.workY + Math.round((mon.workHeight - total) / 2);
+    const first = { x, y: top, width, height };
+    const second = { x, y: top + height + gap, width, height };
     if (wantMakeRoom && wantSwap) return { makeRoom: first, swap: second };
     return wantMakeRoom ? { makeRoom: first } : { swap: first };
   }
@@ -2630,7 +2648,12 @@ export class WindowManagerBrain {
         plan !== null,
         swPlan !== null,
       );
+      // A drop with no drag samples is a click, not an aimed gesture — the
+      // bands must never commit on it (they cover enough of the screen that
+      // a stationary release would often land inside one).
+      const sampled = d.lastDragPos !== null;
       const inRect = (r: { x: number; y: number; width: number; height: number } | undefined) =>
+        sampled &&
         r !== undefined &&
         cursorX >= r.x &&
         cursorX <= r.x + r.width &&
