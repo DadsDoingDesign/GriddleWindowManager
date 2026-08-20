@@ -72,10 +72,20 @@ pub struct WindowProbe {
 }
 
 /// Spec §5.1 eligibility, as a pure function. Managed iff: visible, top-level
-/// (not `WS_CHILD`), not DWM-cloaked, not `WS_EX_TOOLWINDOW`, has a full
-/// caption or is `WS_EX_APPWINDOW`-styled, belongs to a real foreign process
-/// (`pid != 0`, `pid != own_pid`) whose exe could be queried and is not in
-/// the user's exclusion list.
+/// (not `WS_CHILD`), not DWM-cloaked, not `WS_EX_TOOLWINDOW`, belongs to a
+/// real foreign process (`pid != 0`, `pid != own_pid`) whose exe could be
+/// queried and is not in the user's exclusion list.
+///
+/// There is deliberately no caption requirement (user decision 2026-08-20,
+/// "do not exclude any windows from the grid"): custom-chrome apps
+/// (Electron frameless, game launchers) and borderless windows are real
+/// windows to the user, and the caption gate was silently rejecting them.
+/// What still cannot be included, and why, lives in
+/// docs/window-eligibility.md — Griddle's own overlays (the product must not
+/// tile itself), other virtual desktops (cloaked — invisible workspaces),
+/// tool windows (the OS marker for transient flyouts like the volume OSD and
+/// in-game overlays, which appear and vanish by themselves), and windows
+/// Windows itself refuses to move or even name (elevation).
 ///
 /// `allowed_own` (spec 2026-08-20, window-eligibility audit) is the one
 /// sanctioned exception to the own-process rule: the caller sets it for
@@ -94,8 +104,6 @@ pub fn is_eligible_probe(
     let visible = probe.style & WS_VISIBLE != 0;
     let top_level = probe.style & WS_CHILD == 0;
     let tool_window = probe.exstyle & WS_EX_TOOLWINDOW != 0;
-    let has_caption = probe.style & WS_CAPTION == WS_CAPTION;
-    let app_window = probe.exstyle & WS_EX_APPWINDOW != 0;
     let Some(exe) = probe.exe.as_deref() else {
         return false;
     };
@@ -103,7 +111,6 @@ pub fn is_eligible_probe(
         && top_level
         && !probe.cloaked
         && !tool_window
-        && (has_caption || app_window)
         && probe.pid != 0
         && (probe.pid != own_pid || allowed_own)
         && !exclusions.iter().any(|excluded| excluded == exe)
@@ -1078,21 +1085,14 @@ mod tests {
     }
 
     #[test]
-    fn captionless_popup_is_ineligible() {
-        // Splash screens / borderless popups float free (spec §5.1).
-        assert!(!eligible(&probe(WS_VISIBLE, 0)));
-    }
-
-    #[test]
-    fn partial_caption_bits_do_not_count_as_caption() {
-        // WS_CAPTION is two bits (WS_BORDER | WS_DLGFRAME); WS_BORDER alone
-        // (0x0080_0000) is not a caption.
-        assert!(!eligible(&probe(WS_VISIBLE | 0x0080_0000, 0)));
-    }
-
-    #[test]
-    fn captionless_app_window_styled_is_eligible() {
-        // WS_EX_APPWINDOW substitutes for a caption (custom-frame apps).
+    fn captionless_windows_are_eligible() {
+        // User decision 2026-08-20 ("do not exclude any windows from the
+        // grid"): the caption gate silently rejected custom-chrome apps and
+        // borderless windows, which are real windows to the user. A bare
+        // visible popup, a WS_BORDER-only frame, and an APPWINDOW-styled
+        // frameless app are all managed alike now.
+        assert!(eligible(&probe(WS_VISIBLE, 0)));
+        assert!(eligible(&probe(WS_VISIBLE | 0x0080_0000, 0)));
         assert!(eligible(&probe(WS_VISIBLE, WS_EX_APPWINDOW)));
     }
 

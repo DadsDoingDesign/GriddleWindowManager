@@ -8,12 +8,16 @@ all of them. The authority in code is `is_eligible_probe`
 ## Managed
 
 A window is managed when it is **visible**, **top-level**, **not
-DWM-cloaked**, **not a tool window**, has a **caption** (or declares
-`WS_EX_APPWINDOW`), belongs to a **queryable foreign process** — and, as the
-one own-process exception, **Griddle's own Settings window**, identified by
-exact hwnd. From the user's side of the screen Settings is a normal window,
-so it tiles like one; hiding from your own window manager felt like a bug and
-was reported as one.
+DWM-cloaked**, **not a tool window**, and belongs to a **queryable foreign
+process** — plus, as the one own-process exception, **Griddle's own Settings
+window**, identified by exact hwnd.
+
+There is deliberately **no caption requirement** (user decision 2026-08-20:
+"do not exclude any windows from the grid"). Custom-chrome apps — Electron
+frameless windows, game launchers, borderless windows in general — are real
+windows to the user, and the old caption gate rejected them silently. If a
+borderless window turns out to be something you never want tiled (a game,
+say), the exclusion list is the tool for that, per app, by your choice.
 
 ## Never managed, and why
 
@@ -23,7 +27,6 @@ was reported as one.
 | Tool windows (palettes, flyouts) | `WS_EX_TOOLWINDOW` | The Windows convention for "not a real window"; they skip the taskbar for the same reason |
 | Other virtual desktops / UWP ghosts | DWM-cloaked | Touching windows on another desktop would rearrange a workspace you cannot see |
 | Invisible or child windows | `WS_VISIBLE` / `WS_CHILD` | Not user-facing windows |
-| Borderless captionless surfaces (games, splashes) | No caption, no `WS_EX_APPWINDOW` | A fullscreen game that gets "tiled" is a destroyed session; opt-in via `WS_EX_APPWINDOW` remains available to apps |
 | Excluded apps | The user's exclusion list | Explicit user intent — it also outranks the Settings carve-out |
 | Elevated beyond query | Exe unreadable | Windows will not even let Griddle ask; it certainly will not let it move them |
 

@@ -83,6 +83,8 @@ boxes are the ones that would have caught it.
 - [ ] The drag overlays and (under GRIDDLE_DEBUG=1) the brain window never
       appear as tiles.
 - [ ] Add griddle-wm.exe to exclusions: Settings stops being managed.
+- [ ] A borderless / custom-chrome window (an Electron app, a launcher)
+      tiles like any captioned window — the caption gate is gone.
 - [ ] Tile a window running as administrator, then let Griddle try to move it
       (e.g. drop another window onto its cell): the overlay says Windows
       blocks the move.
