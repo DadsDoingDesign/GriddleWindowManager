@@ -310,18 +310,20 @@ mod tests {
             exe: Some("griddle-wm.exe".into()),
         };
         assert!(
-            !is_eligible_probe(&probe, 999, &[]),
+            !is_eligible_probe(&probe, 999, &[], false),
             "overlay ex-style must be ineligible even for a foreign pid"
         );
 
         // Sanity: the same window without the overlay bits would be managed,
         // proving the ex-style is what excludes it.
         let plain = WindowProbe { exstyle: 0, ..probe };
-        assert!(is_eligible_probe(&plain, 999, &[]));
+        assert!(is_eligible_probe(&plain, 999, &[], false));
     }
 
     /// Overlay windows also run in our own process, so the own-pid rule
-    /// excludes them independently of their styles.
+    /// excludes them independently of their styles — and the spec 2026-08-20
+    /// Settings carve-out must not weaken that: it is keyed to the settings
+    /// window's exact hwnd, so an overlay is never the allowed one.
     #[test]
     fn own_pid_excludes_overlay_windows_independently() {
         let probe = WindowProbe {
@@ -331,6 +333,6 @@ mod tests {
             pid: 999,
             exe: Some("griddle-wm.exe".into()),
         };
-        assert!(!is_eligible_probe(&probe, 999, &[]));
+        assert!(!is_eligible_probe(&probe, 999, &[], false));
     }
 }

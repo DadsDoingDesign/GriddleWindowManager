@@ -38,6 +38,34 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt as _, Shortcut};
 /// Label of the on-demand settings window (spec §4.3: route `/settings`).
 pub const SETTINGS_LABEL: &str = "settings";
 
+/// The settings window's native handle, `0` while none exists. This is the
+/// key to the tracker's one own-process eligibility carve-out (spec
+/// 2026-08-20): users expect the Settings window to tile like any other
+/// window, and identifying it by exact hwnd keeps the brain, the overlays
+/// and any future own window firmly outside the managed set. A stale value
+/// after the window closes is harmless — the carve-out only widens the
+/// own-pid rule, and a recycled foreign hwnd never reaches it.
+static SETTINGS_HWND: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+
+/// The current settings window hwnd, if one was ever created this run.
+pub fn settings_hwnd() -> Option<isize> {
+    match SETTINGS_HWND.load(Ordering::SeqCst) {
+        0 => None,
+        h => Some(h),
+    }
+}
+
+#[cfg(windows)]
+fn note_settings_hwnd(win: &tauri::WebviewWindow) {
+    match win.hwnd() {
+        Ok(h) => SETTINGS_HWND.store(h.0 as isize, Ordering::SeqCst),
+        Err(e) => log::error!("settings window has no hwnd: {e}"),
+    }
+}
+
+#[cfg(not(windows))]
+fn note_settings_hwnd(_win: &tauri::WebviewWindow) {}
+
 /// Contract C1 default for `AppConfig.hotkey` (mirrors the brain's
 /// `DEFAULT_HOTKEY`). Registered at startup before any config is read.
 pub const DEFAULT_HOTKEY: &str = "Ctrl+Super+G";
@@ -377,7 +405,10 @@ pub fn open_settings(app: &AppHandle) -> tauri::Result<()> {
     // really usable; if it is not, tear it down and build a fresh one.
     if let Some(win) = app.get_webview_window(SETTINGS_LABEL) {
         match revive_settings(&win) {
-            Ok(()) => return Ok(()),
+            Ok(()) => {
+                note_settings_hwnd(&win);
+                return Ok(());
+            }
             Err(e) => {
                 log::error!(
                     "settings window exists but will not show ({e}); rebuilding it"
@@ -402,7 +433,13 @@ pub fn open_settings(app: &AppHandle) -> tauri::Result<()> {
     if let Some(args) = brain_browser_args(app) {
         builder = builder.additional_browser_args(&args);
     }
-    builder.build()?;
+    let win = builder.build()?;
+    // Register the hwnd BEFORE the resync so the sweep's eligibility check
+    // already knows this window is the sanctioned own-process exception; the
+    // async SHOW WinEvent may race the registration, and the resync makes
+    // the outcome deterministic either way.
+    note_settings_hwnd(&win);
+    crate::tracker::resync();
     Ok(())
 }
 

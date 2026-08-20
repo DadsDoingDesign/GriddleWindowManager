@@ -337,6 +337,15 @@ export function onMoveSizeStart(cb: (p: HwndPayload) => void): Promise<UnlistenF
   return on('movesize-start', cb);
 }
 
+/**
+ * Spec 2026-08-20 (window-eligibility audit): the actuator tried to move a
+ * tracked window and Windows refused with access-denied — an elevated
+ * process Griddle can never move. The host answers on the overlay.
+ */
+export function onWindowUnmovable(cb: (p: HwndPayload) => void): Promise<UnlistenFn> {
+  return on('window-unmovable', cb);
+}
+
 export function onDragPos(cb: (p: DragPos) => void): Promise<UnlistenFn> {
   return on('drag-pos', cb);
 }

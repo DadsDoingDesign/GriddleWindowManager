@@ -227,7 +227,7 @@ mod tests {
         };
 
         let mut destroyed = Vec::new();
-        let applied = apply_validated(&layout, &mut |k| destroyed.push(k));
+        let applied = apply_validated(&layout, &mut |k| destroyed.push(k), &mut |_| {});
         assert_eq!(applied, 3, "all three windows moved in one batch");
         assert!(destroyed.is_empty());
 
@@ -353,7 +353,7 @@ mod tests {
         };
 
         let mut destroyed = Vec::new();
-        let applied = apply_validated(&layout, &mut |k| destroyed.push(k));
+        let applied = apply_validated(&layout, &mut |k| destroyed.push(k), &mut |_| {});
         assert_eq!(applied, 10, "all ten windows moved in one batch");
         assert!(destroyed.is_empty());
 

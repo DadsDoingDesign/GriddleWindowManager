@@ -341,4 +341,10 @@ pub mod events {
     pub const PAUSED_CHANGED: &str = "paused-changed";
     pub const PREVIEW_STATE: &str = "preview-state";
     pub const STATE_SNAPSHOT: &str = "state-snapshot";
+    /// Spec 2026-08-20 (window-eligibility audit): the actuator tried to
+    /// move a tracked window and Windows refused with access-denied — the
+    /// window belongs to an elevated process, so Griddle can never move it.
+    /// The host surfaces this on the overlay; before this event the failure
+    /// was a release-build log line nobody reads.
+    pub const WINDOW_UNMOVABLE: &str = "window-unmovable";
 }

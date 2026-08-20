@@ -76,6 +76,17 @@ boxes are the ones that would have caught it.
       message shows live — before you release.
 - [ ] Drop on an ungridded monitor: nothing happens and nothing is said.
 
+## P0 — window-eligibility carve-outs (spec 2026-08-20)
+
+- [ ] Open Griddle's Settings window on a gridded monitor: it tiles like any
+      other window, and dragging it previews and snaps.
+- [ ] The drag overlays and (under GRIDDLE_DEBUG=1) the brain window never
+      appear as tiles.
+- [ ] Add griddle-wm.exe to exclusions: Settings stops being managed.
+- [ ] Tile a window running as administrator, then let Griddle try to move it
+      (e.g. drop another window onto its cell): the overlay says Windows
+      blocks the move.
+
 ## P0 — build isolation (added 2026-08-19)
 
 - [ ] With a copy installed, run `npm run tauri:dev`. It must write to

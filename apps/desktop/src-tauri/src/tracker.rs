@@ -76,7 +76,20 @@ pub struct WindowProbe {
 /// caption or is `WS_EX_APPWINDOW`-styled, belongs to a real foreign process
 /// (`pid != 0`, `pid != own_pid`) whose exe could be queried and is not in
 /// the user's exclusion list.
-pub fn is_eligible_probe(probe: &WindowProbe, own_pid: u32, exclusions: &[String]) -> bool {
+///
+/// `allowed_own` (spec 2026-08-20, window-eligibility audit) is the one
+/// sanctioned exception to the own-process rule: the caller sets it for
+/// Griddle's *Settings* window — from the user's side of the screen a normal
+/// window, which they expect to tile like any other. Every other own window
+/// (hidden brain, overlays) stays ineligible: the overlays also carry
+/// `WS_EX_TOOLWINDOW`, and the brain is invisible outside GRIDDLE_DEBUG —
+/// and even then it is not the allowed hwnd.
+pub fn is_eligible_probe(
+    probe: &WindowProbe,
+    own_pid: u32,
+    exclusions: &[String],
+    allowed_own: bool,
+) -> bool {
     use style_bits::*;
     let visible = probe.style & WS_VISIBLE != 0;
     let top_level = probe.style & WS_CHILD == 0;
@@ -92,7 +105,7 @@ pub fn is_eligible_probe(probe: &WindowProbe, own_pid: u32, exclusions: &[String
         && !tool_window
         && (has_caption || app_window)
         && probe.pid != 0
-        && probe.pid != own_pid
+        && (probe.pid != own_pid || allowed_own)
         && !exclusions.iter().any(|excluded| excluded == exe)
 }
 
@@ -375,7 +388,7 @@ mod win {
         EVENT_OBJECT_HIDE, EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_SHOW,
         EVENT_OBJECT_UNCLOAKED, EVENT_SYSTEM_MINIMIZEEND, EVENT_SYSTEM_MINIMIZESTART,
         EVENT_SYSTEM_MOVESIZEEND, EVENT_SYSTEM_MOVESIZESTART, GWL_EXSTYLE, GWL_STYLE, MSG,
-        OBJID_WINDOW, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS,
+        OBJID_WINDOW, WINEVENT_OUTOFCONTEXT,
     };
 
     /// Handle used by the hook callbacks to emit contract C2 events.
@@ -467,11 +480,17 @@ mod win {
 
     /// Spec §5.1 eligibility for a live window handle.
     pub fn is_eligible(hwnd: isize) -> bool {
+        let key = hwnd;
         let hwnd = HWND(hwnd as *mut c_void);
         let Some(probe) = probe_window(hwnd) else {
             return false;
         };
-        is_eligible_probe(&probe, unsafe { GetCurrentProcessId() }, &exclusions())
+        is_eligible_probe(
+            &probe,
+            unsafe { GetCurrentProcessId() },
+            &exclusions(),
+            crate::shell::settings_hwnd() == Some(key),
+        )
     }
 
     /// Security review ("handle reuse"): re-verify a tracked hwnd immediately
@@ -484,11 +503,12 @@ mod win {
     /// and the recycled-handle case.
     ///
     /// The own-pid rule is applied with a sentinel pid rather than the real
-    /// one: our own windows can never enter the tracked set (the snapshot
-    /// and hook paths use the real pid, and our overlay windows also carry
-    /// `WS_EX_TOOLWINDOW`), the exe-identity match rejects a handle recycled
-    /// to one of our windows anyway, and the sentinel keeps this check
-    /// exercisable from in-process `CreateWindowExW` test windows.
+    /// one: the only own window that can enter the tracked set is Settings
+    /// (the spec 2026-08-20 carve-out — snapshot and hook paths admit it by
+    /// exact hwnd), which the actuator must then be allowed to move; the
+    /// exe-identity match still rejects a handle recycled across processes;
+    /// and the sentinel keeps this check exercisable from in-process
+    /// `CreateWindowExW` test windows.
     pub fn verify_for_actuation(key: isize) -> bool {
         /// No real Windows pid is ever `u32::MAX` (pids are multiples of 4).
         const SENTINEL_OWN_PID: u32 = u32::MAX;
@@ -499,7 +519,7 @@ mod win {
         let Some(probe) = probe_window(hwnd) else {
             return false;
         };
-        is_eligible_probe(&probe, SENTINEL_OWN_PID, &exclusions())
+        is_eligible_probe(&probe, SENTINEL_OWN_PID, &exclusions(), false)
             && super::probe_matches_tracked(&tracked, &probe)
     }
 
@@ -652,7 +672,8 @@ mod win {
         let own_pid = GetCurrentProcessId();
         crate::ffi_guard::guard("EnumWindows callback", BOOL(1), move || {
             if let Some(probe) = probe_window(hwnd) {
-                if is_eligible_probe(&probe, own_pid, &exclusions()) {
+                let allowed_own = crate::shell::settings_hwnd() == Some(hwnd.0 as isize);
+                if is_eligible_probe(&probe, own_pid, &exclusions(), allowed_own) {
                     if let Some(info) = window_info(hwnd, &probe) {
                         out.push(info);
                     }
@@ -707,7 +728,10 @@ mod win {
                 Some(win_event_proc),
                 0, // all processes
                 0, // all threads
-                WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS,
+                // Not SKIPOWNPROCESS (spec 2026-08-20): the Settings
+                // window is managed now, so its events must arrive. Every
+                // other own window is filtered at the top of the callback.
+                WINEVENT_OUTOFCONTEXT,
             );
             if hook.is_invalid() {
                 log::error!("SetWinEventHook({min:#x}..{max:#x}) failed");
@@ -751,6 +775,19 @@ mod win {
         // accessibility children) is ignored.
         if hwnd.is_invalid() || id_object != OBJID_WINDOW.0 || id_child != 0 {
             return;
+        }
+        // Own-process events flow now (the hook no longer sets
+        // SKIPOWNPROCESS so the managed Settings window is visible), which
+        // makes every overlay fade and brain repaint a callback. Drop all of
+        // ours except Settings before any real work happens.
+        {
+            let mut pid: u32 = 0;
+            let _ = GetWindowThreadProcessId(hwnd, Some(&mut pid));
+            if pid == GetCurrentProcessId()
+                && crate::shell::settings_hwnd() != Some(hwnd.0 as isize)
+            {
+                return;
+            }
         }
         // The handlers call into allocating/third-party code (tauri emit);
         // a panic there must not unwind into the WinEvent dispatcher
@@ -796,7 +833,13 @@ mod win {
         let Some(probe) = probe_window(hwnd) else {
             return;
         };
-        if !is_eligible_probe(&probe, unsafe { GetCurrentProcessId() }, &exclusions()) {
+        let allowed_own = crate::shell::settings_hwnd() == Some(key);
+        if !is_eligible_probe(
+            &probe,
+            unsafe { GetCurrentProcessId() },
+            &exclusions(),
+            allowed_own,
+        ) {
             return;
         }
         let Some(info) = window_info(hwnd, &probe) else {
@@ -993,7 +1036,7 @@ mod tests {
     const APP_STYLE: u32 = WS_VISIBLE | WS_CAPTION | WS_THICKFRAME;
 
     fn eligible(p: &WindowProbe) -> bool {
-        is_eligible_probe(p, OWN_PID, &[])
+        is_eligible_probe(p, OWN_PID, &[], false)
     }
 
     // -- spec §5.1 truth table ---------------------------------------------
@@ -1081,14 +1124,14 @@ mod tests {
     fn excluded_exe_is_ineligible() {
         let p = probe(APP_STYLE, 0);
         let exclusions = vec!["slack.exe".to_string(), "notepad.exe".to_string()];
-        assert!(!is_eligible_probe(&p, OWN_PID, &exclusions));
+        assert!(!is_eligible_probe(&p, OWN_PID, &exclusions, false));
     }
 
     #[test]
     fn non_excluded_exe_stays_eligible() {
         let p = probe(APP_STYLE, 0);
         let exclusions = vec!["slack.exe".to_string()];
-        assert!(is_eligible_probe(&p, OWN_PID, &exclusions));
+        assert!(is_eligible_probe(&p, OWN_PID, &exclusions, false));
     }
 
     #[test]
@@ -1251,7 +1294,7 @@ mod win_tests {
         // The real filter must reject it (own process)...
         assert!(!is_eligible(hwnd.0 as isize));
         // ...while the same probe from a foreign process would be eligible.
-        assert!(is_eligible_probe(&probe, probe.pid + 1, &[]));
+        assert!(is_eligible_probe(&probe, probe.pid + 1, &[], false));
 
         unsafe { DestroyWindow(hwnd).expect("DestroyWindow") };
     }
@@ -1320,7 +1363,7 @@ mod win_tests {
         let probe = probe_window(hwnd).unwrap();
         assert_ne!(probe.exstyle & style_bits::WS_EX_TOOLWINDOW, 0);
         // Even from a foreign process this would be rejected.
-        assert!(!is_eligible_probe(&probe, probe.pid + 1, &[]));
+        assert!(!is_eligible_probe(&probe, probe.pid + 1, &[], false));
         unsafe { DestroyWindow(hwnd).expect("DestroyWindow") };
     }
 
@@ -1368,6 +1411,33 @@ mod win_tests {
     /// path must not touch the live eligible set — the set is the authority
     /// behind the actuation security rule, and only brain-host calls plus
     /// the tracker's own resync may reseed it.
+    #[test]
+    fn own_process_settings_window_is_eligible_only_via_the_carve_out() {
+        // Spec 2026-08-20: the one own-process window users see (Settings)
+        // tiles like any other window; every other own window stays out.
+        let p = WindowProbe {
+            style: style_bits::WS_VISIBLE | style_bits::WS_CAPTION,
+            exstyle: 0,
+            cloaked: false,
+            pid: 4242,
+            exe: Some("griddle-wm.exe".into()),
+        };
+        assert!(
+            !is_eligible_probe(&p, 4242, &[], false),
+            "own-process without the carve-out: excluded (brain, dialogs)"
+        );
+        assert!(
+            is_eligible_probe(&p, 4242, &[], true),
+            "the registered settings hwnd is a normal managed window"
+        );
+        assert!(
+            is_eligible_probe(&p, 9999, &[], false),
+            "foreign windows never needed the carve-out"
+        );
+        // The user's exclusion list still outranks the carve-out.
+        assert!(!is_eligible_probe(&p, 4242, &["griddle-wm.exe".into()], true));
+    }
+
     #[test]
     fn snapshot_readonly_never_mutates_the_live_set() {
         let _guard = live_set_test_lock()

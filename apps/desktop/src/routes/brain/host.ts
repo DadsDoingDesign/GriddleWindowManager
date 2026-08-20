@@ -14,6 +14,7 @@ import {
   spanGridId,
   type AppConfig,
   type GridSettings,
+  type PreviewState,
   type StateSnapshot,
 } from '@griddle-wm/brain';
 import type { UnlistenFn } from '@tauri-apps/api/event';
@@ -29,6 +30,7 @@ import {
   onMonitorsChanged,
   onMoveSizeEnd,
   onMoveSizeStart,
+  onWindowUnmovable,
   onOverlayReady,
   onSettingsApplyTemplate,
   onSettingsCaptureTemplate,
@@ -254,34 +256,44 @@ export async function startBrainHost(): Promise<BrainHost> {
     );
   };
 
+  /**
+   * Route a preview to the overlay webviews + native show/hide. Shared by
+   * the brain's onPreview callback and host-originated refusals (the
+   * `window-unmovable` answer), so lingering and cancellation behave
+   * identically wherever a message comes from.
+   */
+  function publishPreview(p: PreviewState): void {
+    emitPreviewState(p).catch((e) => console.error('preview-state emit failed:', e));
+    if (refusalLinger !== null) {
+      clearTimeout(refusalLinger);
+      refusalLinger = null;
+    }
+    // A terminal refusal (spec 2026-08-20): the drop was refused after the
+    // drag ended, so nothing else will hide the overlay. Let the message
+    // linger long enough to read, then fade it out ourselves. Any newer
+    // preview event cancels the linger above.
+    if (p.visible && p.refusal !== undefined && p.footprint === null) {
+      syncOverlays(p.gridId, true);
+      const gridId = p.gridId;
+      refusalLinger = setTimeout(() => {
+        refusalLinger = null;
+        emitPreviewState({ gridId, visible: false, footprint: null, ghosts: [] }).catch(
+          (e) => console.error('preview-state emit failed:', e),
+        );
+        syncOverlays(gridId, false);
+      }, REFUSAL_LINGER_MS);
+      return;
+    }
+    syncOverlays(p.gridId, p.visible);
+  }
+
   const brain = new WindowManagerBrain(
     {
       onApply(layout) {
         applyLayout(layout).catch((e) => console.error('apply_layout failed:', e));
       },
       onPreview(p) {
-        emitPreviewState(p).catch((e) => console.error('preview-state emit failed:', e));
-        if (refusalLinger !== null) {
-          clearTimeout(refusalLinger);
-          refusalLinger = null;
-        }
-        // A terminal refusal (spec 2026-08-20): the drop was refused after
-        // the drag ended, so nothing else will hide the overlay. Let the
-        // message linger long enough to read, then fade it out ourselves.
-        // Any newer preview event cancels the linger above.
-        if (p.visible && p.refusal !== undefined && p.footprint === null) {
-          syncOverlays(p.gridId, true);
-          const gridId = p.gridId;
-          refusalLinger = setTimeout(() => {
-            refusalLinger = null;
-            emitPreviewState({ gridId, visible: false, footprint: null, ghosts: [] }).catch(
-              (e) => console.error('preview-state emit failed:', e),
-            );
-            syncOverlays(gridId, false);
-          }, REFUSAL_LINGER_MS);
-          return;
-        }
-        syncOverlays(p.gridId, p.visible);
+        publishPreview(p);
       },
       onSnapshot(s) {
         lastSnapshot = s;
@@ -474,6 +486,24 @@ export async function startBrainHost(): Promise<BrainHost> {
     onWindowMinimized((p) => brain.windowMinimized(p.hwnd)),
     onWindowRestored((w) => brain.windowRestored(w)),
     onMoveSizeStart((p) => brain.moveSizeStart(p.hwnd)),
+    // An elevated window the actuator cannot move (spec 2026-08-20): find
+    // the grid that believes it owns the window and say so on its overlay —
+    // the one place the user is already looking.
+    onWindowUnmovable((p) => {
+      const tiles = lastSnapshot?.tiles ?? {};
+      for (const [gridId, list] of Object.entries(tiles)) {
+        if (list.some((t) => t.hwnd === p.hwnd)) {
+          publishPreview({
+            gridId,
+            visible: true,
+            footprint: null,
+            ghosts: [],
+            refusal: 'Windows will not let Griddle move this window — it runs as administrator',
+          });
+          return;
+        }
+      }
+    }),
     onDragPos((p) => brain.dragMoved(p)),
     onMoveSizeEnd((p) =>
       brain.moveSizeEnd(p.hwnd, { x: p.x, y: p.y, width: p.width, height: p.height }),

@@ -149,7 +149,11 @@ fn validated_targets(layout: &ApplyLayout) -> Vec<(isize, Rect)> {
 /// hwnd that turned out to be a dead handle. Returns the number of windows
 /// actually repositioned. Factored out of the command so tests can drive it
 /// without an `AppHandle`.
-pub(crate) fn apply_validated(layout: &ApplyLayout, on_destroyed: &mut dyn FnMut(isize)) -> usize {
+pub(crate) fn apply_validated(
+    layout: &ApplyLayout,
+    on_destroyed: &mut dyn FnMut(isize),
+    on_unmovable: &mut dyn FnMut(isize),
+) -> usize {
     // Plan Task 18: pause short-circuits the actuator — no window moves at
     // all while paused (spec §6 panic button).
     if crate::shell::is_paused() {
@@ -163,7 +167,7 @@ pub(crate) fn apply_validated(layout: &ApplyLayout, on_destroyed: &mut dyn FnMut
     if targets.is_empty() {
         return 0;
     }
-    apply_moves(&targets, on_destroyed)
+    apply_moves(&targets, on_destroyed, on_unmovable)
 }
 
 /// Contract §C2: `apply_layout(layout: ApplyLayout)`. Only the brain host
@@ -179,7 +183,21 @@ pub fn apply_layout(app: tauri::AppHandle, window: tauri::Window, layout: ApplyL
     crate::shell::note_brain_activity();
     let requested = layout.moves.len();
     let mut gone: Vec<isize> = Vec::new();
-    let applied = apply_validated(&layout, &mut |key| gone.push(key));
+    let mut unmovable: Vec<isize> = Vec::new();
+    let applied = apply_validated(&layout, &mut |key| gone.push(key), &mut |key| {
+        unmovable.push(key)
+    });
+    // Access-denied targets (elevated processes, UIPI) — tell the host so
+    // the overlay can say so; before this the failure lived only in the log
+    // (spec 2026-08-20, window-eligibility audit).
+    for key in unmovable {
+        let payload = HwndPayload {
+            hwnd: key.to_string(),
+        };
+        if let Err(e) = app.emit_to(crate::guard::MAIN_LABEL, events::WINDOW_UNMOVABLE, payload) {
+            log::error!("failed to emit {}: {e}", events::WINDOW_UNMOVABLE);
+        }
+    }
     for key in gone {
         let payload = HwndPayload {
             hwnd: key.to_string(),
@@ -230,7 +248,11 @@ pub(crate) fn focus_validated(hwnd: &str) {
 use win::apply_moves;
 
 #[cfg(not(windows))]
-fn apply_moves(_targets: &[(isize, Rect)], _on_destroyed: &mut dyn FnMut(isize)) -> usize {
+fn apply_moves(
+    _targets: &[(isize, Rect)],
+    _on_destroyed: &mut dyn FnMut(isize),
+    _on_unmovable: &mut dyn FnMut(isize),
+) -> usize {
     0
 }
 
@@ -309,6 +331,7 @@ mod win {
     pub(super) fn apply_moves(
         targets: &[(isize, Rect)],
         on_destroyed: &mut dyn FnMut(isize),
+        on_unmovable: &mut dyn FnMut(isize),
     ) -> usize {
         let mut prepared: Vec<PreparedMove> = Vec::with_capacity(targets.len());
         for &(key, target) in targets {
@@ -366,7 +389,7 @@ mod win {
         log::warn!(
             "apply_layout: DeferWindowPos batch failed, falling back to per-window SetWindowPos"
         );
-        apply_individually(&prepared, on_destroyed)
+        apply_individually(&prepared, on_destroyed, on_unmovable)
     }
 
     /// One `BeginDeferWindowPos`/`EndDeferWindowPos` transaction. `false` if
@@ -430,6 +453,7 @@ mod win {
     fn apply_individually(
         prepared: &[PreparedMove],
         on_destroyed: &mut dyn FnMut(isize),
+        on_unmovable: &mut dyn FnMut(isize),
     ) -> usize {
         let mut applied = 0usize;
         for p in prepared {
@@ -455,6 +479,11 @@ mod win {
                         // the same accepted drift as external app moves
                         // (docs/deferred.md, "external move/resize drift").
                         log::error!("SetWindowPos failed for live hwnd {}: {e}", p.key);
+                        // Access denied = the window belongs to an elevated
+                        // process and Griddle can never move it (UIPI).
+                        if e.code().0 as u32 == 0x8007_0005 {
+                            on_unmovable(p.key);
+                        }
                     } else {
                         log::info!("apply_layout: hwnd {} died mid-apply, untracking", p.key);
                         let _ = crate::tracker::untrack(p.key);
@@ -656,7 +685,7 @@ mod tests {
             ],
         };
         let mut destroyed = Vec::new();
-        let applied = apply_validated(&layout, &mut |k| destroyed.push(k));
+        let applied = apply_validated(&layout, &mut |k| destroyed.push(k), &mut |_| {});
         assert_eq!(applied, 0);
         assert!(destroyed.is_empty(), "skipped hwnds are not 'destroyed'");
     }
@@ -713,7 +742,7 @@ mod win_tests {
         };
 
         let mut destroyed = Vec::new();
-        let applied = apply_validated(&one_move(key, target), &mut |k| destroyed.push(k));
+        let applied = apply_validated(&one_move(key, target), &mut |k| destroyed.push(k), &mut |_| {});
         assert_eq!(applied, 1);
         assert!(destroyed.is_empty());
 
@@ -754,7 +783,7 @@ mod win_tests {
 
         crate::shell::set_paused_flag(true);
         let mut destroyed = Vec::new();
-        let applied = apply_validated(&one_move(key, target), &mut |k| destroyed.push(k));
+        let applied = apply_validated(&one_move(key, target), &mut |k| destroyed.push(k), &mut |_| {});
         crate::shell::set_paused_flag(false);
 
         assert_eq!(applied, 0, "paused: nothing moves");
@@ -766,7 +795,7 @@ mod win_tests {
         );
 
         // Resume: the same layout applies normally again.
-        let applied = apply_validated(&one_move(key, target), &mut |k| destroyed.push(k));
+        let applied = apply_validated(&one_move(key, target), &mut |k| destroyed.push(k), &mut |_| {});
         assert_eq!(applied, 1, "resume restores actuation");
 
         let _ = crate::tracker::untrack(key);
@@ -789,7 +818,7 @@ mod win_tests {
             height: 240,
         };
         let mut destroyed = Vec::new();
-        let applied = apply_validated(&one_move(key, target), &mut |k| destroyed.push(k));
+        let applied = apply_validated(&one_move(key, target), &mut |k| destroyed.push(k), &mut |_| {});
         assert_eq!(applied, 0, "contract C2: unknown hwnds are skipped");
         assert!(destroyed.is_empty());
         assert_eq!(raw_rect(hwnd), before, "window must not have moved");
@@ -813,7 +842,7 @@ mod win_tests {
             height: 100,
         };
         let mut destroyed = Vec::new();
-        let applied = apply_validated(&one_move(key, target), &mut |k| destroyed.push(k));
+        let applied = apply_validated(&one_move(key, target), &mut |k| destroyed.push(k), &mut |_| {});
         assert_eq!(applied, 0);
         assert_eq!(destroyed, vec![key], "dead handle reported for emit");
         assert!(
@@ -850,7 +879,7 @@ mod win_tests {
             height: 300,
         };
         let mut destroyed = Vec::new();
-        let applied = apply_validated(&one_move(key, target), &mut |k| destroyed.push(k));
+        let applied = apply_validated(&one_move(key, target), &mut |k| destroyed.push(k), &mut |_| {});
         assert_eq!(applied, 0, "iconic window is skipped, never moved");
         assert!(destroyed.is_empty(), "alive window is not reported destroyed");
         assert!(unsafe { IsIconic(hwnd) }.as_bool(), "window stays minimized");
@@ -864,7 +893,7 @@ mod win_tests {
         unsafe {
             let _ = ShowWindow(hwnd, SW_RESTORE);
         }
-        let applied = apply_validated(&one_move(key, target), &mut |k| destroyed.push(k));
+        let applied = apply_validated(&one_move(key, target), &mut |k| destroyed.push(k), &mut |_| {});
         assert_eq!(applied, 1, "restored window moves again");
 
         let _ = crate::tracker::untrack(key);
@@ -897,7 +926,7 @@ mod win_tests {
             height: 300,
         };
         let mut destroyed = Vec::new();
-        let applied = apply_validated(&one_move(key, target), &mut |k| destroyed.push(k));
+        let applied = apply_validated(&one_move(key, target), &mut |k| destroyed.push(k), &mut |_| {});
         assert_eq!(applied, 0, "zoomed window is skipped, never moved");
         assert!(destroyed.is_empty(), "alive window is not reported destroyed");
         assert!(
@@ -914,7 +943,7 @@ mod win_tests {
         unsafe {
             let _ = ShowWindow(hwnd, SW_RESTORE);
         }
-        let applied = apply_validated(&one_move(key, target), &mut |k| destroyed.push(k));
+        let applied = apply_validated(&one_move(key, target), &mut |k| destroyed.push(k), &mut |_| {});
         assert_eq!(applied, 1, "restored window moves again");
 
         let _ = crate::tracker::untrack(key);
@@ -962,7 +991,7 @@ mod win_tests {
             ],
         };
         let mut destroyed = Vec::new();
-        let applied = apply_validated(&layout, &mut |k| destroyed.push(k));
+        let applied = apply_validated(&layout, &mut |k| destroyed.push(k), &mut |_| {});
         assert_eq!(applied, 2);
         assert!(destroyed.is_empty());
 
@@ -1015,7 +1044,7 @@ mod win_tests {
             ],
         };
         let mut destroyed = Vec::new();
-        let applied = apply_validated(&layout, &mut |k| destroyed.push(k));
+        let applied = apply_validated(&layout, &mut |k| destroyed.push(k), &mut |_| {});
         assert_eq!(applied, 1, "the live window still moves");
         assert_eq!(destroyed, vec![key_dead]);
         let frame = wait_for_frame(live, &target);
@@ -1087,7 +1116,7 @@ mod win_tests {
             height: 240,
         };
         let mut destroyed = Vec::new();
-        let applied = apply_validated(&one_move(key, target), &mut |k| destroyed.push(k));
+        let applied = apply_validated(&one_move(key, target), &mut |k| destroyed.push(k), &mut |_| {});
 
         assert_eq!(applied, 0, "identity mismatch: nothing may move");
         assert_eq!(destroyed, vec![key], "reported destroyed like a dead handle");
@@ -1127,7 +1156,7 @@ mod win_tests {
             height: 240,
         };
         let mut destroyed = Vec::new();
-        let applied = apply_validated(&one_move(key, target), &mut |k| destroyed.push(k));
+        let applied = apply_validated(&one_move(key, target), &mut |k| destroyed.push(k), &mut |_| {});
 
         assert_eq!(applied, 0, "ineligible style: nothing may move");
         assert_eq!(destroyed, vec![key]);
