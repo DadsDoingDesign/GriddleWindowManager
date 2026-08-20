@@ -142,6 +142,46 @@ describe('minimum window sizes (spec 2026-08-20)', () => {
     expect(p.refusal).toMatch(/minimum/i);
   });
 
+  it('make-room disables (with a reason) when the split would push the victim below ITS minimum', () => {
+    const h = harness();
+    // 2x1 grid on 1920 (960px cells). A spans both cells and refuses to go
+    // below 1200px — splitting would leave it one 960px cell, under its
+    // minimum. The band must still appear (the pattern stays legible) but
+    // disabled, saying the window is already at its minimum — and an
+    // "armed" drop on it must commit nothing.
+    h.brain.enableGrid(gridCfg({ cols: 2 }), [
+      makeWindow('A', { width: 1900, height: 1000, minWidth: 1200, minHeight: 200 }),
+      makeWindow('B', { x: 5, width: 700, height: 500 }),
+    ]);
+    expect(last(h.snapshots).floating.map((f) => f.hwnd)).toContain('B');
+
+    h.brain.moveSizeStart('B');
+    h.brain.dragMoved({ hwnd: 'B', cursorX: 400, cursorY: 100, x: 5, y: 60, width: 700, height: 500 });
+
+    const p = last(h.previews);
+    expect(p.makeRoom).toBeDefined();
+    expect(p.makeRoom!.disabled).toMatch(/minimum/i);
+
+    // Dropping "on" the disabled band commits nothing.
+    const mr = p.makeRoom!;
+    h.brain.dragMoved({
+      hwnd: 'B',
+      cursorX: mr.x + mr.width / 2,
+      cursorY: mr.y + mr.height / 2,
+      x: 5,
+      y: 60,
+      width: 700,
+      height: 500,
+    });
+    expect(last(h.previews).makeRoom!.armed).toBe(false);
+    h.brain.moveSizeEnd('B', { x: 5, y: 60, width: 700, height: 500 });
+
+    const snap = last(h.snapshots);
+    expect(snap.tiles[GRID1_ID]!.map((t) => t.hwnd)).toEqual(['A']);
+    expect(snap.tiles[GRID1_ID]![0]!.slot.w).toBe(2);
+    expect(snap.floating.map((f) => f.hwnd)).toContain('B');
+  });
+
   it('make-room offers no pill when the donated half is below the minimum', () => {
     const h = harness();
     // 2x1 grid, A spans both cells; newcomer needs both cells (min 1500 on

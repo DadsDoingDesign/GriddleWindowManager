@@ -182,7 +182,20 @@ export interface PreviewState {
    * virtual-desktop pixels; `armed` = the cursor is inside it, at which
    * point releasing commits the split the ghosts are previewing.
    */
-  makeRoom?: { x: number; y: number; width: number; height: number; armed: boolean };
+  makeRoom?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    armed: boolean;
+    /**
+     * Present when the band is shown but cannot act — e.g. the aimed window
+     * is already at its OS minimum size, so splitting it would only recreate
+     * the overflow the minimum rules prevent. The overlay renders the band
+     * dimmed with this text; it never arms and a drop on it commits nothing.
+     */
+    disabled?: string;
+  };
   /**
    * Spec 2026-08-20 addendum (swap): the second pill — releasing inside it
    * minimizes the window occupying the aimed slot and places the dragged

@@ -70,9 +70,14 @@
    */
   let refusal = $state<string | null>(null);
   /** Spec 2026-08-20 (make-room): the drop-zone pill, virtual-desktop px. */
-  let makeRoom = $state<{ x: number; y: number; width: number; height: number; armed: boolean } | null>(
-    null,
-  );
+  let makeRoom = $state<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    armed: boolean;
+    disabled?: string;
+  } | null>(null);
   /** Spec 2026-08-20 addendum: the swap pill (victim minimizes, newcomer takes its slot). */
   let swap = $state<{ x: number; y: number; width: number; height: number; armed: boolean } | null>(
     null,
@@ -337,7 +342,7 @@
         pointer-events="none"
       >
         <div class="band-wrap" xmlns="http://www.w3.org/1999/xhtml">
-          <div class="band" class:armed={makeRoom.armed}>
+          <div class="band" class:armed={makeRoom.armed} class:disabled={makeRoom.disabled}>
             <svg class="band-icon" viewBox="0 0 24 24" aria-hidden="true">
               <!-- split: a frame, its divider, and arrows parting -->
               <rect x="3" y="5" width="18" height="14" rx="2" />
@@ -346,7 +351,7 @@
               <path d="m14.5 9.5 2.5 2.5-2.5 2.5" />
             </svg>
             {#if makeRoom.height >= 56 && makeRoom.width >= 340}
-              <span class="band-label">Make room</span>
+              <span class="band-label">{makeRoom.disabled ?? 'Make room'}</span>
             {/if}
           </div>
         </div>
@@ -489,6 +494,14 @@
     font-weight: 600;
     font-size: clamp(18px, 40cqh, 34px);
     container-type: size;
+  }
+
+  /* A band that cannot act (the aimed window is already at its minimum):
+     visibly present so the pattern stays legible, visibly inert so nobody
+     aims for it. */
+  .band.disabled {
+    opacity: 0.45;
+    border-style: dotted;
   }
 
   .band.armed {

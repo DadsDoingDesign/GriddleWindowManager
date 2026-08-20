@@ -138,6 +138,12 @@ export const REFUSAL_MAKE_ROOM_ARMED = 'Release to make room';
  * OS-enforced minimum cannot fit even the whole grid span — naming the real
  * cause instead of claiming a possibly-empty grid is "full".
  */
+/**
+ * Make-room band when the aimed window cannot shrink further (its kept half
+ * would fall below its own OS minimum). Shown dimmed, never arms.
+ */
+export const MAKE_ROOM_AT_MIN = 'Already at minimum size';
+
 /** Swap pill label while armed (spec 2026-08-20 addendum). */
 export const REFUSAL_SWAP_ARMED = 'Release to swap — the window there minimizes';
 
@@ -762,13 +768,15 @@ export class WindowManagerBrain {
     // footprint change.
     const minCells = this.minCellsFor(mon, this.dims(mg.settings), info);
     const offerPills = refused && !unfittable;
-    const plan = offerPills ? this.makeRoomPlan(mg, computed.footprint, minCells) : null;
+    const mrResult = offerPills
+      ? this.makeRoomPlan(mg, computed.footprint, minCells, mon, this.dims(mg.settings))
+      : null;
     const swPlan = offerPills ? this.swapPlan(mg, computed.footprint, minCells) : null;
     const pills = this.pillRects(
       mon,
       this.dims(mg.settings),
       computed.footprint,
-      plan !== null,
+      mrResult !== null,
       swPlan !== null,
     );
     // Never armed at the grab: the full-width bands sit under many windows'
@@ -797,7 +805,15 @@ export class WindowManagerBrain {
                   : REFUSAL_NO_ROOM,
           }
         : {}),
-      ...(pills.makeRoom ? { makeRoom: { ...pills.makeRoom, armed } } : {}),
+      ...(pills.makeRoom
+        ? {
+            makeRoom: {
+              ...pills.makeRoom,
+              armed,
+              ...(mrResult?.kind === 'atMin' ? { disabled: MAKE_ROOM_AT_MIN } : {}),
+            },
+          }
+        : {}),
       ...(pills.swap ? { swap: { ...pills.swap, armed: swapArmed } } : {}),
     });
   }
@@ -833,16 +849,19 @@ export class WindowManagerBrain {
     // than no pill.
     const offerPills = refused && !unfittable && d.sourceGridId === null;
     const minCells = this.minCellsFor(mon, this.dims(mg.settings), dragInfo);
-    const plan = offerPills ? this.makeRoomPlan(mg, footprint, minCells) : null;
+    const mrResult = offerPills
+      ? this.makeRoomPlan(mg, footprint, minCells, mon, this.dims(mg.settings))
+      : null;
+    const plan = mrResult?.kind === 'ok' ? mrResult : null;
     const swPlan = offerPills ? this.swapPlan(mg, footprint, minCells) : null;
-    const pills = this.pillRects(mon, this.dims(mg.settings), footprint, plan !== null, swPlan !== null);
+    const pills = this.pillRects(mon, this.dims(mg.settings), footprint, mrResult !== null, swPlan !== null);
     const inRect = (r: { x: number; y: number; width: number; height: number } | undefined) =>
       r !== undefined &&
       p.cursorX >= r.x &&
       p.cursorX <= r.x + r.width &&
       p.cursorY >= r.y &&
       p.cursorY <= r.y + r.height;
-    const armed = inRect(pills.makeRoom);
+    const armed = plan !== null && inRect(pills.makeRoom);
     const swapArmed = inRect(pills.swap);
     const unchanged =
       d.previewGridId === mg.settings.id &&
@@ -921,7 +940,15 @@ export class WindowManagerBrain {
                   : REFUSAL_NO_ROOM,
           }
         : {}),
-      ...(pills.makeRoom ? { makeRoom: { ...pills.makeRoom, armed } } : {}),
+      ...(pills.makeRoom
+        ? {
+            makeRoom: {
+              ...pills.makeRoom,
+              armed,
+              ...(mrResult?.kind === 'atMin' ? { disabled: MAKE_ROOM_AT_MIN } : {}),
+            },
+          }
+        : {}),
       ...(pills.swap ? { swap: { ...pills.swap, armed: swapArmed } } : {}),
     });
   }
@@ -970,13 +997,24 @@ export class WindowManagerBrain {
   private makeRoomPlan(
     target: ManagedGrid,
     footprint: Slot,
-    minCells: { w: number; h: number } = { w: 1, h: 1 },
-  ): { victim: Hwnd; kept: Slot; donated: Slot } | null {
+    minCells: { w: number; h: number },
+    mon: MonitorInfo,
+    dims: { cols: number; rows: number },
+  ):
+    | { kind: 'ok'; victim: Hwnd; kept: Slot; donated: Slot }
+    | { kind: 'atMin'; victim: Hwnd }
+    | null {
     const origin = { col: footprint.col, row: footprint.row, w: 1, h: 1 };
     const victims = target.grid.tilesIn(origin).filter((t) => isInFlow(t));
     const victim = victims[0];
     if (!victim) return null;
     const v = tileSlotOf(victim);
+    // The victim's own OS minimum (spec 2026-08-20, second field report):
+    // a split whose kept half falls below it would shrink the window past
+    // what Windows allows — the same overflow bug from the victim's side.
+    // The band still shows, disabled with the reason, so the pattern stays
+    // legible instead of silently missing.
+    const victimNeed = this.minCellsFor(mon, dims, this.windows.get(victim.id));
     if (v.w < 2 && v.h < 2) return null;
     if (v.w >= v.h) {
       // Column split. Aimed side gets ceil(w/2).
@@ -990,7 +1028,10 @@ export class WindowManagerBrain {
         ? { col: v.col + donatedW, row: v.row, w: keptW, h: v.h }
         : { col: v.col, row: v.row, w: keptW, h: v.h };
       if (donated.w < minCells.w || donated.h < minCells.h) return null;
-      return { victim: victim.id, kept, donated };
+      if (kept.w < victimNeed.w || kept.h < victimNeed.h) {
+        return { kind: 'atMin', victim: victim.id };
+      }
+      return { kind: 'ok', victim: victim.id, kept, donated };
     }
     const donatedH = Math.ceil(v.h / 2);
     const keptH = v.h - donatedH;
@@ -1002,7 +1043,10 @@ export class WindowManagerBrain {
       ? { col: v.col, row: v.row + donatedH, w: v.w, h: keptH }
       : { col: v.col, row: v.row, w: v.w, h: keptH };
     if (donated.w < minCells.w || donated.h < minCells.h) return null;
-    return { victim: victim.id, kept, donated };
+    if (kept.w < victimNeed.w || kept.h < victimNeed.h) {
+      return { kind: 'atMin', victim: victim.id };
+    }
+    return { kind: 'ok', victim: victim.id, kept, donated };
   }
 
   /**
@@ -2639,13 +2683,16 @@ export class WindowManagerBrain {
       // the user aimed at and take the donated half — the same computation
       // the armed preview ghosted.
       const minCells = this.minCellsFor(at.mon, this.dims(target.settings), dropInfo);
-      const plan = dropUnfittable ? null : this.makeRoomPlan(target, snapped, minCells);
+      const mrResult = dropUnfittable
+        ? null
+        : this.makeRoomPlan(target, snapped, minCells, at.mon, this.dims(target.settings));
+      const plan = mrResult?.kind === 'ok' ? mrResult : null;
       const swPlan = dropUnfittable ? null : this.swapPlan(target, snapped, minCells);
       const pills = this.pillRects(
         at.mon,
         this.dims(target.settings),
         snapped,
-        plan !== null,
+        mrResult !== null,
         swPlan !== null,
       );
       // A drop with no drag samples is a click, not an aimed gesture — the
