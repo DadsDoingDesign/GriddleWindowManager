@@ -83,6 +83,56 @@ const BUILTINS: readonly BuiltinSpec[] = [
   },
 ];
 
+/** Greatest common divisor of two non-negative integers. */
+function gcd(a: number, b: number): number {
+  let x = Math.abs(a);
+  let y = Math.abs(b);
+  while (y !== 0) {
+    [x, y] = [y, x % y];
+  }
+  return x;
+}
+
+/**
+ * The template's *shape* — its layout reduced to the smallest lattice that
+ * expresses it (spec 2026-08-20). "Two columns", authored on 12×6 so that
+ * applying it never re-dimensioned a fresh grid, is a 2×1 layout and the UI
+ * should say so.
+ *
+ * Divides the dims and every slot by the GCD of all of them, separately per
+ * axis. A layout nothing divides — "Main + side" (7 + 5 columns), or a
+ * capture with an odd offset — comes back unchanged, which is correct: that
+ * really is a 12-column shape.
+ *
+ * Pure and total: the caller may render the result or scale it back up, and
+ * `applyTemplate` does exactly that.
+ */
+export function templateShape(tpl: Template): {
+  cols: number;
+  rows: number;
+  slots: Slot[];
+} {
+  let gx = tpl.cols;
+  let gy = tpl.rows;
+  for (const s of tpl.slots) {
+    gx = gcd(gx, gcd(s.col, s.w));
+    gy = gcd(gy, gcd(s.row, s.h));
+  }
+  // A zero would come from a degenerate template; never divide by it.
+  if (gx < 1) gx = 1;
+  if (gy < 1) gy = 1;
+  return {
+    cols: tpl.cols / gx,
+    rows: tpl.rows / gy,
+    slots: tpl.slots.map((s) => ({
+      col: s.col / gx,
+      row: s.row / gy,
+      w: s.w / gx,
+      h: s.h / gy,
+    })),
+  };
+}
+
 const BUILTIN_IDS: ReadonlySet<string> = new Set(BUILTINS.map((b) => b.id));
 
 /** The five shipped layouts (fresh deep copies on every call). */

@@ -7,7 +7,7 @@
   // two-click arm instead of a native confirm — WebView2 dialogs are
   // disabled). Persistence is automatic: every brain snapshot schedules a
   // write_config save in the brain host.
-  import type { Template } from '@griddle-wm/brain';
+  import { templateShape, type Template } from '@griddle-wm/brain';
   import {
     emitSettingsApplyTemplate,
     emitSettingsCaptureTemplate,
@@ -28,14 +28,24 @@
     $props();
 
   /**
-   * Applying a template re-dimensions the grid to the template's cols/rows
-   * (brain `applyTemplate`). Built-ins are authored at the 12×6 default so
-   * this rarely fires, but a user template captured on other dims — or a
-   * builtin applied to a customized grid — must say what it is about to do
-   * at the point of action, not in a README footnote.
+   * The layout a template actually describes (spec 2026-08-20): "Two
+   * columns", authored on the 12×6 lattice so applying it never used to
+   * re-dimension a fresh grid, is a 2×1 shape — and the card should say so.
+   */
+  function shapeOf(t: Template) {
+    return templateShape(t);
+  }
+
+  /**
+   * Applying re-dimensions the grid only when the shape cannot scale into
+   * the grid's current dims (brain `applyTemplate`). When it can — 2×1 into
+   * 12×6 — the grid keeps its granularity and there is nothing to warn
+   * about; when it cannot, the button says what it is about to do at the
+   * point of action, not in a README footnote.
    */
   function regrids(t: Template): boolean {
-    return t.cols !== gridCols || t.rows !== gridRows;
+    const shape = shapeOf(t);
+    return !(gridCols % shape.cols === 0 && gridRows % shape.rows === 0);
   }
 
   const MAX_NAME_LEN = 40;
@@ -100,8 +110,9 @@
   // ── preview drawing ──────────────────────────────────────────────────────
   /** Slot rects in a unit-per-cell viewBox, slightly inset for a gap. */
   function slotRects(t: Template) {
-    const inset = 0.06 * Math.max(t.cols, t.rows);
-    return t.slots.map((s) => ({
+    const shape = shapeOf(t);
+    const inset = 0.06 * Math.max(shape.cols, shape.rows);
+    return shape.slots.map((s) => ({
       x: s.col + inset,
       y: s.row + inset,
       w: Math.max(s.w - 2 * inset, 0.1),
@@ -148,18 +159,24 @@
       <div class="tcard" class:active>
         <svg
           class="preview"
-          viewBox="0 0 {t.cols} {t.rows}"
+          viewBox="0 0 {shapeOf(t).cols} {shapeOf(t).rows}"
           preserveAspectRatio="xMidYMid meet"
           aria-hidden="true"
         >
           {#each slotRects(t) as r}
-            <rect x={r.x} y={r.y} width={r.w} height={r.h} rx={0.04 * Math.max(t.cols, t.rows)} />
+            <rect
+              x={r.x}
+              y={r.y}
+              width={r.w}
+              height={r.h}
+              rx={0.04 * Math.max(shapeOf(t).cols, shapeOf(t).rows)}
+            />
           {/each}
         </svg>
         <div class="tinfo">
           <span class="tname" title={t.name}>{t.name}</span>
           <span class="tmeta">
-            {t.cols}×{t.rows} · {t.slots.length}
+            {shapeOf(t).cols}×{shapeOf(t).rows} · {t.slots.length}
             {t.slots.length === 1 ? 'slot' : 'slots'}
             {#if t.builtin}· built-in{/if}
           </span>
@@ -169,7 +186,7 @@
             class="btn primary"
             title={regrids(t)
               ? `Re-dimensions this grid to ${t.cols}×${t.rows}, then lays windows out on the template`
-              : 'Lay windows out on this template'}
+              : `Lays windows out on this ${shapeOf(t).cols}×${shapeOf(t).rows} layout, keeping your ${gridCols}×${gridRows} grid`}
             onclick={() => apply(t)}
           >
             {active ? 'Reapply' : regrids(t) ? `Apply (re-grids to ${t.cols}×${t.rows})` : 'Apply'}

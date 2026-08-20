@@ -31,7 +31,7 @@ import {
   slotUsable as slotUsableWithin,
   unionWorkArea,
 } from './spanning';
-import { makeUserTemplate, mergeWithBuiltins } from './templates';
+import { makeUserTemplate, mergeWithBuiltins, templateShape } from './templates';
 import type {
   AppConfig,
   AppRule,
@@ -1641,10 +1641,34 @@ export class WindowManagerBrain {
     if (!mon) return;
     if (this.drag?.sourceGridId === gridId) this.cancelDrag();
 
+    // Spec 2026-08-20: a template is a *shape*, so applying one need not
+    // re-dimension the grid. When the grid's dims are integer multiples of
+    // the shape's, the slots scale up and the user's granularity survives —
+    // a 2x1 "Two columns" on a 12x6 grid becomes two 6x6 halves. Only a
+    // shape the grid cannot host by scaling falls back to re-gridding, which
+    // is what every apply used to do (and what critique round 3 worked
+    // around by authoring the builtins at 12x6).
+    const shape = templateShape(tpl);
+    const scales =
+      shape.cols > 0 &&
+      shape.rows > 0 &&
+      mg.settings.cols % shape.cols === 0 &&
+      mg.settings.rows % shape.rows === 0;
+    const fx = scales ? mg.settings.cols / shape.cols : 1;
+    const fy = scales ? mg.settings.rows / shape.rows : 1;
+    const slots: Slot[] = scales
+      ? shape.slots.map((sl) => ({
+          col: sl.col * fx,
+          row: sl.row * fy,
+          w: sl.w * fx,
+          h: sl.h * fy,
+        }))
+      : tpl.slots.map((sl) => ({ ...sl }));
+
     const settings: GridSettings = {
       ...mg.settings,
-      cols: tpl.cols,
-      rows: tpl.rows,
+      cols: scales ? mg.settings.cols : tpl.cols,
+      rows: scales ? mg.settings.rows : tpl.rows,
       activeTemplateId: tpl.id,
     };
     mg.settings = settings;
@@ -1670,7 +1694,7 @@ export class WindowManagerBrain {
     const stack = settings.mode === 'stack';
     order.forEach((hwnd, i) => {
       const info = this.windows.get(hwnd);
-      const slot = i < tpl.slots.length ? tpl.slots[i] : undefined;
+      const slot = i < slots.length ? slots[i] : undefined;
       if (slot && this.addAtSlot(mg, hwnd, slot, stack, info)) return;
       // Extra window beyond the template's slots (or an unusable slot):
       // auto-place with the usual first-fit/displacement/floating rules.
