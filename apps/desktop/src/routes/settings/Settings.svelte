@@ -53,6 +53,7 @@
     setPaused,
   } from '../../lib/ipc';
   import GridEditor from './GridEditor.svelte';
+  import NumberField from './NumberField.svelte';
   import TemplateGallery from './TemplateGallery.svelte';
 
   const MAX_COLS = 32;
@@ -992,7 +993,7 @@
       {#if snapshot?.paused}
         <span class="badge paused">Paused</span>
       {/if}
-      <label class="switch">
+      <label class="switch row">
         <input
           type="checkbox"
           checked={snapshot?.paused ?? false}
@@ -1113,7 +1114,7 @@
             {#if spanned}<span class="badge">Spanned</span>{/if}
           </p>
         </div>
-        <label class="switch">
+        <label class="switch row">
           <input
             type="checkbox"
             checked={enabled}
@@ -1142,7 +1143,14 @@
             onclick={() => setDims(mon, dims.cols - 1, dims.rows)}
             use:holdRepeat={() => setDims(mon, dims.cols - 1, dims.rows)}>−</button
           >
-          <span class="val">{dims.cols}</span>
+          <NumberField
+            value={dims.cols}
+            min={1}
+            max={MAX_COLS}
+            label="Columns"
+            disabled={!enabled}
+            onCommit={(v) => setDims(mon, v, dims.rows)}
+          />
           <button
             aria-label="More columns"
             disabled={!enabled || dims.cols >= MAX_COLS}
@@ -1158,7 +1166,14 @@
             onclick={() => setDims(mon, dims.cols, dims.rows - 1)}
             use:holdRepeat={() => setDims(mon, dims.cols, dims.rows - 1)}>−</button
           >
-          <span class="val">{dims.rows}</span>
+          <NumberField
+            value={dims.rows}
+            min={1}
+            max={MAX_ROWS}
+            label="Rows"
+            disabled={!enabled}
+            onCommit={(v) => setDims(mon, dims.cols, v)}
+          />
           <button
             aria-label="More rows"
             disabled={!enabled || dims.rows >= MAX_ROWS}
@@ -1198,13 +1213,22 @@
               grid && setGridSpacing(grid, spacing.gap - SPACING_STEP, spacing.padding)}
             >−</button
           >
-          <span
-            class="val px"
-            class:coerced={spacing.coerced}
-            title={spacing.coerced
-              ? `Capped at ${cappedGap(spacing)} — this grid's cells are too small for ${spacing.gap}px`
-              : undefined}>{gapLabel(spacing)}</span
-          >
+          <NumberField
+            value={spacing.gap}
+            min={0}
+            max={MAX_SPACING_PX}
+            label="Gap in pixels"
+            suffix="px"
+            disabled={!enabled || !grid}
+            onCommit={(v) => grid && setGridSpacing(grid, v, spacing.padding)}
+          />
+          {#if spacing.coerced}
+            <span
+              class="coerced-note"
+              title={`Capped at ${cappedGap(spacing)} — this grid's cells are too small for ${spacing.gap}px`}
+              >→ {cappedGap(spacing)}</span
+            >
+          {/if}
           <button
             aria-label="Larger gap"
             disabled={!enabled || !grid || spacing.gap >= MAX_SPACING_PX}
@@ -1228,7 +1252,15 @@
               grid && setGridSpacing(grid, spacing.gap, spacing.padding - SPACING_STEP)}
             >−</button
           >
-          <span class="val px">{spacing.padding}px</span>
+          <NumberField
+            value={spacing.padding}
+            min={0}
+            max={MAX_SPACING_PX}
+            label="Padding in pixels"
+            suffix="px"
+            disabled={!enabled || !grid}
+            onCommit={(v) => grid && setGridSpacing(grid, spacing.gap, v)}
+          />
           <button
             aria-label="More padding"
             disabled={!enabled || !grid || spacing.padding >= MAX_SPACING_PX}
@@ -1307,7 +1339,7 @@
             {/if}
           </p>
         </div>
-        <label class="switch">
+        <label class="switch row">
           <input
             type="checkbox"
             checked={true}
@@ -1327,7 +1359,13 @@
             onclick={() => setSpanDims(grid, grid.cols - 1, grid.rows)}
             use:holdRepeat={() => setSpanDims(grid, grid.cols - 1, grid.rows)}>−</button
           >
-          <span class="val">{grid.cols}</span>
+          <NumberField
+            value={grid.cols}
+            min={1}
+            max={MAX_COLS}
+            label="Columns"
+            onCommit={(v) => setSpanDims(grid, v, grid.rows)}
+          />
           <button
             aria-label="More columns"
             disabled={grid.cols >= MAX_COLS}
@@ -1343,7 +1381,13 @@
             onclick={() => setSpanDims(grid, grid.cols, grid.rows - 1)}
             use:holdRepeat={() => setSpanDims(grid, grid.cols, grid.rows - 1)}>−</button
           >
-          <span class="val">{grid.rows}</span>
+          <NumberField
+            value={grid.rows}
+            min={1}
+            max={MAX_ROWS}
+            label="Rows"
+            onCommit={(v) => setSpanDims(grid, grid.cols, v)}
+          />
           <button
             aria-label="More rows"
             disabled={grid.rows >= MAX_ROWS}
@@ -1381,13 +1425,22 @@
               setGridSpacing(grid, (grid.gap ?? 0) - SPACING_STEP, grid.padding ?? 0)}
             >−</button
           >
-          <span
-            class="val px"
-            class:coerced={spacing.coerced}
-            title={spacing.coerced
-              ? `Capped at ${cappedGap(spacing)} — this grid's cells are too small for ${spacing.gap}px`
-              : undefined}>{gapLabel(spacing)}</span
-          >
+          <NumberField
+            value={spacing.gap}
+            min={0}
+            max={MAX_SPACING_PX}
+            label="Gap in pixels"
+            suffix="px"
+            disabled={false}
+            onCommit={(v) => setGridSpacing(grid, v, grid.padding ?? 0)}
+          />
+          {#if spacing.coerced}
+            <span
+              class="coerced-note"
+              title={`Capped at ${cappedGap(spacing)} — this grid's cells are too small for ${spacing.gap}px`}
+              >→ {cappedGap(spacing)}</span
+            >
+          {/if}
           <button
             aria-label="Larger gap"
             disabled={(grid.gap ?? 0) >= MAX_SPACING_PX}
@@ -1411,7 +1464,14 @@
               setGridSpacing(grid, grid.gap ?? 0, (grid.padding ?? 0) - SPACING_STEP)}
             >−</button
           >
-          <span class="val px">{grid.padding ?? 0}px</span>
+          <NumberField
+            value={grid.padding ?? 0}
+            min={0}
+            max={MAX_SPACING_PX}
+            label="Padding in pixels"
+            suffix="px"
+            onCommit={(v) => setGridSpacing(grid, grid.gap ?? 0, v)}
+          />
           <button
             aria-label="More padding"
             disabled={(grid.padding ?? 0) >= MAX_SPACING_PX}
@@ -1501,7 +1561,13 @@
             use:holdRepeat={() => (spanDraft.cols = clamp(spanDraft.cols - 1, 1, MAX_COLS))}
             >−</button
           >
-          <span class="val">{spanDraft.cols}</span>
+          <NumberField
+            value={spanDraft.cols}
+            min={1}
+            max={MAX_COLS}
+            label="Columns"
+            onCommit={(v) => (spanDraft = { ...spanDraft, cols: v })}
+          />
           <button
             aria-label="More columns"
             disabled={spanDraft.cols >= MAX_COLS}
@@ -1519,7 +1585,13 @@
             use:holdRepeat={() => (spanDraft.rows = clamp(spanDraft.rows - 1, 1, MAX_ROWS))}
             >−</button
           >
-          <span class="val">{spanDraft.rows}</span>
+          <NumberField
+            value={spanDraft.rows}
+            min={1}
+            max={MAX_ROWS}
+            label="Rows"
+            onCommit={(v) => (spanDraft = { ...spanDraft, rows: v })}
+          />
           <button
             aria-label="More rows"
             disabled={spanDraft.rows >= MAX_ROWS}
@@ -1760,7 +1832,7 @@
       </div>
     </div>
     <div class="controls">
-      <label class="switch">
+      <label class="switch row">
         <input
           type="checkbox"
           checked={autostart}
@@ -1771,7 +1843,7 @@
       </label>
     </div>
     <div class="controls">
-      <label class="switch">
+      <label class="switch row">
         <input
           type="checkbox"
           checked={suppressWindowsSnap}
@@ -1831,7 +1903,7 @@
       </div>
     </div>
     <div class="controls">
-      <label class="switch">
+      <label class="switch row">
         <input
           type="checkbox"
           checked={autoCheckUpdates}
@@ -2163,6 +2235,37 @@
     cursor: pointer;
     user-select: none;
   }
+
+  /* List row (spec 2026-08-20): the setting's name reads first at the left
+     margin and its control sits at the right, so a column of settings scans
+     as a list instead of a ragged row of chips. The markup order is
+     track-then-label throughout, so `order` does the reordering — cheaper and
+     less error-prone than rewriting every switch. */
+  .switch.row {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 9px 0;
+  }
+
+  .switch.row .switch-label {
+    order: -1;
+    /* Long labels wrap instead of shoving the toggle off the row. */
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .switch.row .track {
+    flex: 0 0 auto;
+  }
+
+  /* Hairlines between adjacent rows, never a trailing one. Each switch sits
+     in its own `.controls` wrapper, so the rule targets those siblings. */
+  .controls:has(> .switch.row) + .controls:has(> .switch.row) {
+    border-top: 1px solid var(--border);
+  }
   .switch input {
     position: absolute;
     opacity: 0;
@@ -2239,6 +2342,20 @@
     gap: 18px;
     flex-wrap: wrap;
   }
+
+  /* A controls row whose only child is a list-row switch should let it span
+     the full card width rather than hugging its content. */
+  .controls:has(> .switch.row) {
+    display: block;
+  }
+
+  /* The coerced-gap note that replaced the old combined label: the field now
+     shows what you set, this shows what the grid could actually use. */
+  .coerced-note {
+    font-size: 12px;
+    color: var(--text-dim);
+    white-space: nowrap;
+  }
   .controls.dimmed {
     opacity: 0.55;
   }
@@ -2311,25 +2428,6 @@
   .stepper button:disabled {
     opacity: 0.4;
     cursor: default;
-  }
-  .stepper .val {
-    min-width: 22px;
-    text-align: center;
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--text-strong);
-    font-variant-numeric: tabular-nums;
-  }
-  /* Spacing values carry a px suffix — a touch more room, same rhythm. */
-  .stepper .val.px {
-    min-width: 38px;
-  }
-  /* "64px → 41px" when the grid coerces the gap down: wider, and dimmed so
-     the arrow reads as a consequence rather than a second setting. */
-  .stepper .val.px.coerced {
-    min-width: 92px;
-    font-size: 12.5px;
-    color: var(--text-dim);
   }
 
   /* Dropdown control (placement mode). Same well/border/radius language as
