@@ -82,13 +82,15 @@
       enablePositioning: true,
       pinUnits: 'cells',
       tileRadius: 6,
-      // Must be explicit. GriddleGrid decides containment with
-      // `contained = cfg.scroll !== 'none'`, so *omitting* scroll makes
-      // `undefined !== 'none'` true and the grid quietly wraps itself in an
-      // `overflow: auto` box. The editor is sized to the exact pixel from
-      // the monitor's aspect ratio and `.editor` already clips, so that box
-      // only ever contributed a pair of scrollbars over the map.
-      scroll: 'none',
+      // `scroll` is deliberately left at its default (contained). It reads
+      // like a scrollbar preference and is not: `contained = cfg.scroll !==
+      // 'none'` also decides whether the grid gets an explicit height and
+      // clips, and the tile layout is computed against that box. Setting it
+      // to 'none' to suppress two stray scrollbars flipped the grid to
+      // `height: auto; overflow: visible` and tiles started rendering off
+      // their cell boundaries. The scrollbars were a 1-2px overflow and
+      // `.editor` already clips, so they are hidden in CSS below instead —
+      // presentation stays presentation, geometry stays geometry.
     },
   });
   onDestroy(() => api.destroy());
@@ -285,18 +287,7 @@
   }
 </script>
 
-<!-- Height is pinned here, not left to the layout. `scroll: 'none'` is what
-     stops GriddleGrid drawing scrollbars over the map, but it also switches
-     the grid's own height to `auto` — so the `height` prop below no longer
-     sizes anything, absolutely-positioned tiles contribute nothing, and the
-     box was free to be stretched by the surrounding flex column. That made
-     the map's aspect ratio a function of the window's height instead of the
-     monitor's, which is precisely what a minimap must not be. -->
-<div
-  class="editor"
-  style:width="{EDITOR_W}px"
-  style:height="{layout.height + layout.padY * 2}px"
->
+<div class="editor" style:width="{EDITOR_W}px">
   <!-- Scaled padding inset: the well showing through here is the same strip
        of desktop the real padding leaves free. -->
   <div class="pad" style:padding="{layout.padY}px {layout.padX}px">
@@ -346,10 +337,23 @@
     border-radius: 10px;
     background: var(--well);
     overflow: hidden;
-    /* Never absorb slack from the flex column that holds it — see the
-       comment on the element: the monitor decides this box's shape. */
+    /* The monitor decides this box's shape, so it must not absorb slack from
+       the flex column that holds it. */
     flex: 0 0 auto;
-    box-sizing: border-box;
+  }
+
+  /* The grid is a contained scroll box (see the `scroll` note in the config)
+     and overflows its own height by a pixel or two, which drew scrollbars
+     across the map. `.editor` already clips to the exact aspect-correct
+     rect, so the bars have nothing to reveal — hide them without touching
+     the layout mode that positions the tiles. */
+  .editor :global(*) {
+    scrollbar-width: none;
+  }
+  .editor :global(*::-webkit-scrollbar) {
+    width: 0;
+    height: 0;
+    display: none;
   }
 
   /* Dark-theme overrides for the GriddleGrid internals. */

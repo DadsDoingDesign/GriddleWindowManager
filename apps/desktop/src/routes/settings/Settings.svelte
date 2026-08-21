@@ -1052,6 +1052,12 @@
        ancestors, so a bare child would be a dead patch in the drag handle.
        The pause switch deliberately lacks it — dragging off a toggle would
        eat the click. -->
+  <!-- Sticky top bar (field report 2026-08-20): the pop-out scrolls, and
+       a header that scrolls with it let content slide up alongside the
+       tabs. Brand row and tabs ride together at the top and the sections
+       pass underneath; the negative margins cancel the page padding so
+       the bar spans edge to edge and actually occludes what it covers. -->
+  <div class="topbar">
   <header class="slim" data-tauri-drag-region>
     <div class="brand" data-tauri-drag-region>
       {@render brandMark()}
@@ -1079,6 +1085,37 @@
       </label>
     </div>
   </header>
+  <!-- Tab bar (spec 2026-08-20): one tab per grid, `+` to add a spanning or
+       custom grid, gear for preferences, and a hide control that returns the
+       pop-out to the tray — it floats always-on-top, so a one-click way out
+       of the way is not a nicety. -->
+  {#if tabs.length > 0}
+    <nav class="tabbar" aria-label="Displays and settings" data-tauri-drag-region>
+      <div class="tabs" role="tablist">
+        {#each tabs as t (t.key)}
+          <button
+            role="tab"
+            class="tab"
+            class:sel={isActive(t.key)}
+            class:glyph={t.kind === 'add' || t.kind === 'prefs'}
+            aria-selected={isActive(t.key)}
+            title={t.kind === 'add'
+              ? 'Add a spanning or custom grid'
+              : t.kind === 'prefs'
+                ? 'Preferences'
+                : t.label}
+            onclick={() => (activeTabKey = t.key)}
+          >
+            {t.label}
+          </button>
+        {/each}
+      </div>
+      <button class="tab glyph hide" title="Hide to tray" onclick={() => void hideSettings()}>
+        &#x2304;
+      </button>
+    </nav>
+  {/if}
+  </div>
 
   <!-- Update banner (spec §7). Nothing here happens on its own: the release
        is named, its notes are shown in full, and the install only starts when
@@ -1172,36 +1209,6 @@
     <p class="empty">Looking for monitors…</p>
   {/if}
 
-  <!-- Tab bar (spec 2026-08-20): one tab per grid, `+` to add a spanning or
-       custom grid, gear for preferences, and a hide control that returns the
-       pop-out to the tray — it floats always-on-top, so a one-click way out
-       of the way is not a nicety. -->
-  {#if tabs.length > 0}
-    <nav class="tabbar" aria-label="Displays and settings" data-tauri-drag-region>
-      <div class="tabs" role="tablist">
-        {#each tabs as t (t.key)}
-          <button
-            role="tab"
-            class="tab"
-            class:sel={isActive(t.key)}
-            class:glyph={t.kind === 'add' || t.kind === 'prefs'}
-            aria-selected={isActive(t.key)}
-            title={t.kind === 'add'
-              ? 'Add a spanning or custom grid'
-              : t.kind === 'prefs'
-                ? 'Preferences'
-                : t.label}
-            onclick={() => (activeTabKey = t.key)}
-          >
-            {t.label}
-          </button>
-        {/each}
-      </div>
-      <button class="tab glyph hide" title="Hide to tray" onclick={() => void hideSettings()}>
-        &#x2304;
-      </button>
-    </nav>
-  {/if}
 
   {#each sortedMonitors.filter((m) => isActive(`mon:${m.id}`)) as mon (mon.id)}
     {@const grid = gridFor(mon.id)}
@@ -2218,6 +2225,22 @@
     flex: 0 0 auto;
   }
 
+  /*
+   * The bar the sections scroll under. Sticky rather than a separate flex
+   * pane so the existing single-scroller markup stays intact; opaque, above
+   * the content, and stretched past `.page`'s padding with matching negative
+   * margins so nothing shows through at the edges as it passes behind.
+   */
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: var(--bg);
+    margin: 0 -16px 0;
+    padding: 14px 16px 6px;
+    border-bottom: 1px solid var(--border);
+  }
+
   /* Slim brand row: mark + version only. */
   header.slim {
     padding-bottom: 4px;
@@ -2351,7 +2374,10 @@
   .page {
     max-width: 720px;
     margin: 0 auto;
-    padding: 14px 16px 20px;
+    /* No top padding: the sticky top bar owns it, so `top: 0` pins against
+       the very top of the scrollport instead of 14px down, which would leak
+       a strip of scrolling content above the bar. */
+    padding: 0 16px 20px;
     display: flex;
     flex-direction: column;
     gap: 16px;

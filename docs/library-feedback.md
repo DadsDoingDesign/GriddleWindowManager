@@ -231,3 +231,18 @@ export. Verified against `node_modules/@griddle/core/dist/*.d.ts` and
   Suggested fix: honour `height` in both modes. Containment is about who owns
   the scrolling; it should not also decide whether an explicit height means
   anything.
+
+  **Retracted, same day.** Both of the above were my error, not the library's,
+  and the record should say so. `scroll: 'none'` is not a scrollbar switch: it
+  is the mode flag for the whole layout contract, and `contained` gates the
+  explicit height, the clipping *and* the box the tile layout resolves
+  against. Setting it to suppress two stray scrollbars took the tile
+  positioning with it — tiles rendered off their cell boundaries at rest and
+  drags looked askew. Reverted to the default contained mode; the scrollbars,
+  which were a 1-2px overflow inside a wrapper that already clips, are hidden
+  in CSS where a presentational problem belongs.
+
+  The one fair note that survives: `scroll` reads like a display preference
+  at the call site and is really a layout mode. A name closer to
+  `containment` / `sizing`, or a doc line saying what else it governs, would
+  make the trap visible. Nothing to fix in the code.

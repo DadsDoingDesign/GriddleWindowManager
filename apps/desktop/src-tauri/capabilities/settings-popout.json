@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "settings-popout",
+  "description": "The settings pop-out is undecorated (spec 2026-08-20), so it has no OS title bar to drag by and its `data-tauri-drag-region` elements stand in for one. `core:default` does NOT include `core:window:allow-start-dragging`, so without this the attribute is silently inert and the window cannot be moved at all — there is no taskbar entry to recover it from either. Granted to the settings window alone: the brain host is hidden and the overlays are click-through, so neither has any business starting a window drag.",
+  "windows": ["settings"],
+  "permissions": ["core:window:allow-start-dragging"]
+}

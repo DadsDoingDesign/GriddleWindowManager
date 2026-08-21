@@ -39,10 +39,27 @@ body {
  * background painting the corners.
  */
 html,
-body {
+body,
+#app {
   height: 100%;
+}
+
+html,
+body {
   border-radius: 9px;
   overflow: hidden;
+}
+
+/*
+ * `#app` is the mount point (settings.html) and sits between `body` and
+ * `.page`. Without a height here `.page`'s `height: 100%` resolved against an
+ * auto-height parent — so it grew with its content instead of scrolling, and
+ * `body`'s `overflow: hidden` simply cut off everything past the fold. The
+ * Preferences tab was unreachable below the window edge with no way to
+ * scroll to it.
+ */
+#app {
+  min-height: 0;
 }
 
 body {
