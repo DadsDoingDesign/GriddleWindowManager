@@ -55,6 +55,7 @@
   } from '../../lib/ipc';
   import GridEditor from './GridEditor.svelte';
   import NumberField from './NumberField.svelte';
+  import PlacementPicker from './PlacementPicker.svelte';
   import TemplateGallery from './TemplateGallery.svelte';
 
   const MAX_COLS = 32;
@@ -1302,18 +1303,11 @@
           >
         </div>
         {#if enabled && grid}
-          <label class="picker" title={modeHint(grid.mode)}>
-            <span class="lbl">Placement</span>
-            <select
-              value={grid.mode}
-              onchange={(e) =>
-                setMode(grid, e.currentTarget.value as PlacementMode)}
-            >
-              {#each PLACEMENT_MODES as m (m.value)}
-                <option value={m.value}>{m.label} — {m.blurb}</option>
-              {/each}
-            </select>
-          </label>
+          <PlacementPicker
+            value={grid.mode}
+            options={PLACEMENT_MODES}
+            onchange={(v) => setMode(grid, v as PlacementMode)}
+          />
           <span class="tile-count">
             {tiles.length}
             {tiles.length === 1 ? 'window' : 'windows'}
@@ -1521,17 +1515,11 @@
             use:holdRepeat={() => setSpanDims(grid, grid.cols, grid.rows + 1)}>+</button
           >
         </div>
-        <label class="picker">
-          <span class="lbl">Placement</span>
-          <select
-            value={grid.mode}
-            onchange={(e) => setMode(grid, e.currentTarget.value as PlacementMode)}
-          >
-            {#each PLACEMENT_MODES as m (m.value)}
-              <option value={m.value}>{m.label} — {m.blurb}</option>
-            {/each}
-          </select>
-        </label>
+        <PlacementPicker
+          value={grid.mode}
+          options={PLACEMENT_MODES}
+          onchange={(v) => setMode(grid, v as PlacementMode)}
+        />
         <span class="tile-count">
           {tiles.length}
           {tiles.length === 1 ? 'window' : 'windows'}
@@ -2690,8 +2678,7 @@
     align-items: stretch;
     gap: 9px;
   }
-  .card.map .controls .stepper,
-  .card.map .controls .picker {
+  .card.map .controls .stepper {
     display: flex;
     align-items: center;
     width: 100%;
@@ -2700,12 +2687,8 @@
   /* Push the control cluster right, leaving the label alone on the left.
      `margin-left: auto` on the first control keeps this working whatever
      the cluster contains (the gap stepper adds a coercion note). */
-  .card.map .controls .stepper > button:first-of-type,
-  .card.map .controls .picker > select {
+  .card.map .controls .stepper > button:first-of-type {
     margin-left: auto;
-  }
-  .card.map .controls .picker > select {
-    max-width: 62%;
   }
   /* The window count is an annotation, not a row: it rides under the
      placement picker rather than claiming a line of its own. */
@@ -2800,40 +2783,6 @@
     cursor: default;
   }
 
-  /* Dropdown control (placement mode). Same well/border/radius language as
-     the steppers next to it; the option list is drawn by the OS, which the
-     window's `color-scheme: dark` already keeps in the right palette. */
-  .picker {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    border: 1px solid var(--border);
-    border-radius: 9px;
-    background: var(--well);
-    padding: 3px 4px 3px 10px;
-  }
-  .picker .lbl {
-    font-size: 12.5px;
-    color: var(--text-dim);
-  }
-  .picker select {
-    max-width: 230px;
-    border: none;
-    border-radius: 7px;
-    background: transparent;
-    color: var(--text-strong);
-    font: 600 12px/1 var(--sans);
-    padding: 5px 4px;
-    cursor: pointer;
-    text-overflow: ellipsis;
-  }
-  .picker select:hover {
-    background: rgba(255, 255, 255, 0.04);
-  }
-  .picker select:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
-  }
   .tile-count {
     font-size: 12.5px;
     color: var(--text-dim);
