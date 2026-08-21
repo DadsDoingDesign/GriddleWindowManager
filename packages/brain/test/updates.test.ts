@@ -7,6 +7,7 @@ import {
   UPDATE_CHECK_INTERVAL_MS,
   WindowManagerBrain,
   canCheckNow,
+  CONFIG_VERSION,
   canInstall,
   defaultConfig,
   downloadFraction,
@@ -356,7 +357,7 @@ describe('AppConfig v3 migration (spec §7)', () => {
 
     const cfg = sanitizeConfig(v2);
     expect(cfg).not.toBeNull();
-    expect(cfg!.version).toBe(5);
+    expect(cfg!.version).toBe(CONFIG_VERSION);
     expect(cfg!.autoCheckUpdates).toBe(false);
 
     // Nothing the v2 config carried is lost. The one field that *changes* is
@@ -392,7 +393,7 @@ describe('AppConfig v3 migration (spec §7)', () => {
 
   it('reads a v3 config that opted in, and keeps it opted in', () => {
     const cfg = sanitizeConfig({ ...defaultConfig(), version: 3, autoCheckUpdates: true });
-    expect(cfg!.version).toBe(5);
+    expect(cfg!.version).toBe(CONFIG_VERSION);
     expect(cfg!.autoCheckUpdates).toBe(true);
     expect(makeBrain(cfg!).brain.exportConfig().autoCheckUpdates).toBe(true);
   });

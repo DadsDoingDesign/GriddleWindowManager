@@ -23,10 +23,11 @@ use std::path::{Path, PathBuf};
 /// version on read. v4 also renames the two original placement modes, which
 /// the `GridMode` serde aliases absorb: a pre-v4 file's `collision`/`overlay`
 /// read as `push`/`stack` and persist under the new names, with no change in
-/// behavior. v5 adds `suppress_windows_snap` + `windows_snap_original`
+/// behavior. v6 adds `manage_settings_window` + `settings_window_pos`
+/// over v5, which added `suppress_windows_snap` + `windows_snap_original`
 /// (spec 2026-08-19), both `#[serde(default)]` like every addition before
 /// them. Only *future* versions are quarantined.
-const CONFIG_VERSION: u32 = 5;
+const CONFIG_VERSION: u32 = 6;
 /// Oldest schema version the migration path accepts.
 const MIN_CONFIG_VERSION: u32 = 1;
 
@@ -177,6 +178,14 @@ pub(crate) fn enforce_authoritative_fields(config: &mut AppConfig) {
     // can never persist a stale or forged capture — and it is how the
     // capture reaches disk at all, since the brain merely echoes the config.
     config.windows_snap_original = crate::shell::snap_capture();
+    // Same reasoning for the pop-out's position (spec 2026-08-20 addendum):
+    // Rust watches the window's move events, so the live value is only known
+    // here. Stamped only when we actually have one - writing `None` over a
+    // remembered position would forget it on the first config write of a
+    // session where the user never opened Settings.
+    if let Some(pos) = crate::shell::settings_pos() {
+        config.settings_window_pos = Some(pos);
+    }
 }
 
 /// Security review deferred item 2 (now fixed): never persist an accelerator
@@ -222,7 +231,9 @@ pub fn read_config(app: tauri::AppHandle, window: tauri::Window) -> Option<AppCo
         // Task 19: an exclusion-list change re-sweeps the desktop so the
         // live eligible set (and the brain, via the emitted diff events)
         // converges without a restart.
-        if crate::tracker::set_exclusions(cfg.exclusions.clone()) {
+        if crate::tracker::set_exclusions(cfg.exclusions.clone())
+            | crate::tracker::set_manage_settings_window(cfg.manage_settings_window)
+        {
             crate::tracker::resync();
         }
         crate::shell::sync_from_config(&app, &cfg);
@@ -245,7 +256,12 @@ pub fn write_config(
     let mut config = config;
     enforce_authoritative_fields(&mut config);
     // Task 19: see read_config — exclusion edits take effect live.
-    if crate::tracker::set_exclusions(config.exclusions.clone()) {
+    // Non-short-circuiting `|`: both mirrors must be updated even when the
+    // first one already reports a change, or a simultaneous edit to the
+    // second would be dropped.
+    if crate::tracker::set_exclusions(config.exclusions.clone())
+        | crate::tracker::set_manage_settings_window(config.manage_settings_window)
+    {
         crate::tracker::resync();
     }
     crate::shell::sync_from_config(&app, &config);
@@ -306,7 +322,7 @@ mod tests {
     fn sample_config() -> AppConfig {
         use crate::ipc::{AppRule, GridMode, GridSettings, Slot, Template};
         AppConfig {
-            version: 5,
+            version: CONFIG_VERSION,
             grids: vec![GridSettings {
                 id: "grid:\\\\.\\DISPLAY1@0,0".into(),
                 monitor_ids: vec!["\\\\.\\DISPLAY1@0,0".into()],
@@ -379,6 +395,8 @@ mod tests {
             auto_check_updates: false,
             suppress_windows_snap: false,
             windows_snap_original: None,
+            manage_settings_window: false,
+            settings_window_pos: None,
         }
     }
 
@@ -565,6 +583,52 @@ mod tests {
         assert_eq!(read.version, CONFIG_VERSION, "re-stamped to v5");
         assert!(!read.suppress_windows_snap, "opt-in: absent reads as off");
         assert_eq!(read.windows_snap_original, None, "no capture = never touched");
+    }
+
+    /// v5 -> v6. Same contract as the v4 case above, for the pop-out fields:
+    /// an upgrade must not start tiling the settings window, and must not
+    /// invent a remembered position that would move it out from under the
+    /// tray-corner default.
+    #[test]
+    fn v5_config_without_popout_fields_reads_as_floating_and_unplaced() {
+        let dir = ScratchDir::new();
+        fs::create_dir_all(dir.path()).unwrap();
+        let mut json = serde_json::to_value(sample_config()).unwrap();
+        let obj = json.as_object_mut().unwrap();
+        obj.insert("version".into(), serde_json::json!(5));
+        obj.remove("manageSettingsWindow");
+        obj.remove("settingsWindowPos");
+        fs::write(
+            dir.path().join(CONFIG_FILE),
+            serde_json::to_vec(&json).unwrap(),
+        )
+        .unwrap();
+
+        let read = read_config_from(dir.path()).expect("v5 config must stay readable");
+        assert_eq!(read.version, CONFIG_VERSION, "re-stamped to v6");
+        assert!(
+            !read.manage_settings_window,
+            "opt-in: an upgrade must not start tiling the pop-out"
+        );
+        assert_eq!(
+            read.settings_window_pos, None,
+            "no remembered position = the tray-corner default still applies"
+        );
+    }
+
+    #[test]
+    fn popout_fields_round_trip_through_disk() {
+        use crate::ipc::WindowPos;
+        let dir = ScratchDir::new();
+        let mut cfg = sample_config();
+        cfg.manage_settings_window = true;
+        // Negative coordinates on purpose: a monitor left of the primary is
+        // exactly where a signed field earns its keep.
+        cfg.settings_window_pos = Some(WindowPos { x: -1720, y: 240 });
+        write_config_to(dir.path(), &cfg).unwrap();
+        let read = read_config_from(dir.path()).expect("v6 round-trips");
+        assert!(read.manage_settings_window);
+        assert_eq!(read.settings_window_pos, cfg.settings_window_pos);
     }
 
     #[test]

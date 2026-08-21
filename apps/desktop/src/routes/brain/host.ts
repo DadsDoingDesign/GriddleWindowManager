@@ -31,6 +31,7 @@ import {
   onMonitorsChanged,
   onMoveSizeEnd,
   onMoveSizeStart,
+  onSettingsWindowMoved,
   onWindowUnmovable,
   onOverlayReady,
   onSettingsApplyTemplate,
@@ -657,6 +658,15 @@ export async function startBrainHost(): Promise<BrainHost> {
       // brain with whatever happened to the desktop while it was deaf.
       if (!paused) void reconcileAfterResume();
     }),
+    // The pop-out was dragged. Rust owns the coordinates and stamps them
+    // into the next write, so this only has to ask for a write.
+    //
+    // Deliberately no `markUserAction()`: that flag exists so a user who
+    // launches once and quits never gets `%APPDATA%/griddle-wm` created for
+    // them, and the pop-out's own first placement can echo a move event
+    // before they have touched anything. If they have not acted yet there is
+    // no config to update, and the tray-corner default simply applies again.
+    onSettingsWindowMoved(() => scheduleSave()),
     onSettingsSetPrefs((p) => {
       markUserAction();
       brain.setShellPrefs(p);

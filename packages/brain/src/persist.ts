@@ -9,6 +9,15 @@
 // grid-enable time — a corrupt entry just means that grid starts empty.
 
 import { MAX_SPACING_PX } from './coords';
+
+/**
+ * Current `AppConfig.version`. Every version literal in this file derives
+ * from it, including the upper bound in `sanitizeConfig`'s gate — that gate
+ * was a hardcoded `5` when v6 landed, so freshly written configs failed
+ * their own parse and read back as `null`, i.e. "corrupt, start over".
+ * Bumping a schema must be one edit, not four.
+ */
+export const CONFIG_VERSION = 6;
 import type {
   AppConfig,
   AppRule,
@@ -50,7 +59,7 @@ export function normalizePlacementMode(raw: unknown): PlacementMode | null {
 
 export function defaultConfig(): AppConfig {
   return {
-    version: 5,
+    version: CONFIG_VERSION,
     grids: [],
     templates: [],
     exclusions: [],
@@ -66,7 +75,21 @@ export function defaultConfig(): AppConfig {
     // Opt-in likewise (spec 2026-08-19): a fresh install never edits the OS.
     suppressWindowsSnap: false,
     windowsSnapOriginal: null,
+    // Opt-in too: a fresh install leaves the pop-out floating, and has no
+    // remembered position, so it opens by the tray.
+    manageSettingsWindow: false,
+    settingsWindowPos: null,
   };
+}
+
+function isWindowPos(v: unknown): v is import('./types').WindowPos {
+  return (
+    isRecord(v) &&
+    typeof v.x === 'number' &&
+    Number.isFinite(v.x) &&
+    typeof v.y === 'number' &&
+    Number.isFinite(v.y)
+  );
 }
 
 function isSnapState(v: unknown): v is import('./types').SnapState {
@@ -253,7 +276,7 @@ function sanitizeView(raw: unknown): View | null {
 export function sanitizeConfig(raw: unknown): AppConfig | null {
   if (!isRecord(raw)) return null;
   if (typeof raw.version !== 'number') return null;
-  if (raw.version < 1 || raw.version > 5 || !Number.isInteger(raw.version)) {
+  if (raw.version < 1 || raw.version > CONFIG_VERSION || !Number.isInteger(raw.version)) {
     return null;
   }
 
@@ -324,7 +347,7 @@ export function sanitizeConfig(raw: unknown): AppConfig | null {
       : null;
 
   return {
-    version: 5,
+    version: CONFIG_VERSION,
     grids,
     templates,
     exclusions,
@@ -344,6 +367,11 @@ export function sanitizeConfig(raw: unknown): AppConfig | null {
     // and merely round-trips, so shape-validate it and otherwise pass along.
     suppressWindowsSnap: raw.suppressWindowsSnap === true,
     windowsSnapOriginal: isSnapState(raw.windowsSnapOriginal) ? raw.windowsSnapOriginal : null,
+    // Same opt-in rule (spec 2026-08-20 addendum). The position is
+    // Rust-authoritative and merely round-trips, so shape-validate it and
+    // otherwise treat a malformed value as "never placed".
+    manageSettingsWindow: raw.manageSettingsWindow === true,
+    settingsWindowPos: isWindowPos(raw.settingsWindowPos) ? raw.settingsWindowPos : null,
   };
 }
 

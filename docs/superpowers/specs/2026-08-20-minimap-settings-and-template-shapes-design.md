@@ -100,6 +100,40 @@ Clipping `body` to the rounded frame moves the scroll one level in: `.page`
 becomes the scroller, which also keeps the scrollbar inside the rounded
 corners instead of riding over them.
 
+### Panel, not page (second field round)
+
+Three further corrections, all from the same observation — it still behaved
+like a window that happened to be small:
+
+- **It opened dead centre.** An always-on-top panel that lands over whatever
+  you were reading is the worst possible default. It now opens at the
+  bottom-right of the primary work area, by its own tray icon, where Windows
+  puts its own transient panels; and it remembers where you drag it
+  (`settingsWindowPos`, clamped back onto a live monitor at open time, since
+  a pop-out with no taskbar button has no other recovery route).
+- **Only the brand row could be grabbed.** A frameless window with one thin
+  grab strip is worse to move than a titled one, so `data-tauri-drag-region`
+  now sits on the page, the tab bar, the map card and the control rows.
+  Every control stays clickable by being the event target itself.
+- **The controls wrapped into ragged rows.** In a narrow panel they are a
+  list: one setting per line, label left, control right — the shape the
+  toggles already used. The map shrank to 360px wide to match.
+
+### Snapping the pop-out is a setting, not a rule
+
+The earlier field report — *"do not exclude any windows from the grid"* — was
+right, and so is leaving this window out: both, about different windows. The
+pop-out is a map of the grid, so tiling it makes it occupy one of the cells it
+describes. That is a good default, not a law, so `manageSettingsWindow`
+(config v6, default off) lets the user opt in.
+
+The mechanism is a gate, not new machinery: `note_settings_hwnd` registers the
+handle unconditionally and the tracker pairs it with the flag
+(`own_window_is_managed`). Registering only when the flag was already on would
+have made the toggle silently require a restart. When the flag is off the
+WinEvent path drops own-process events exactly as early as `SKIPOWNPROCESS`
+would, so the default costs nothing.
+
 A **hide control** sits in the tab bar (a chevron-down icon, right-aligned
 beside the ⚙ tab) that returns the pop-out to the tray. It hides rather than
 closes, so reopening via the tray, the hotkey or a second launch restores the

@@ -202,6 +202,12 @@ export interface SettingsSetPrefsPayload {
   autoCheckUpdates?: boolean;
   /** Spec 2026-08-19: suppress Windows' mouse-driven snapping while running. */
   suppressWindowsSnap?: boolean;
+  /**
+   * Spec 2026-08-20 addendum: let Griddle tile the settings pop-out itself.
+   * Off by default — the pop-out is a map of the grid, so tiling it makes it
+   * occupy one of the cells it is describing.
+   */
+  manageSettingsWindow?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -357,6 +363,15 @@ export function onMoveSizeStart(cb: (p: HwndPayload) => void): Promise<UnlistenF
  */
 export function onWindowUnmovable(cb: (p: HwndPayload) => void): Promise<UnlistenFn> {
   return on('window-unmovable', cb);
+}
+
+/**
+ * Spec 2026-08-20 addendum: the user dragged the settings pop-out. No
+ * payload — Rust owns the coordinates and stamps them into the next config
+ * write, so all this asks for is that a write happen.
+ */
+export function onSettingsWindowMoved(cb: () => void): Promise<UnlistenFn> {
+  return on('settings-window-moved', () => cb());
 }
 
 export function onDragPos(cb: (p: DragPos) => void): Promise<UnlistenFn> {

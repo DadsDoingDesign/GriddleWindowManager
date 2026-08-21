@@ -172,6 +172,8 @@
    * the OS side effect lives in Rust.
    */
   let suppressWindowsSnap = $state(false);
+  /** Spec 2026-08-20 addendum: let Griddle tile this pop-out like any window. */
+  let manageSettingsWindow = $state(false);
   let firstRunSuppressSnap = $state(false);
   let hotkeyDraft = $state(DISPLAY_DEFAULT_HOTKEY);
   let savedHotkey = $state(DISPLAY_DEFAULT_HOTKEY);
@@ -230,6 +232,7 @@
     if (cfg) {
       autostart = cfg.autostart;
       suppressWindowsSnap = cfg.suppressWindowsSnap;
+      manageSettingsWindow = cfg.manageSettingsWindow;
       hotkeyDraft = toDisplayHotkey(cfg.hotkey);
       savedHotkey = toDisplayHotkey(cfg.hotkey);
       seedExclusions = cfg.exclusions;
@@ -507,6 +510,11 @@
   function toggleSuppressSnap(enabled: boolean): void {
     suppressWindowsSnap = enabled;
     void emitSettingsSetPrefs({ suppressWindowsSnap: enabled });
+  }
+
+  function toggleManageSettingsWindow(enabled: boolean): void {
+    manageSettingsWindow = enabled;
+    void emitSettingsSetPrefs({ manageSettingsWindow: enabled });
   }
 
   // ── updates (spec §7) ────────────────────────────────────────────────────
@@ -918,7 +926,12 @@
   }}
 />
 
-<div class="page">
+<!-- The whole panel is a drag surface, not just the brand row: this is a
+     minimap you reposition, and a frameless window with one thin grab strip
+     is worse to move than a titled one. Tauri tests the event target, so the
+     attribute lives on the containers and every control inside them stays
+     clickable by virtue of being the target itself. -->
+<div class="page" data-tauri-drag-region>
   {#if firstRun}
     <header>
       <div class="brand">
@@ -1164,7 +1177,7 @@
        pop-out to the tray — it floats always-on-top, so a one-click way out
        of the way is not a nicety. -->
   {#if tabs.length > 0}
-    <nav class="tabbar" aria-label="Displays and settings">
+    <nav class="tabbar" aria-label="Displays and settings" data-tauri-drag-region>
       <div class="tabs" role="tablist">
         {#each tabs as t (t.key)}
           <button
@@ -1197,9 +1210,9 @@
     {@const dims = dimsFor(mon)}
     {@const spacing = spacingView(mon, grid)}
     {@const tiles = (grid && snapshot?.tiles[grid.id]) || []}
-    <section class="card map">
-      <div class="card-head compact">
-        <div class="mon-info">
+    <section class="card map" data-tauri-drag-region>
+      <div class="card-head compact" data-tauri-drag-region>
+        <div class="mon-info" data-tauri-drag-region>
           <h2 class="one-line">
             <span class="mon-name">{monName(mon)}</span>
             <span class="meta-inline">
@@ -1229,7 +1242,12 @@
         </p>
       {/if}
 
-      <div class="controls" class:dimmed={!enabled} class:hidden={spanned !== undefined}>
+      <div
+        class="controls"
+        class:dimmed={!enabled}
+        class:hidden={spanned !== undefined}
+        data-tauri-drag-region
+      >
         <div class="stepper">
           <span class="lbl">Columns</span>
           <button
@@ -1296,7 +1314,12 @@
         {/if}
       </div>
       <!-- Spacing steppers (spec v0.2 §1): every click re-applies live. -->
-      <div class="controls" class:dimmed={!enabled} class:hidden={spanned !== undefined}>
+      <div
+        class="controls"
+        class:dimmed={!enabled}
+        class:hidden={spanned !== undefined}
+        data-tauri-drag-region
+      >
         <div class="stepper">
           <span class="lbl" title="Space between neighboring windows">Gap</span>
           <button
@@ -1956,6 +1979,22 @@
       Windows settings when it quits.
     </p>
     <div class="controls">
+      <label class="switch row">
+        <input
+          type="checkbox"
+          checked={manageSettingsWindow}
+          onchange={(e) => toggleManageSettingsWindow(e.currentTarget.checked)}
+        />
+        <span class="track"><span class="thumb"></span></span>
+        <span class="switch-label wide">Snap this Griddle window to the grid</span>
+      </label>
+    </div>
+    <p class="hint">
+      Off by default, because this window is a map of your grid — snapping it
+      in makes it occupy one of the cells it is describing. Leave it off and
+      drag it anywhere; Griddle remembers where you put it.
+    </p>
+    <div class="controls">
       <label class="field">
         <span class="lbl">Settings hotkey</span>
         <input
@@ -2612,6 +2651,40 @@
     align-items: center;
     gap: 18px;
     flex-wrap: wrap;
+  }
+
+  /*
+   * In the pop-out the controls are a list, one setting per line, label left
+   * and control right — the same shape the toggles already use. Wrapping a
+   * horizontal row into a narrow panel produced ragged two-up/one-up lines
+   * that moved as values changed width; a stack is stable and scannable.
+   */
+  .card.map .controls {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 9px;
+  }
+  .card.map .controls .stepper,
+  .card.map .controls .picker {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    gap: 8px;
+  }
+  /* Push the control cluster right, leaving the label alone on the left.
+     `margin-left: auto` on the first control keeps this working whatever
+     the cluster contains (the gap stepper adds a coercion note). */
+  .card.map .controls .stepper > button:first-of-type,
+  .card.map .controls .picker > select {
+    margin-left: auto;
+  }
+  .card.map .controls .picker > select {
+    max-width: 62%;
+  }
+  /* The window count is an annotation, not a row: it rides under the
+     placement picker rather than claiming a line of its own. */
+  .card.map .controls .tile-count {
+    align-self: flex-end;
   }
 
   /* A controls row whose only child is a list-row switch should let it span

@@ -56,16 +56,69 @@ pub fn settings_hwnd() -> Option<isize> {
 }
 
 #[cfg(windows)]
-fn note_settings_hwnd(_win: &tauri::WebviewWindow) {
-    // Deliberately does nothing (spec 2026-08-20). The settings window became
-    // a floating always-on-top minimap, so it must NOT be tiled: a map that
-    // occupies one of the cells it is describing is worse than no map. The
-    // registration point is kept so the carve-out can be restored by one
-    // line if the window ever goes back to being an ordinary page.
+fn note_settings_hwnd(win: &tauri::WebviewWindow) {
+    // Registering is unconditional; *eligibility* is the thing the user
+    // controls (spec 2026-08-20 addendum). The tracker pairs this hwnd with
+    // `AppConfig.manage_settings_window`, so the flag can be flipped at
+    // runtime and take effect on a resync rather than at the next launch.
+    // Registering only when the flag was on at open time would have made the
+    // toggle silently require a restart.
+    match win.hwnd() {
+        Ok(h) => SETTINGS_HWND.store(h.0 as isize, Ordering::SeqCst),
+        Err(e) => log::error!("settings window has no hwnd to register: {e}"),
+    }
 }
 
 #[cfg(not(windows))]
 fn note_settings_hwnd(_win: &tauri::WebviewWindow) {}
+
+// ---------------------------------------------------------------------------
+// Settings pop-out placement (spec 2026-08-20 addendum)
+// ---------------------------------------------------------------------------
+
+/// Where the pop-out currently sits, once anything has told us. Seeded from
+/// the config on first sync and thereafter updated by the window's own move
+/// events, so it is the live authority the way `snap_state_lock` is for the
+/// snap capture.
+fn settings_pos_lock() -> &'static Mutex<Option<crate::ipc::WindowPos>> {
+    static POS: OnceLock<Mutex<Option<crate::ipc::WindowPos>>> = OnceLock::new();
+    POS.get_or_init(|| Mutex::new(None))
+}
+
+/// The live pop-out position, or `None` while nothing has ever placed it.
+pub fn settings_pos() -> Option<crate::ipc::WindowPos> {
+    *settings_pos_lock().lock().unwrap_or_else(|p| p.into_inner())
+}
+
+/// Record a position. Returns `true` when it actually changed, so the caller
+/// can skip asking for a config write on the many no-op move events Windows
+/// sends (a show, a z-order change, a DPI re-scale at the same coordinates).
+fn note_settings_pos(pos: crate::ipc::WindowPos) -> bool {
+    let mut lock = settings_pos_lock().lock().unwrap_or_else(|p| p.into_inner());
+    if *lock == Some(pos) {
+        return false;
+    }
+    *lock = Some(pos);
+    true
+}
+
+/// Gap between the pop-out and the screen edges when it has no remembered
+/// position — enough to read as floating rather than stuck to the corner.
+const POPOUT_MARGIN: i32 = 24;
+
+/// Where a pop-out with no remembered position goes: the bottom-right of the
+/// primary monitor's work area, which is where its tray icon lives and where
+/// Windows itself puts transient panels (the calendar flyout, notifications).
+/// Dead centre — the previous behaviour — drops it over whatever the user was
+/// reading, which is the worst place for an always-on-top window.
+fn default_settings_pos(size: (i32, i32)) -> Option<crate::ipc::WindowPos> {
+    let mons = crate::monitors::enumerate();
+    let m = mons.iter().find(|m| m.primary).or_else(|| mons.first())?;
+    Some(crate::ipc::WindowPos {
+        x: m.work_x + m.work_width - size.0 - POPOUT_MARGIN,
+        y: m.work_y + m.work_height - size.1 - POPOUT_MARGIN,
+    })
+}
 
 /// Contract C1 default for `AppConfig.hotkey` (mirrors the brain's
 /// `DEFAULT_HOTKEY`). Registered at startup before any config is read.
@@ -438,23 +491,19 @@ pub fn open_settings(app: &AppHandle) -> tauri::Result<()> {
             .skip_taskbar(true)
             .shadow(true)
             .maximizable(false)
-            // Sized so the map fits unscrolled on a 16:9 display, measured
-            // rather than guessed: `GridEditor` is aspect-locked to the
-            // monitor at a fixed 632px width, which is ~348px of map for
-            // 16:9, and it begins ~352px down (brand row, tabs, card head,
-            // the two control rows), with the "drag tiles to rearrange" hint
-            // and 20px of page padding under it.
-            // At the old 560 the map — the one thing the tab exists to show
-            // — was precisely the part that got clipped.
+            // A narrow panel, not a page: the controls are stacked one per
+            // line and the map is 360px wide, which is ~198px of map on a
+            // 16:9 display. Sized so that stack fits unscrolled, erring tall
+            // on purpose - surplus height is invisible background, whereas
+            // being short clips the map, which is the whole point of the tab.
             //
             // Other aspect ratios still scroll, and that is the honest
             // trade: the alternative is making the editor responsive to its
             // container, which is a real change to a component that carries
             // an editor/desktop parity guarantee. Tracked in docs/deferred.md.
-            .inner_size(720.0, 750.0)
-            .min_inner_size(480.0, 420.0)
-            .always_on_top(true)
-            .center();
+            .inner_size(440.0, 700.0)
+            .min_inner_size(380.0, 420.0)
+            .always_on_top(true);
     // Must match the brain's args or WebView2 refuses the environment and
     // this build() fails after the native window is already on screen -
     // exactly the "frame flashed for a second" report.
@@ -463,6 +512,8 @@ pub fn open_settings(app: &AppHandle) -> tauri::Result<()> {
     }
     let win = builder.build()?;
     round_corners(&win);
+    place_settings(&win);
+    watch_settings_moves(&win);
     // Register the hwnd BEFORE the resync so the sweep's eligibility check
     // already knows this window is the sanctioned own-process exception; the
     // async SHOW WinEvent may race the registration, and the resync makes
@@ -470,6 +521,82 @@ pub fn open_settings(app: &AppHandle) -> tauri::Result<()> {
     note_settings_hwnd(&win);
     crate::tracker::resync();
     Ok(())
+}
+
+/// Put the pop-out where the user last left it, or by the tray on a first
+/// run. Failures here are cosmetic - the window is already on screen at
+/// whatever position the OS chose - so they log and move on rather than
+/// aborting an open the user asked for.
+fn place_settings(win: &tauri::WebviewWindow) {
+    let size = win
+        .outer_size()
+        .map(|s| (s.width as i32, s.height as i32))
+        .unwrap_or((440, 700));
+    let Some(pos) = settings_pos().or_else(|| default_settings_pos(size)) else {
+        return;
+    };
+    // Clamp into a monitor that actually exists: a remembered position from a
+    // display that has since been unplugged would otherwise put the pop-out
+    // somewhere unreachable, and it has no taskbar button to recover it with.
+    let pos = clamp_onto_a_monitor(pos, size);
+    if let Err(e) = win.set_position(tauri::PhysicalPosition::new(pos.x, pos.y)) {
+        log::warn!("settings pop-out: could not place at {},{} ({e})", pos.x, pos.y);
+        return;
+    }
+    note_settings_pos(pos);
+}
+
+/// Keep a top-left corner inside some monitor's work area. Picks the monitor
+/// the position is already on when there is one, else the primary.
+fn clamp_onto_a_monitor(
+    pos: crate::ipc::WindowPos,
+    size: (i32, i32),
+) -> crate::ipc::WindowPos {
+    let mons = crate::monitors::enumerate();
+    if mons.is_empty() {
+        return pos;
+    }
+    let contains = |m: &crate::ipc::MonitorInfo| {
+        pos.x >= m.work_x
+            && pos.x < m.work_x + m.work_width
+            && pos.y >= m.work_y
+            && pos.y < m.work_y + m.work_height
+    };
+    let Some(m) = mons
+        .iter()
+        .find(|m| contains(m))
+        .or_else(|| mons.iter().find(|m| m.primary))
+        .or_else(|| mons.first())
+    else {
+        return pos;
+    };
+    // `max` after `min` so a window taller than the work area still lands at
+    // the top-left corner rather than above it.
+    crate::ipc::WindowPos {
+        x: pos
+            .x
+            .min(m.work_x + m.work_width - size.0)
+            .max(m.work_x),
+        y: pos
+            .y
+            .min(m.work_y + m.work_height - size.1)
+            .max(m.work_y),
+    }
+}
+
+/// Remember where the user drags the pop-out. Rust owns this field, so the
+/// value only reaches disk when a config write happens - hence the event,
+/// which asks the brain host for one. Move events are noisy (a show, a
+/// z-order change, a DPI rescale all fire one), so only real changes emit.
+fn watch_settings_moves(win: &tauri::WebviewWindow) {
+    let handle = win.clone();
+    win.on_window_event(move |ev| {
+        if let tauri::WindowEvent::Moved(p) = ev {
+            if note_settings_pos(crate::ipc::WindowPos { x: p.x, y: p.y }) {
+                let _ = handle.emit(events::SETTINGS_WINDOW_MOVED, ());
+            }
+        }
+    });
 }
 
 /// Windows 11 rounds decorated windows for you and leaves undecorated ones
@@ -1123,6 +1250,17 @@ pub fn sync_from_config(app: &AppHandle, cfg: &AppConfig) {
     let capture = crate::snap::sync(cfg.suppress_windows_snap, cfg.windows_snap_original);
     *snap_state_lock().lock().unwrap_or_else(|p| p.into_inner()) =
         (cfg.suppress_windows_snap, capture);
+    // Seed the remembered pop-out position from disk, but never overwrite a
+    // live one: this runs on every config write, and the window's own move
+    // events are the fresher authority once it exists. Without the guard, a
+    // drag followed by any other config change would snap the value back to
+    // whatever was last persisted.
+    {
+        let mut lock = settings_pos_lock().lock().unwrap_or_else(|p| p.into_inner());
+        if lock.is_none() {
+            *lock = cfg.settings_window_pos;
+        }
+    }
 }
 
 /// The capture [`sync_from_config`] decided must be persisted — the config

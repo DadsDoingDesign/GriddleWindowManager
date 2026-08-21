@@ -378,6 +378,15 @@ export class WindowManagerBrain {
   private suppressWindowsSnap: boolean;
   /** Rust-authoritative capture; the brain only round-trips it. */
   private windowsSnapOriginal: import('./types').SnapState | null;
+  /** Spec 2026-08-20 addendum: tile the settings pop-out like any window. */
+  private manageSettingsWindow: boolean;
+  /**
+   * Where the user last left the pop-out. Rust-authoritative — the shell
+   * stamps it on move and the brain only round-trips it, exactly like
+   * `windowsSnapOriginal`. Dropping it here would silently forget the
+   * position on the next config write from any other cause.
+   */
+  private settingsWindowPos: import('./types').WindowPos | null;
 
   constructor(cb: BrainCallbacks, cfg?: AppConfig, opts?: { now?: () => number }) {
     this.cb = cb;
@@ -391,6 +400,8 @@ export class WindowManagerBrain {
     this.autoCheckUpdates = cfg?.autoCheckUpdates === true;
     this.suppressWindowsSnap = cfg?.suppressWindowsSnap === true;
     this.windowsSnapOriginal = cfg?.windowsSnapOriginal ?? null;
+    this.manageSettingsWindow = cfg?.manageSettingsWindow === true;
+    this.settingsWindowPos = cfg?.settingsWindowPos ?? null;
     // A pause that survived a restart (config `paused: true`) is already
     // running when the constructor returns — start its clock here so the
     // startup view's claim window is not eaten by it.
@@ -1748,7 +1759,7 @@ export class WindowManagerBrain {
     const layouts: Record<string, unknown> = { ...this.storedLayouts };
     for (const [id, mg] of this.grids) layouts[id] = mg.grid.toJSON();
     return {
-      version: 5,
+      version: 6,
       grids: [...this.gridSettings.values()].map((g) => ({ ...g })),
       templates: [...this.templates],
       exclusions: [...this.exclusions],
@@ -1762,6 +1773,8 @@ export class WindowManagerBrain {
       autoCheckUpdates: this.autoCheckUpdates,
       suppressWindowsSnap: this.suppressWindowsSnap,
       windowsSnapOriginal: this.windowsSnapOriginal,
+      manageSettingsWindow: this.manageSettingsWindow,
+      settingsWindowPos: this.settingsWindowPos,
     };
   }
 
@@ -1794,6 +1807,7 @@ export class WindowManagerBrain {
     hotkey?: string;
     autoCheckUpdates?: boolean;
     suppressWindowsSnap?: boolean;
+    manageSettingsWindow?: boolean;
   }): void {
     let changed = false;
     if (prefs.paused !== undefined && prefs.paused !== this.paused) {
@@ -1834,6 +1848,15 @@ export class WindowManagerBrain {
       this.suppressWindowsSnap = prefs.suppressWindowsSnap;
       // The OS side effect happens in Rust when the resulting config write
       // is synced (shell::sync_from_config); the brain only persists intent.
+      changed = true;
+    }
+    if (
+      prefs.manageSettingsWindow !== undefined &&
+      prefs.manageSettingsWindow !== this.manageSettingsWindow
+    ) {
+      this.manageSettingsWindow = prefs.manageSettingsWindow;
+      // Intent only. Rust reads the persisted flag when deciding whether the
+      // pop-out's own hwnd is eligible, and resyncs the tracker on write.
       changed = true;
     }
     if (

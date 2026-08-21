@@ -293,6 +293,29 @@ pub struct AppConfig {
     /// exactly while Griddle believes it has modified the OS.
     #[serde(default)]
     pub windows_snap_original: Option<SnapState>,
+    /// Let Griddle tile the settings pop-out like any other window
+    /// (spec 2026-08-20 addendum). **Off by default**, and that default is
+    /// the considered one: the pop-out is a *map* of the grid, and a map
+    /// that occupies one of the cells it describes is worse than no map.
+    /// It is a setting rather than a rule because the earlier field report
+    /// - "do not exclude any windows from the grid" - was also right, just
+    /// about a different window than this one became.
+    #[serde(default)]
+    pub manage_settings_window: bool,
+    /// Where the user last left the settings pop-out, in physical screen
+    /// pixels. `None` until they first move it, which is exactly what makes
+    /// the tray-corner default apply on a fresh install and never again.
+    #[serde(default)]
+    pub settings_window_pos: Option<WindowPos>,
+}
+
+/// A remembered top-left corner in physical screen pixels. Signed because a
+/// monitor left of or above the primary has negative virtual coordinates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowPos {
+    pub x: i32,
+    pub y: i32,
 }
 
 /// Captured pre-Griddle Windows snap settings (spec 2026-08-19 §3).
@@ -354,4 +377,9 @@ pub mod events {
     /// The host surfaces this on the overlay; before this event the failure
     /// was a release-build log line nobody reads.
     pub const WINDOW_UNMOVABLE: &str = "window-unmovable";
+    /// Spec 2026-08-20 addendum: the user dragged the settings pop-out. Rust
+    /// owns the coordinates and stamps them on the next write, so this event
+    /// carries no payload — it exists purely to ask the brain host for a
+    /// config write, which is what makes a drag survive a quit.
+    pub const SETTINGS_WINDOW_MOVED: &str = "settings-window-moved";
 }

@@ -263,10 +263,12 @@ export interface AppConfig {
   // time it is written.
   // v5 (spec 2026-08-19): adds `suppressWindowsSnap` (default false) +
   // `windowsSnapOriginal` (default null), the Windows-snap suppression pair.
+  // v6 (spec 2026-08-20 addendum): adds `manageSettingsWindow` (default
+  // false) + `settingsWindowPos` (default null), for the settings pop-out.
   // The loaders (persist.ts and the Rust mirror's serde defaults) migrate
   // older configs in place — defaults `appRules: [], views: [],
   // startupViewId: null, autoCheckUpdates: false`, spacing absent-means-0.
-  version: 5;
+  version: 6;
   grids: GridSettings[];
   templates: Template[];
   exclusions: string[]; // lowercase exe names
@@ -302,6 +304,25 @@ export interface AppConfig {
    * (`enforce_authoritative_fields`), so a webview can never forge it.
    */
   windowsSnapOriginal: SnapState | null;
+  /**
+   * Let Griddle tile the settings pop-out like any other window. Off by
+   * default: the pop-out is a *map* of the grid, and a map that occupies one
+   * of the cells it describes is worse than no map. Stored here so the Rust
+   * tracker can consult it when deciding own-process eligibility.
+   */
+  manageSettingsWindow: boolean;
+  /**
+   * Where the user last left the settings pop-out, in physical screen
+   * pixels, or `null` while they have never moved it — which is what keeps
+   * the tray-corner default applying on a fresh install and never after.
+   */
+  settingsWindowPos: WindowPos | null;
+}
+
+/** A remembered top-left corner in physical screen pixels. */
+export interface WindowPos {
+  x: number;
+  y: number;
 }
 
 /** Captured pre-Griddle Windows snap settings (spec 2026-08-19 §3). */

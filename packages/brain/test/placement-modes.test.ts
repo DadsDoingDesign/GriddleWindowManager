@@ -6,7 +6,12 @@
 
 import { describe, expect, it } from 'vitest';
 import { WindowManagerBrain } from '../src/brain';
-import { defaultConfig, normalizePlacementMode, sanitizeConfig } from '../src/persist';
+import {
+  CONFIG_VERSION,
+  defaultConfig,
+  normalizePlacementMode,
+  sanitizeConfig,
+} from '../src/persist';
 import type {
   AppConfig,
   ApplyLayout,
@@ -235,7 +240,7 @@ describe('placement mode migration (config v4)', () => {
 
     const cfg = sanitizeConfig(v3);
     expect(cfg).not.toBeNull();
-    expect(cfg!.version).toBe(5);
+    expect(cfg!.version).toBe(CONFIG_VERSION);
 
     // The one thing that changes is the spelling of the modes — and the
     // behavior each spelling stood for is preserved exactly.
@@ -289,7 +294,7 @@ describe('placement mode migration (config v4)', () => {
   });
 
   it('defaultConfig is v4', () => {
-    expect(defaultConfig().version).toBe(5);
+    expect(defaultConfig().version).toBe(CONFIG_VERSION);
   });
 });
 

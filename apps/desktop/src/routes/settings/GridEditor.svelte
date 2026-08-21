@@ -46,7 +46,11 @@
   // (spec v0.2 §1 editor parity). Reading props once at init is on purpose:
   // the parent keys this component on gridId/cols/rows/mode/gap/padding, so
   // any config change remounts it.
-  const EDITOR_W = 632;
+  // Sized for the settings pop-out, which is a narrow panel rather than a
+  // page. 632 was the full-width page figure and made the map the tallest
+  // thing in the window by a wide margin; 360 keeps it clearly readable as a
+  // map of the display while leaving room for the controls stacked beneath.
+  const EDITOR_W = 360;
   /* svelte-ignore state_referenced_locally */
   const layout = (() => {
     const eff = effectiveSpacing(monitor, { cols, rows, gap, padding });
@@ -281,7 +285,18 @@
   }
 </script>
 
-<div class="editor" style:width="{EDITOR_W}px">
+<!-- Height is pinned here, not left to the layout. `scroll: 'none'` is what
+     stops GriddleGrid drawing scrollbars over the map, but it also switches
+     the grid's own height to `auto` — so the `height` prop below no longer
+     sizes anything, absolutely-positioned tiles contribute nothing, and the
+     box was free to be stretched by the surrounding flex column. That made
+     the map's aspect ratio a function of the window's height instead of the
+     monitor's, which is precisely what a minimap must not be. -->
+<div
+  class="editor"
+  style:width="{EDITOR_W}px"
+  style:height="{layout.height + layout.padY * 2}px"
+>
   <!-- Scaled padding inset: the well showing through here is the same strip
        of desktop the real padding leaves free. -->
   <div class="pad" style:padding="{layout.padY}px {layout.padX}px">
@@ -331,6 +346,10 @@
     border-radius: 10px;
     background: var(--well);
     overflow: hidden;
+    /* Never absorb slack from the flex column that holds it — see the
+       comment on the element: the monitor decides this box's shape. */
+    flex: 0 0 auto;
+    box-sizing: border-box;
   }
 
   /* Dark-theme overrides for the GriddleGrid internals. */

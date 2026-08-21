@@ -29,6 +29,7 @@
 
 use crate::ipc::{Hwnd, WindowInfo};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 /// Win32 style bits used by the eligibility filter, mirrored as plain `u32`
@@ -179,6 +180,31 @@ pub fn exclusions() -> Vec<String> {
         .lock()
         .unwrap_or_else(|p| p.into_inner())
         .clone()
+}
+
+/// Whether the settings pop-out is eligible for tiling like any other window
+/// (`AppConfig.manage_settings_window`, spec 2026-08-20 addendum). Mirrored
+/// out of the config so the hot WinEvent path can read it without touching
+/// disk, exactly like the exclusion list.
+static MANAGE_SETTINGS: AtomicBool = AtomicBool::new(false);
+
+/// Mirror the config flag. Returns `true` when the value actually changed —
+/// the caller then owes a [`resync`], so flipping the toggle takes effect on
+/// the live window rather than at the next restart.
+pub fn set_manage_settings_window(on: bool) -> bool {
+    MANAGE_SETTINGS.swap(on, Ordering::SeqCst) != on
+}
+
+/// Is the settings pop-out currently opted in to being tiled?
+pub fn manage_settings_window() -> bool {
+    MANAGE_SETTINGS.load(Ordering::SeqCst)
+}
+
+/// The one own-process window Griddle may manage, and only while the user has
+/// opted in. Everything else of ours - the brain, the overlays - stays out of
+/// the managed set unconditionally.
+fn own_window_is_managed(hwnd: isize) -> bool {
+    manage_settings_window() && crate::shell::settings_hwnd() == Some(hwnd)
 }
 
 /// Actuation-time identity check (security review, "handle reuse"): does a
@@ -496,7 +522,7 @@ mod win {
             &probe,
             unsafe { GetCurrentProcessId() },
             &exclusions(),
-            crate::shell::settings_hwnd() == Some(key),
+            super::own_window_is_managed(key),
         )
     }
 
@@ -711,7 +737,7 @@ mod win {
         let own_pid = GetCurrentProcessId();
         crate::ffi_guard::guard("EnumWindows callback", BOOL(1), move || {
             if let Some(probe) = probe_window(hwnd) {
-                let allowed_own = crate::shell::settings_hwnd() == Some(hwnd.0 as isize);
+                let allowed_own = super::own_window_is_managed(hwnd.0 as isize);
                 if is_eligible_probe(&probe, own_pid, &exclusions(), allowed_own) {
                     if let Some(info) = window_info(hwnd, &probe) {
                         out.push(info);
@@ -815,16 +841,15 @@ mod win {
         if hwnd.is_invalid() || id_object != OBJID_WINDOW.0 || id_child != 0 {
             return;
         }
-        // Own-process events flow now (the hook no longer sets
-        // SKIPOWNPROCESS so the managed Settings window is visible), which
-        // makes every overlay fade and brain repaint a callback. Drop all of
-        // ours except Settings before any real work happens.
+        // Own-process events flow (the hook does not set SKIPOWNPROCESS, so
+        // an opted-in Settings window is visible), which makes every overlay
+        // fade and brain repaint a callback. Drop all of ours before any real
+        // work happens - including Settings unless the user opted it in, so
+        // the default path costs exactly what SKIPOWNPROCESS would.
         {
             let mut pid: u32 = 0;
             let _ = GetWindowThreadProcessId(hwnd, Some(&mut pid));
-            if pid == GetCurrentProcessId()
-                && crate::shell::settings_hwnd() != Some(hwnd.0 as isize)
-            {
+            if pid == GetCurrentProcessId() && !super::own_window_is_managed(hwnd.0 as isize) {
                 return;
             }
         }
@@ -872,7 +897,7 @@ mod win {
         let Some(probe) = probe_window(hwnd) else {
             return;
         };
-        let allowed_own = crate::shell::settings_hwnd() == Some(key);
+        let allowed_own = super::own_window_is_managed(key);
         if !is_eligible_probe(
             &probe,
             unsafe { GetCurrentProcessId() },

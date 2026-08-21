@@ -10,7 +10,13 @@
 import { describe, expect, it } from 'vitest';
 import { CLAIM_WINDOW_MS, WindowManagerBrain } from '../src/brain';
 import { cellRect, MAX_SPACING_PX } from '../src/coords';
-import { defaultConfig, parseConfig, sanitizeConfig, serializeConfig } from '../src/persist';
+import {
+  CONFIG_VERSION,
+  defaultConfig,
+  parseConfig,
+  sanitizeConfig,
+  serializeConfig,
+} from '../src/persist';
 import type {
   AppConfig,
   ApplyLayout,
@@ -472,7 +478,7 @@ describe('AppConfig v2 migration (spec v0.2 §4)', () => {
       paused: false,
     });
     expect(cfg).not.toBeNull();
-    expect(cfg!.version).toBe(5);
+    expect(cfg!.version).toBe(CONFIG_VERSION);
     expect(cfg!.appRules).toEqual([]);
     expect(cfg!.views).toEqual([]);
     expect(cfg!.startupViewId).toBeNull();
@@ -485,12 +491,12 @@ describe('AppConfig v2 migration (spec v0.2 §4)', () => {
   });
 
   it('rejects unknown future versions (host quarantines as .bak)', () => {
-    expect(sanitizeConfig({ ...defaultConfig(), version: 6 })).toBeNull();
+    expect(sanitizeConfig({ ...defaultConfig(), version: CONFIG_VERSION + 1 })).toBeNull();
   });
 
   it('defaultConfig is current and round-trips', () => {
     const cfg = defaultConfig();
-    expect(cfg.version).toBe(5);
+    expect(cfg.version).toBe(CONFIG_VERSION);
     expect(cfg.views).toEqual([]);
     expect(cfg.startupViewId).toBeNull();
     expect(parseConfig(serializeConfig(cfg))).toEqual(cfg);

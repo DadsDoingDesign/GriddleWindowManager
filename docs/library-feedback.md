@@ -218,3 +218,16 @@ export. Verified against `node_modules/@griddle/core/dist/*.d.ts` and
   thing a host opts into. If containment must stay the default for
   compatibility, the type should make `scroll` required rather than optional
   so the choice is at least deliberate at the call site.
+
+  **Follow-up, same day:** taking `scroll: 'none'` also takes the `height`
+  prop with it. `GriddleGrid` applies `style:height={contained ? heightCss :
+  'auto'}`, so an uncontained grid ignores the `height` it was passed, and
+  because its tiles are absolutely positioned it then has no content height
+  either. In a flex column that box is free to be stretched — which made the
+  editor's aspect ratio a function of the window's height rather than the
+  monitor's, the one thing a minimap must never be. Worked around by pinning
+  the height on our own wrapper with `flex: 0 0 auto`.
+
+  Suggested fix: honour `height` in both modes. Containment is about who owns
+  the scrolling; it should not also decide whether an explicit height means
+  anything.
