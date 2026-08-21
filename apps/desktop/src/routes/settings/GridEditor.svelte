@@ -78,6 +78,13 @@
       enablePositioning: true,
       pinUnits: 'cells',
       tileRadius: 6,
+      // Must be explicit. GriddleGrid decides containment with
+      // `contained = cfg.scroll !== 'none'`, so *omitting* scroll makes
+      // `undefined !== 'none'` true and the grid quietly wraps itself in an
+      // `overflow: auto` box. The editor is sized to the exact pixel from
+      // the monitor's aspect ratio and `.editor` already clips, so that box
+      // only ever contributed a pair of scrollbars over the map.
+      scroll: 'none',
     },
   });
   onDestroy(() => api.destroy());

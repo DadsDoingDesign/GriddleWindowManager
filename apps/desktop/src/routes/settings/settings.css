@@ -27,6 +27,29 @@ body {
   background: var(--bg);
 }
 
+/*
+ * The pop-out is undecorated (shell.rs), so the page itself has to draw the
+ * frame the title bar used to. DWM rounds the native window; matching that
+ * radius here keeps the background from painting square corners inside the
+ * rounded mask, which is what makes an undecorated window look broken.
+ * The hairline is what separates a floating panel from the wallpaper behind
+ * it — without it an always-on-top window with no border reads as a hole.
+ *
+ * Radius is applied to html as well as body: body alone leaves html's
+ * background painting the corners.
+ */
+html,
+body {
+  height: 100%;
+  border-radius: 9px;
+  overflow: hidden;
+}
+
+body {
+  border: 1px solid var(--border);
+  box-sizing: border-box;
+}
+
 * {
   -webkit-user-select: none;
   user-select: none;

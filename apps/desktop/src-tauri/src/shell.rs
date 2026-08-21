@@ -425,11 +425,33 @@ pub fn open_settings(app: &AppHandle) -> tauri::Result<()> {
     let mut builder =
         WebviewWindowBuilder::new(app, SETTINGS_LABEL, WebviewUrl::App("/settings".into()))
             .title("Griddle Window Manager Settings")
-            // A small floating map of the displays rather than a page
-            // (spec 2026-08-20): always-on-top so it stays visible while you
-            // drag windows toward it, and dismissed with the hide control
-            // rather than by burying it.
-            .inner_size(720.0, 560.0)
+            // A pop-out, not an application window (spec 2026-08-20). Making
+            // it small and always-on-top was not enough: the native title bar
+            // and the taskbar button are what still made it read as "just
+            // another window". Both go. The slim brand row becomes the drag
+            // handle, and the chevron in the tab bar dismisses to the tray.
+            //
+            // `maximizable(false)` matters more than it looks: Tauri's drag
+            // regions maximize on double-click, and a maximized minimap is a
+            // contradiction — it would cover the very desktop it maps.
+            .decorations(false)
+            .skip_taskbar(true)
+            .shadow(true)
+            .maximizable(false)
+            // Sized so the map fits unscrolled on a 16:9 display, measured
+            // rather than guessed: `GridEditor` is aspect-locked to the
+            // monitor at a fixed 632px width, which is ~348px of map for
+            // 16:9, and it begins ~352px down (brand row, tabs, card head,
+            // the two control rows), with the "drag tiles to rearrange" hint
+            // and 20px of page padding under it.
+            // At the old 560 the map — the one thing the tab exists to show
+            // — was precisely the part that got clipped.
+            //
+            // Other aspect ratios still scroll, and that is the honest
+            // trade: the alternative is making the editor responsive to its
+            // container, which is a real change to a component that carries
+            // an editor/desktop parity guarantee. Tracked in docs/deferred.md.
+            .inner_size(720.0, 750.0)
             .min_inner_size(480.0, 420.0)
             .always_on_top(true)
             .center();
@@ -440,6 +462,7 @@ pub fn open_settings(app: &AppHandle) -> tauri::Result<()> {
         builder = builder.additional_browser_args(&args);
     }
     let win = builder.build()?;
+    round_corners(&win);
     // Register the hwnd BEFORE the resync so the sweep's eligibility check
     // already knows this window is the sanctioned own-process exception; the
     // async SHOW WinEvent may race the registration, and the resync makes
@@ -448,6 +471,48 @@ pub fn open_settings(app: &AppHandle) -> tauri::Result<()> {
     crate::tracker::resync();
     Ok(())
 }
+
+/// Windows 11 rounds decorated windows for you and leaves undecorated ones
+/// square. A square-cornered pop-out reads as a panel whose frame failed to
+/// draw, so ask DWM for the rounding the title bar would have given us.
+///
+/// Best-effort by design: on Windows 10 the attribute is simply unknown and
+/// DWM says so. Square corners there are cosmetic, not a failure worth
+/// surfacing to the user or refusing to open the window over.
+#[cfg(windows)]
+fn round_corners(win: &tauri::WebviewWindow) {
+    use std::ffi::c_void;
+    use std::mem::size_of_val;
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::Graphics::Dwm::{
+        DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
+    };
+
+    // Tauri re-exports its own `windows` version, so its HWND is a distinct
+    // type from ours even though both are the same pointer underneath.
+    let hwnd = match win.hwnd() {
+        Ok(h) => h,
+        Err(e) => {
+            log::debug!("settings pop-out: no hwnd to round ({e})");
+            return;
+        }
+    };
+    let pref = DWMWCP_ROUND;
+    let res = unsafe {
+        DwmSetWindowAttribute(
+            HWND(hwnd.0 as _),
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            &pref as *const _ as *const c_void,
+            size_of_val(&pref) as u32,
+        )
+    };
+    if let Err(e) = res {
+        log::debug!("settings pop-out: DWM declined rounded corners ({e})");
+    }
+}
+
+#[cfg(not(windows))]
+fn round_corners(_win: &tauri::WebviewWindow) {}
 
 /// Surface an existing settings window, failing loudly if it is a corpse.
 /// `is_visible` is the probe that matters: it round-trips to the real HWND,

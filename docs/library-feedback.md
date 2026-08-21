@@ -195,3 +195,26 @@ export. Verified against `node_modules/@griddle/core/dist/*.d.ts` and
 - Not a gap, just a note: `isInFlow(tile)` is exactly the predicate the brain
   needed to decide which tiles a solve may move, and it being exported saved us
   from re-deriving the `absolute`/`fixed`/`sticky` rules. Keep it public.
+
+## Minimap pop-out findings (2026-08-20)
+
+- **`GridConfig.scroll` fails open, not closed.** `GriddleGrid.svelte` decides
+  containment with `contained = cfg.scroll !== 'none'`. Because an omitted
+  `scroll` is `undefined`, and `undefined !== 'none'`, leaving the option out
+  silently opts the grid *into* an `overflow: auto` scroll box with
+  `touch-action: none` and a fixed `height`. The library's own comment two
+  lines above frames `'none'` as the mode where "the grid sizes to content and
+  lets the host page own scrolling", which reads like the neutral default —
+  but you only get it by asking for it by name.
+
+  This cost us a visible defect: the settings grid editor sizes itself to the
+  exact pixel from the monitor's aspect ratio and clips at its own border, so
+  the inherited scroll box contributed nothing but a pair of Chromium
+  scrollbars drawn over the map. Fixed app-side in `GridEditor.svelte` by
+  passing `scroll: 'none'` explicitly.
+
+  Suggested library fix: default the field (`cfg.scroll ?? 'none'`) so the
+  neutral behaviour is what you get by not choosing, and make containment the
+  thing a host opts into. If containment must stay the default for
+  compatibility, the type should make `scroll` required rather than optional
+  so the choice is at least deliberate at the call site.

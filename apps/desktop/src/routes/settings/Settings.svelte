@@ -904,6 +904,20 @@
   </svg>
 {/snippet}
 
+<!-- Esc dismisses the pop-out. With no title bar there is no X, and the
+     window is not in the taskbar either, so the keyboard needs the same one
+     press out that the chevron gives the mouse. Guarded on the first run,
+     where the welcome screen is a step to finish rather than a panel to
+     flick away, and on text fields, where Esc means "cancel this edit". -->
+<svelte:window
+  onkeydown={(e) => {
+    if (e.key !== 'Escape' || firstRun) return;
+    const el = e.target as HTMLElement | null;
+    if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+    void hideSettings();
+  }}
+/>
+
 <div class="page">
   {#if firstRun}
     <header>
@@ -1016,14 +1030,23 @@
       </p>
     </section>
   {:else}
-  <!-- Compact in the pop-out (spec 2026-08-20, stage 3): the title bar
-       already names the app, so the brand row keeps the mark and the version
-       and gives the rest of its height to the map. -->
-  <header class="slim">
-    <div class="brand">
+  <!-- Compact in the pop-out (spec 2026-08-20, stage 3): the brand row keeps
+       the mark and the version and gives the rest of its height to the map.
+       It is also the *only* way to move the window — the pop-out is
+       undecorated, so this row stands in for the title bar and carries
+       `data-tauri-drag-region`. The attribute has to be on each element the
+       pointer can actually land on: Tauri tests the event target, not its
+       ancestors, so a bare child would be a dead patch in the drag handle.
+       The pause switch deliberately lacks it — dragging off a toggle would
+       eat the click. -->
+  <header class="slim" data-tauri-drag-region>
+    <div class="brand" data-tauri-drag-region>
       {@render brandMark()}
-      <div>
-        <h1>Griddle{#if appVersion}<span class="version">{appVersion}</span>{/if}</h1>
+      <div data-tauri-drag-region>
+        <h1 data-tauri-drag-region>
+          Griddle{#if appVersion}<span class="version" data-tauri-drag-region>{appVersion}</span
+            >{/if}
+        </h1>
       </div>
     </div>
     <!-- Pause is the panic button (spec §6) — it lives where a stressed
@@ -2279,13 +2302,30 @@
     line-height: 1;
   }
 
+  /*
+   * `body` is clipped to the rounded frame (settings.css), so the scroll has
+   * to live one level in or the content would be cut off at the fold instead
+   * of scrolling. `.page` is that scroller: it fills the pop-out exactly and
+   * overflows internally, which also keeps the scrollbar inside the rounded
+   * corners rather than riding over them.
+   */
   .page {
     max-width: 720px;
     margin: 0 auto;
-    padding: 28px 24px 48px;
+    padding: 14px 16px 20px;
     display: flex;
     flex-direction: column;
     gap: 16px;
+    height: 100%;
+    box-sizing: border-box;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  /* The mark is part of the drag handle, not a target in it: let the pointer
+     fall through to the row that carries `data-tauri-drag-region`. */
+  header.slim .brandmark {
+    pointer-events: none;
   }
 
   header {

@@ -68,6 +68,38 @@ mode, not a tab.
 Default ~720×560, minimum ~480×420, resizable. **Floating, not tiled**
 (user decision): always-on-top, and Griddle no longer manages it.
 
+**A pop-out is chrome, not dimensions.** The first pass read "small floating
+pop-out" as a size plus an always-on-top flag, shipped exactly that, and the
+user's verdict was immediate: *"its still a window for me... but the tabs are
+there!"* Small and on top is still an application window while it keeps a
+native title bar and a taskbar button. What actually makes it a pop-out:
+
+- `decorations(false)` — no OS title bar. The slim brand row takes over as
+  the drag handle via `data-tauri-drag-region`, which must be set on every
+  element the pointer can land on (Tauri tests the event target, not its
+  ancestors) and deliberately *not* on the pause switch.
+- `skip_taskbar(true)` — it lives in the tray, so it should not also hold a
+  taskbar slot as if it were an app you alt-tab between.
+- `maximizable(false)` — Tauri drag regions maximize on double-click, and a
+  maximized minimap covers the desktop it is a map of.
+- Rounded corners via `DWMWA_WINDOW_CORNER_PREFERENCE`, matched by a radius
+  on `html`/`body`. Windows 11 rounds decorated windows and leaves
+  undecorated ones square; without both halves the page paints square
+  corners inside a rounded mask and the window looks like it failed to draw.
+  On Windows 10 the attribute is unknown and square corners are the fallback.
+- A hairline border, because an always-on-top panel with no frame against a
+  dark desktop reads as a hole rather than a window.
+
+Removing the title bar removes the X, and leaving the taskbar removes the
+right-click close, so **Esc dismisses** — the keyboard's equivalent of the
+chevron. It is suppressed on the first-run welcome (a step to finish, not a
+panel to flick away) and inside text fields (where Esc means "cancel this
+edit").
+
+Clipping `body` to the rounded frame moves the scroll one level in: `.page`
+becomes the scroller, which also keeps the scrollbar inside the rounded
+corners instead of riding over them.
+
 A **hide control** sits in the tab bar (a chevron-down icon, right-aligned
 beside the ⚙ tab) that returns the pop-out to the tray. It hides rather than
 closes, so reopening via the tray, the hotkey or a second launch restores the

@@ -357,3 +357,20 @@ styled by. A split must also move the shared rules into `settings.css`
 (currently tokens only) and leave component-local rules behind, verifying
 each surface visually. Mechanical, wide, zero user-visible benefit — do it
 deliberately, with screenshots before and after, not alongside feature work.
+
+## GridEditor is aspect-locked, not responsive (2026-08-20)
+
+`GridEditor.svelte` computes its layout once at init from a hardcoded
+`EDITOR_W = 632`, mirroring the monitor's aspect ratio. The settings pop-out's
+default height is therefore tuned to the map a 16:9 display produces (~348px).
+Displays with other aspect ratios, or a taller taskbar, make the map taller
+than the default window and the page scrolls — correct, but not tidy, and the
+window is resizable so the user can fix it.
+
+The real fix is making the editor size to its container (measure the width,
+cap by available height, preserve aspect) instead of a constant. It was not
+done here because the component carries an editor/desktop parity guarantee —
+"what the editor shows is exactly what the desktop gets" — and it deliberately
+reads props once at init, with the parent remounting it on config change.
+Making it responsive means reworking that contract, which deserves its own
+pass with parity tests rather than a size tweak mid-session.
