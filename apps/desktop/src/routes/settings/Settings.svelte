@@ -1016,15 +1016,14 @@
       </p>
     </section>
   {:else}
-  <header>
+  <!-- Compact in the pop-out (spec 2026-08-20, stage 3): the title bar
+       already names the app, so the brand row keeps the mark and the version
+       and gives the rest of its height to the map. -->
+  <header class="slim">
     <div class="brand">
       {@render brandMark()}
       <div>
-        <h1>Griddle Window Manager</h1>
-        <p class="tagline">
-          Window grids for your desktop{#if appVersion}
-            <span class="version">{appVersion}</span>{/if}
-        </p>
+        <h1>Griddle{#if appVersion}<span class="version">{appVersion}</span>{/if}</h1>
       </div>
     </div>
     <!-- Pause is the panic button (spec §6) — it lives where a stressed
@@ -1175,15 +1174,17 @@
     {@const dims = dimsFor(mon)}
     {@const spacing = spacingView(mon, grid)}
     {@const tiles = (grid && snapshot?.tiles[grid.id]) || []}
-    <section class="card">
-      <div class="card-head">
+    <section class="card map">
+      <div class="card-head compact">
         <div class="mon-info">
-          <h2>{monName(mon)}</h2>
-          <p class="meta">
-            {mon.width}×{mon.height} · {dpiScale(mon)}%
+          <h2 class="one-line">
+            <span class="mon-name">{monName(mon)}</span>
+            <span class="meta-inline">
+              {mon.width}×{mon.height} · {dpiScale(mon)}%
+            </span>
             {#if mon.primary}<span class="badge">Primary</span>{/if}
             {#if spanned}<span class="badge">Spanned</span>{/if}
-          </p>
+          </h2>
         </div>
         <label class="switch row">
           <input
@@ -1253,7 +1254,7 @@
           >
         </div>
         {#if enabled && grid}
-          <label class="picker">
+          <label class="picker" title={modeHint(grid.mode)}>
             <span class="lbl">Placement</span>
             <select
               value={grid.mode}
@@ -1343,20 +1344,16 @@
           >
         </div>
       </div>
-      {#if !spanned}
-        <!-- The definitions used to live only in title tooltips on the two
-             labels — undiscoverable, and nothing at all for keyboard and
-             touch. Grid mode gets a visible hint; spacing needs one too. -->
+      <!-- The gap/padding and placement explanations used to occupy four
+           lines above the editor. In a minimap the editor is the point, so
+           they became the controls' own tooltips — except a *coerced* gap,
+           which is the app overriding you and still says so out loud. -->
+      {#if !spanned && spacing.coerced}
         <p class="hint" class:dimmed={!enabled}>
-          Gap spaces neighboring windows apart; padding insets the whole grid
-          from the monitor edges.{#if spacing.coerced}
-            This grid's cells are too small for a {spacing.gap}px gap, so it is
-            capped at {cappedGap(spacing)} — the editor below and your desktop
-            both show the capped value.{/if}
+          This grid's cells are too small for a {spacing.gap}px gap, so it is
+          capped at {cappedGap(spacing)} — the editor and your desktop both
+          show the capped value.
         </p>
-      {/if}
-      {#if enabled && grid && !spanned}
-        <p class="hint">{modeHint(grid.mode)}</p>
       {/if}
 
       {#if enabled && grid}
@@ -1373,18 +1370,23 @@
             {appRules}
           />
         {/key}
-        <p class="hint">
-          Drag tiles to rearrange the real windows. Right-click a tile to make
-          its spot the default for that app.
+        <p class="hint tiny">
+          Drag tiles to rearrange the real windows · right-click a tile to make
+          its spot that app's default
         </p>
-        <TemplateGallery
-          gridId={grid.id}
-          templates={snapshot?.templates ?? []}
-          activeTemplateId={grid.activeTemplateId}
-          tileCount={tiles.length}
-          gridCols={grid.cols}
-          gridRows={grid.rows}
-        />
+        <!-- Templates are an occasional action, not part of the map: folded
+             away so the editor keeps the height. -->
+        <details class="fold">
+          <summary>Templates</summary>
+          <TemplateGallery
+            gridId={grid.id}
+            templates={snapshot?.templates ?? []}
+            activeTemplateId={grid.activeTemplateId}
+            tileCount={tiles.length}
+            gridCols={grid.cols}
+            gridRows={grid.rows}
+          />
+        </details>
       {/if}
     </section>
   {/each}
@@ -2121,6 +2123,98 @@
 </div>
 
 <style>
+  /* Minimap layout (spec 2026-08-20, stage 3). The display tab is a map
+     first: a single-line header, one wrapping row of controls, and the grid
+     editor taking every pixel that is left. Everything that used to explain
+     itself in a paragraph above the editor now lives in a tooltip on the
+     control it describes. */
+  .card.map {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .card-head.compact {
+    align-items: center;
+    padding-bottom: 2px;
+  }
+
+  .card-head.compact h2.one-line {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: nowrap;
+    min-width: 0;
+    font-size: 15px;
+  }
+
+  .card-head.compact .mon-name {
+    white-space: nowrap;
+  }
+
+  .card-head.compact .badge {
+    flex: 0 0 auto;
+  }
+
+  /* Slim brand row: mark + version only. */
+  header.slim {
+    padding-bottom: 4px;
+  }
+
+  header.slim h1 {
+    font-size: 17px;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+
+  .meta-inline {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-dim);
+    white-space: nowrap;
+  }
+
+  .hint.tiny {
+    font-size: 11.5px;
+    margin: 2px 0 0;
+  }
+
+  /* Folded sections (templates): present, out of the way, and obviously
+     openable — a disclosure triangle beats a wall of cards in a small map. */
+  .fold {
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
+  }
+
+  .fold > summary {
+    cursor: pointer;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-dim);
+    list-style: none;
+    user-select: none;
+  }
+
+  .fold > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .fold > summary::before {
+    content: 'b8';
+    display: inline-block;
+    margin-right: 6px;
+    transition: transform 0.12s ease;
+  }
+
+  .fold[open] > summary::before {
+    transform: rotate(90deg);
+  }
+
+  .fold > summary:hover {
+    color: var(--text-strong);
+  }
+
   /* Tab bar (spec 2026-08-20). Sticky so the map's chrome stays put while a
      tab's own content scrolls, and the hide control is pushed to the far
      right where a window's dismiss affordance is expected. */
