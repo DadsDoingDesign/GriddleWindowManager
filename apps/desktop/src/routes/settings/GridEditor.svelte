@@ -109,7 +109,10 @@
       // presentation stays presentation, geometry stays geometry.
     },
   });
-  onDestroy(() => api.destroy());
+  onDestroy(() => {
+    stopWatchingSnaps();
+    api.destroy();
+  });
 
   const infoByHwnd = $derived(new Map(tiles.map((t) => [t.hwnd, t])));
 
@@ -208,6 +211,11 @@
   // Snapshot updates arriving mid-gesture are deferred so they don't yank
   // the tile out from under the cursor.
   let editorEl: HTMLDivElement | undefined = $state();
+
+  /** How long the resize snap flash lasts. */
+  const SNAP_MS = 190;
+  let snapObs: ResizeObserver | null = null;
+  let snapTimer: ReturnType<typeof setTimeout> | null = null;
   let interacting = false;
   let pending: TileSnapshot[] | null = null;
 
@@ -228,6 +236,72 @@
 
   function beginInteraction(): void {
     interacting = true;
+  }
+
+  /**
+   * Flash a tile every time a resize snaps to a different number of cells.
+   *
+   * The preview is already quantised — the tile jumps a whole cell at a time
+   * — but with nothing marking the jump it is hard to tell whether the drag
+   * is yet big enough for the next column, which is the one thing you want to
+   * know while resizing. The flash is that confirmation, and it leans one way
+   * for growing and the other for shrinking.
+   *
+   * The grid only dispatches `resizeStart`/`resizeEnd`, never a per-step
+   * event, so the snap is read off the tile's own box instead: it changes size
+   * only when the preview crosses a threshold, which makes every change a
+   * snap by definition and needs nothing from the library.
+   */
+  function watchSnaps(tileId: string): void {
+    stopWatchingSnaps();
+    if (!editorEl) return;
+    const wrapper = editorEl.querySelector<HTMLElement>(
+      `[data-griddle-tile="${CSS.escape(tileId)}"]`,
+    );
+    const node = wrapper?.querySelector<HTMLElement>('.wtile') ?? wrapper;
+    if (!wrapper || !node) return;
+    let prev: { w: number; h: number } | null = null;
+    snapObs = new ResizeObserver((entries) => {
+      const r = entries[0]?.contentRect;
+      if (!r) return;
+      const next = { w: Math.round(r.width), h: Math.round(r.height) };
+      // The first callback is the initial size, not a snap.
+      if (prev && (next.w !== prev.w || next.h !== prev.h)) {
+        flashSnap(node, next.w * next.h > prev.w * prev.h);
+      }
+      prev = next;
+    });
+    snapObs.observe(wrapper);
+  }
+
+  function stopWatchingSnaps(): void {
+    snapObs?.disconnect();
+    snapObs = null;
+    if (snapTimer !== null) {
+      clearTimeout(snapTimer);
+      snapTimer = null;
+    }
+  }
+
+  function flashSnap(node: HTMLElement, grew: boolean): void {
+    node.classList.remove('snap-grow', 'snap-shrink');
+    void node.offsetWidth; // restart the animation when snaps come quickly
+    node.classList.add(grew ? 'snap-grow' : 'snap-shrink');
+    if (snapTimer !== null) clearTimeout(snapTimer);
+    snapTimer = setTimeout(() => {
+      node.classList.remove('snap-grow', 'snap-shrink');
+      snapTimer = null;
+    }, SNAP_MS);
+  }
+
+  function beginResize(e: CustomEvent<{ tileId: string }>): void {
+    interacting = true;
+    watchSnaps(e.detail.tileId);
+  }
+
+  function endResize(e: CustomEvent<{ tileId: string; committed: boolean }>): void {
+    stopWatchingSnaps();
+    endInteraction(e);
   }
 
   /**
@@ -408,8 +482,8 @@
       showGrid={true}
       on:dragStart={beginInteraction}
       on:dragEnd={endInteraction}
-      on:resizeStart={beginInteraction}
-      on:resizeEnd={endInteraction}
+      on:resizeStart={beginResize}
+      on:resizeEnd={endResize}
     >
       <div
         slot="tile"
@@ -453,11 +527,21 @@
     flex: 0 0 auto;
   }
 
-  /* The grid is a contained scroll box (see the `scroll` note in the config)
-     and overflows its own height by a pixel or two, which drew scrollbars
-     across the map. `.editor` already clips to the exact aspect-correct
-     rect, so the bars have nothing to reveal — hide them without touching
-     the layout mode that positions the tiles. */
+  /*
+   * The map is a fixed viewport onto the grid, so its scroll box must not
+   * scroll. `gridContentSize` deliberately pads the canvas two cells past the
+   * furthest tile (`t.row + t.h + 2`) as growth headroom, which on a
+   * fixed-size map is just empty space below the real grid — and hiding the
+   * scrollbars left it reachable by wheel, so the minimap could be scrolled
+   * down past the bottom of the display it maps.
+   *
+   * `.griddle-scroll` is sized to the grid's own height, so clipping it shows
+   * exactly the grid and nothing else. `!important` because the adapter sets
+   * `overflow` inline from its `contained` flag.
+   */
+  .editor :global(.griddle-scroll) {
+    overflow: hidden !important;
+  }
   .editor :global(*) {
     scrollbar-width: none;
   }
@@ -465,6 +549,47 @@
     width: 0;
     height: 0;
     display: none;
+  }
+
+  /* Resize snap feedback (see watchSnaps). The classes are applied from JS
+     and the keyframes referenced from a :global rule, so both have to escape
+     component scoping or the compiler prunes them as unused. */
+  .editor :global(.snap-grow) {
+    animation: griddle-snap-grow 190ms ease-out;
+  }
+  .editor :global(.snap-shrink) {
+    animation: griddle-snap-shrink 190ms ease-out;
+  }
+
+  /* Growing: a crisp edge lands on the new boundary and fades — "it fits". */
+  @keyframes -global-griddle-snap-grow {
+    0% {
+      box-shadow: inset 0 0 0 2px var(--accent);
+      background: rgba(139, 124, 246, 0.34);
+    }
+    100% {
+      box-shadow: inset 0 0 0 2px transparent;
+      background: rgba(139, 124, 246, 0.14);
+    }
+  }
+
+  /* Shrinking: a thick inner ring collapses inward — "it pulled in a cell". */
+  @keyframes -global-griddle-snap-shrink {
+    0% {
+      box-shadow: inset 0 0 0 10px rgba(139, 124, 246, 0.3);
+      background: rgba(139, 124, 246, 0.3);
+    }
+    100% {
+      box-shadow: inset 0 0 0 0 transparent;
+      background: rgba(139, 124, 246, 0.14);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .editor :global(.snap-grow),
+    .editor :global(.snap-shrink) {
+      animation: none;
+    }
   }
 
   /* Dark-theme overrides for the GriddleGrid internals. */
