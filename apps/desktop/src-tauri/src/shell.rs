@@ -56,11 +56,12 @@ pub fn settings_hwnd() -> Option<isize> {
 }
 
 #[cfg(windows)]
-fn note_settings_hwnd(win: &tauri::WebviewWindow) {
-    match win.hwnd() {
-        Ok(h) => SETTINGS_HWND.store(h.0 as isize, Ordering::SeqCst),
-        Err(e) => log::error!("settings window has no hwnd: {e}"),
-    }
+fn note_settings_hwnd(_win: &tauri::WebviewWindow) {
+    // Deliberately does nothing (spec 2026-08-20). The settings window became
+    // a floating always-on-top minimap, so it must NOT be tiled: a map that
+    // occupies one of the cells it is describing is worse than no map. The
+    // registration point is kept so the carve-out can be restored by one
+    // line if the window ever goes back to being an ordinary page.
 }
 
 #[cfg(not(windows))]
@@ -424,8 +425,13 @@ pub fn open_settings(app: &AppHandle) -> tauri::Result<()> {
     let mut builder =
         WebviewWindowBuilder::new(app, SETTINGS_LABEL, WebviewUrl::App("/settings".into()))
             .title("Griddle Window Manager Settings")
-            .inner_size(900.0, 720.0)
-            .min_inner_size(560.0, 400.0)
+            // A small floating map of the displays rather than a page
+            // (spec 2026-08-20): always-on-top so it stays visible while you
+            // drag windows toward it, and dismissed with the hide control
+            // rather than by burying it.
+            .inner_size(720.0, 560.0)
+            .min_inner_size(480.0, 420.0)
+            .always_on_top(true)
             .center();
     // Must match the brain's args or WebView2 refuses the environment and
     // this build() fails after the native window is already on screen -
@@ -454,6 +460,18 @@ fn revive_settings(win: &tauri::WebviewWindow) -> tauri::Result<()> {
         return Err(tauri::Error::WebviewNotFound);
     }
     Ok(())
+}
+
+/// Spec 2026-08-20: `hide_settings()`. The pop-out floats always-on-top, so
+/// it needs a one-click way out of the way. Hiding (not closing) keeps the
+/// window alive, which is the cheap path back — `open_settings` reuses it.
+#[tauri::command]
+pub fn hide_settings(app: AppHandle, window: tauri::Window) -> Result<(), String> {
+    crate::guard::authorize("hide_settings", window.label())?;
+    match app.get_webview_window(SETTINGS_LABEL) {
+        Some(win) => win.hide().map_err(|e| e.to_string()),
+        None => Ok(()), // already gone; nothing to hide
+    }
 }
 
 /// Contract §C2 (Task 13 extension): `show_settings()`. Callers: brain host

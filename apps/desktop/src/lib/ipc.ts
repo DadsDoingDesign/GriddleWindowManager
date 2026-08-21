@@ -216,6 +216,11 @@ export function minimizeWindow(hwnd: string): Promise<void> {
   return invoke('minimize_window', { hwnd });
 }
 
+/** Spec 2026-08-20: dismiss the pop-out to the tray (hides, never closes). */
+export function hideSettings(): Promise<void> {
+  return invoke('hide_settings');
+}
+
 export function listWindows(): Promise<WindowInfo[]> {
   return invoke<WindowInfo[]>('list_windows');
 }

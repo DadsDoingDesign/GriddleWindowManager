@@ -12,6 +12,15 @@ DWM-cloaked**, **not a tool window**, and belongs to a **queryable foreign
 process** — plus, as the one own-process exception, **Griddle's own Settings
 window**, identified by exact hwnd.
 
+**The Settings window is no longer managed** (spec 2026-08-20). It briefly
+was, earlier the same day, because a window manager exempting its own UI felt
+like a bug — and it was. It then became a small floating always-on-top minimap
+of the displays, at which point tiling it became the wrong answer: a map that
+occupies one of the cells it is describing is worse than no map. The
+registration point (`shell::note_settings_hwnd`) is kept as a deliberate
+no-op so the carve-out is one line away if the window ever becomes an
+ordinary page again.
+
 There is deliberately **no caption requirement** (user decision 2026-08-20:
 "do not exclude any windows from the grid"). Custom-chrome apps — Electron
 frameless windows, game launchers, borderless windows in general — are real

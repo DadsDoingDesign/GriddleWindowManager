@@ -50,6 +50,8 @@ pub fn caller_allowed(command: &str, label: &str) -> bool {
         | "set_update_handoff" => main,
         // Brain host + settings UI.
         "read_config" | "set_paused" | "show_settings" | "list_windows" => main || settings,
+        // Only the settings window can dismiss itself (spec 2026-08-20).
+        "hide_settings" => settings,
         // Overlays additionally need the monitor list to draw their grid.
         "list_monitors" => main || settings || overlay,
         _ => false,

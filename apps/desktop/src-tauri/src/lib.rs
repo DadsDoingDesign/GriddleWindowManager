@@ -176,6 +176,7 @@ pub fn run() {
             config::write_config,
             shell::set_paused,
             shell::show_settings,
+            shell::hide_settings,
             shell::update_tray,
             shell::brain_alive,
             shell::set_update_status,

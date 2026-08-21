@@ -96,10 +96,22 @@ boxes are the ones that would have caught it.
       grid: no Swap onto slots smaller than its minimum, and placements give
       it enough cells instead of letting it overflow.
 
+## P0 — minimap Settings pop-out (spec 2026-08-20)
+
+- [ ] Settings opens as a small floating window (~720×560) that stays above
+      other windows, with a tab per display, a `+` tab and a ⚙ tab.
+- [ ] The ⌄ control hides it to the tray; the tray item / hotkey brings the
+      same window back (it hides, never closes).
+- [ ] Enabling a spanning grid removes its member monitors' tabs and adds one
+      span tab; deleting the span restores them.
+- [ ] Template cards read as shapes — "Two columns" is 2×1, "Quad" is 2×2 —
+      and applying one to a 12×6 grid keeps 12×6 (two 6×6 halves), with no
+      "re-grids to" warning on the button.
+
 ## P0 — window-eligibility carve-outs (spec 2026-08-20)
 
-- [ ] Open Griddle's Settings window on a gridded monitor: it tiles like any
-      other window, and dragging it previews and snaps.
+- [ ] Griddle's Settings window is NOT tiled (spec 2026-08-20 made it a
+      floating always-on-top minimap; the earlier carve-out is reverted).
 - [ ] The drag overlays and (under GRIDDLE_DEBUG=1) the brain window never
       appear as tiles.
 - [ ] Add griddle-wm.exe to exclusions: Settings stops being managed.

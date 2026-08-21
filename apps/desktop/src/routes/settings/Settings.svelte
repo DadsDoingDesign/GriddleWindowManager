@@ -45,6 +45,7 @@
     emitSettingsSetSpacing,
     emitSettingsSetStartupView,
     listMonitors,
+    hideSettings,
     listWindows,
     onMonitorsChanged,
     onStateSnapshot,
@@ -452,6 +453,45 @@
   const sortedMonitors = $derived(
     [...monitors].sort((a, b) => Number(b.primary) - Number(a.primary) || a.x - b.x),
   );
+
+  // ── tabs (spec 2026-08-20: minimap pop-out) ──────────────────────────────
+  // The window is a small map of your displays, not a scrolling page: one tab
+  // per grid, a `+` for spanning/custom grids, and one for preferences. Tabs
+  // are derived from live monitors and spanning grids, so a hotplug or a new
+  // span reshapes the bar without any stored tab list to go stale.
+  interface Tab {
+    key: string;
+    label: string;
+    kind: 'monitor' | 'span' | 'add' | 'prefs';
+  }
+
+  const tabs: Tab[] = $derived([
+    ...sortedMonitors
+      // A monitor covered by a spanning grid is configured on the span's own
+      // tab; showing both would offer two places to change one thing.
+      .filter((m) => !spanFor(m.id))
+      .map((m) => ({ key: `mon:${m.id}`, label: monName(m), kind: 'monitor' as const })),
+    ...spanGrids.map((g) => ({
+      key: `span:${g.id}`,
+      label: g.monitorIds.map(monNameFromId).join(' + '),
+      kind: 'span' as const,
+    })),
+    { key: 'add', label: '+', kind: 'add' as const },
+    { key: 'prefs', label: '⚙', kind: 'prefs' as const },
+  ]);
+
+  let activeTabKey: string | null = $state(null);
+
+  /**
+   * The selected tab, falling back to the first (the primary display) —
+   * derived rather than stored so a tab that disappears (monitor unplugged,
+   * span deleted) can never leave the window blank.
+   */
+  const activeTab = $derived(
+    tabs.find((t) => t.key === activeTabKey) ?? tabs[0] ?? null,
+  );
+
+  const isActive = (key: string): boolean => activeTab?.key === key;
 
   function togglePaused(paused: boolean): void {
     // Rust owns the pause flag; the resulting `paused-changed` round-trips
@@ -1097,7 +1137,38 @@
     <p class="empty">Looking for monitors…</p>
   {/if}
 
-  {#each sortedMonitors as mon (mon.id)}
+  <!-- Tab bar (spec 2026-08-20): one tab per grid, `+` to add a spanning or
+       custom grid, gear for preferences, and a hide control that returns the
+       pop-out to the tray — it floats always-on-top, so a one-click way out
+       of the way is not a nicety. -->
+  {#if tabs.length > 0}
+    <nav class="tabbar" aria-label="Displays and settings">
+      <div class="tabs" role="tablist">
+        {#each tabs as t (t.key)}
+          <button
+            role="tab"
+            class="tab"
+            class:sel={isActive(t.key)}
+            class:glyph={t.kind === 'add' || t.kind === 'prefs'}
+            aria-selected={isActive(t.key)}
+            title={t.kind === 'add'
+              ? 'Add a spanning or custom grid'
+              : t.kind === 'prefs'
+                ? 'Preferences'
+                : t.label}
+            onclick={() => (activeTabKey = t.key)}
+          >
+            {t.label}
+          </button>
+        {/each}
+      </div>
+      <button class="tab glyph hide" title="Hide to tray" onclick={() => void hideSettings()}>
+        &#x2304;
+      </button>
+    </nav>
+  {/if}
+
+  {#each sortedMonitors.filter((m) => isActive(`mon:${m.id}`)) as mon (mon.id)}
     {@const grid = gridFor(mon.id)}
     {@const spanned = spanFor(mon.id)}
     {@const enabled = grid?.enabled ?? false}
@@ -1318,7 +1389,7 @@
     </section>
   {/each}
 
-  {#each spanGrids as grid (grid.id)}
+  {#each spanGrids.filter((g) => isActive(`span:${g.id}`)) as grid (grid.id)}
     {@const members = spanMonitors(grid)}
     {@const union =
       members.length === grid.monitorIds.length ? unionWorkArea(members) : null}
@@ -1524,7 +1595,7 @@
     </section>
   {/each}
 
-  {#if sortedMonitors.length >= 2}
+  {#if isActive('add') && sortedMonitors.length >= 2}
     <section class="card">
       <div class="card-head">
         <div class="mon-info">
@@ -1614,6 +1685,7 @@
     </section>
   {/if}
 
+  {#if isActive('prefs')}
   <!-- App defaults (spec v0.2 §2): the rules the tile context menu saves. -->
   <section class="card">
     <div class="card-head">
@@ -2045,9 +2117,74 @@
     </section>
   {/if}
   {/if}
+  {/if}
 </div>
 
 <style>
+  /* Tab bar (spec 2026-08-20). Sticky so the map's chrome stays put while a
+     tab's own content scrolls, and the hide control is pushed to the far
+     right where a window's dismiss affordance is expected. */
+  .tabbar {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0 10px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 14px;
+  }
+
+  .tabs {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+  }
+
+  .tab {
+    padding: 6px 12px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-dim);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+  }
+
+  .tab:hover {
+    color: var(--text-strong);
+    background: var(--well);
+  }
+
+  .tab.sel {
+    color: var(--text-strong);
+    background: var(--well);
+    border-color: var(--accent);
+  }
+
+  /* `+` and the gear are glyphs, not words: square them up so they read as
+     controls beside the display names. */
+  .tab.glyph {
+    min-width: 34px;
+    text-align: center;
+    font-size: 15px;
+  }
+
+  .tab.hide {
+    flex: 0 0 auto;
+    font-size: 18px;
+    line-height: 1;
+  }
+
   .page {
     max-width: 720px;
     margin: 0 auto;
