@@ -90,10 +90,32 @@ from that same commit is independent and stays.
 Each stage builds, passes both suites, and is shippable on its own:
 
 1. **Template shapes** — pure function, card/thumbnail, apply scaling, tests.
-2. **Tab shell + file split** — content moved verbatim into the three tab
-   components; no visual redesign yet, so a regression is obvious.
-3. **Minimap-first display tab** — compact the control row, make the editor
-   the hero, shrink and float the window, revert the tiling carve-out.
+   *Shipped: 003d57b.*
+2. **Tab shell** — tab bar, hide-to-tray, floating window, carve-out revert.
+   *Shipped: d63ae1f.*
+3. **Minimap-first display tab** — explanations to tooltips, one-line header,
+   templates folded, editor as the hero. *Shipped: 4d11d44.*
+
+### The file split, and why it is still outstanding
+
+The plan above said stage 2 would also break `Settings.svelte` into
+`DisplayTab` / `AddGridTab` / `PreferencesTab`. It did not, and the reason is
+worth writing down rather than rediscovering.
+
+Extracting the markup is the easy half — the tab gating already marks the
+seams, and the prop surface is small (the tab components can call the global
+`emitSettings*` helpers directly instead of taking handlers as props;
+`AddGridTab` needs exactly one prop). The hard half is CSS: Svelte's
+`<style>` is **component-scoped**, and `Settings.svelte`'s block is roughly
+800 lines of class rules that the extracted markup depends on. Splitting the
+markup without moving those rules silently unstyles every extracted section.
+
+So the real job is: move the shared rules into `settings.css` (which today
+holds only design tokens), keep the genuinely component-local rules with
+their components, and verify each settings surface visually. That is a
+mechanical but wide change with real visual-regression risk and no
+user-visible benefit — worth doing deliberately, not as the tail of a long
+feature session.
 
 ## Out of scope
 

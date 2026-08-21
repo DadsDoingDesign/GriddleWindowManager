@@ -342,3 +342,18 @@ board page per Windows virtual desktop, so "scrolling" is switching desktops and
 every window stays visible, alt-tab-able and on the taskbar. That is the only
 one of the three approaches where an off-page window is never a window the user
 has lost.
+
+## Settings.svelte component split (2026-08-20)
+
+`apps/desktop/src/routes/settings/Settings.svelte` is ~2900 lines. The
+minimap pop-out (spec 2026-08-20) added tab gating, which marks clean seams
+for `DisplayTab` / `AddGridTab` / `PreferencesTab`, and the prop surface is
+small because the tab bodies can call the global `emitSettings*` helpers
+directly rather than receiving handlers.
+
+The blocker is CSS, not markup: Svelte scopes `<style>` per component, and
+that file's ~800 lines of class rules are what the extracted markup is
+styled by. A split must also move the shared rules into `settings.css`
+(currently tokens only) and leave component-local rules behind, verifying
+each surface visually. Mechanical, wide, zero user-visible benefit — do it
+deliberately, with screenshots before and after, not alongside feature work.
