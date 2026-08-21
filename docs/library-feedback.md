@@ -277,6 +277,43 @@ call `computeTileLayout` per tile, or branch on `isOutOfFlow(tile)` and read
 `pinnedToPixels(tile.pinned, cfg)` for those. `prevRects` should store
 whichever space the tile is actually drawn in.
 
-Worked around app-side with `animation: { repositionDurationMs: 0 }` — the
-editor is a live map of the desktop and the real windows snap, so an
-animation there is wrong on its own terms regardless of this bug.
+**Correction after measuring.** I first blamed this for the "tiles are offset
+after dragging" report and turned the reposition animation off. That did not
+fix it — the offset persisted with `repositionDurationMs: 0` in the shipped
+bundle. The FLIP-origin mismatch above is real as a *reading* of the source,
+but I never confirmed it empirically, so treat it as unverified.
+
+## Gesture offsets are cleared only by the next reposition (2026-08-20)
+
+This is the one that was actually biting, measured rather than reasoned.
+
+Tiles are positioned by `left`/`top` in whole cells, which is always correct.
+On top of that the adapter layers pixel-space inline styles for gestures —
+`style:transform` for the live drag, `node.style.translate` for FLIP. Both are
+cleared only by the *next* reposition: `runFlip` skips `animateReposition`
+entirely when a tile's delta computes to zero, and skips the dragger
+unconditionally.
+
+So after a drop there is no next reposition until something else moves, and
+the tile keeps its gesture offset until then. In the settings editor that gap
+is the round trip out to the window manager and back — the tile sat visibly
+off-cell for 0-450ms after every drop.
+
+Measured with a frame burst after a synthetic drag. Vertical tile edges
+immediately after drop:
+
+```
+t=0..390ms   39, 110, 158, 229, 279, 398     <- two tiles +71px off-cell
+t=520ms      39, 158, 278, 398               <- snapshot lands, corrected
+```
+
+A second drag with a different grab point and distance produced +46px instead
+of +71px, confirming the offset tracks the gesture rather than the grid.
+
+Suggested fix: clear the pixel-space styles unconditionally when a gesture
+ends, rather than relying on a subsequent reposition to do it — the tile's
+`left`/`top` is already correct at that point, so there is nothing to animate
+from.
+
+Worked around app-side by clearing `transform`/`translate` on
+`[data-griddle-tile]` after `dragEnd`/`resizeEnd`.

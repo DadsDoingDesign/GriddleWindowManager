@@ -5,7 +5,7 @@
   // and the real window snaps on screen. The parent recreates this component
   // (keyed) whenever gridId/cols/rows/mode change, so the Griddle instance
   // itself is created exactly once per configuration.
-  import { onDestroy } from 'svelte';
+  import { onDestroy, tick } from 'svelte';
   import { createGriddle, GriddleGrid } from '@griddle/svelte';
   import type { Tile } from '@griddle/core';
   import {
@@ -174,6 +174,7 @@
 
   // Snapshot updates arriving mid-gesture are deferred so they don't yank
   // the tile out from under the cursor.
+  let editorEl: HTMLDivElement | undefined = $state();
   let interacting = false;
   let pending: TileSnapshot[] | null = null;
 
@@ -196,6 +197,32 @@
     interacting = true;
   }
 
+  /**
+   * Drop the pixel-space inline styles the grid layers on tiles during a
+   * gesture.
+   *
+   * Tiles are positioned by `left`/`top` in whole cells, and that is always
+   * correct. On top of it the library writes gesture offsets — `transform`
+   * for the live drag, `translate` for FLIP — and only ever clears them on
+   * the *next* reposition. After a drop there is no next reposition until the
+   * brain's answering snapshot lands, so for the ~half second of that round
+   * trip a tile keeps a sub-cell offset and the map disagrees with the
+   * desktop. Measured at +71px after one drag and +46px after another: it
+   * tracks the gesture, not the grid.
+   *
+   * Clearing them is safe because the correct position is already underneath:
+   * `transform` is Svelte-bound and re-applied on the next render (to `''`
+   * once the drag is over), and `translate` is only ever written by FLIP.
+   */
+  async function clearGestureOffsets(): Promise<void> {
+    await tick(); // let the grid's own post-gesture render land first
+    if (!editorEl) return;
+    for (const el of editorEl.querySelectorAll<HTMLElement>('[data-griddle-tile]')) {
+      el.style.translate = '';
+      el.style.transform = '';
+    }
+  }
+
   function endInteraction(e: CustomEvent<{ tileId: string; committed: boolean }>): void {
     interacting = false;
     if (e.detail.committed) {
@@ -207,6 +234,7 @@
       reconcile(pending);
       pending = null;
     }
+    void clearGestureOffsets();
   }
 
   // ── tile context menu: per-app defaults (spec v0.2 §2) ───────────────────
@@ -303,7 +331,7 @@
   }
 </script>
 
-<div class="editor" style:width="{EDITOR_W}px">
+<div class="editor" bind:this={editorEl} style:width="{EDITOR_W}px">
   <!-- Scaled padding inset: the well showing through here is the same strip
        of desktop the real padding leaves free. -->
   <div class="pad" style:padding="{layout.padY}px {layout.padX}px">
