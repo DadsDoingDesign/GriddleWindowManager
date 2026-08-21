@@ -82,6 +82,22 @@
       enablePositioning: true,
       pinUnits: 'cells',
       tileRadius: 6,
+      // No reposition animation. Two reasons, and the second is a bug.
+      //
+      // This editor is a *map* of what the desktop is doing right now, and
+      // the real windows snap. A 320ms slide (the library default) means the
+      // map disagrees with the desktop for a third of a second after every
+      // drag, which reads as "the tiles are offset" — that is exactly how it
+      // was reported.
+      //
+      // And the slide is drawn from the wrong place for out-of-flow tiles:
+      // GriddleGrid's FLIP pass takes each tile's origin as
+      // `col * colSize + halfGap`, but an `absolute` tile is positioned from
+      // `pinned` instead. When those two disagree — which they do here, since
+      // overlapping snapshot tiles are mirrored as absolute — the tile
+      // animates in from a bogus offset. Turning the animation off sidesteps
+      // it; the library note is in docs/library-feedback.md.
+      animation: { repositionDurationMs: 0 },
       // `scroll` is deliberately left at its default (contained). It reads
       // like a scrollbar preference and is not: `contained = cfg.scroll !==
       // 'none'` also decides whether the grid gets an explicit height and

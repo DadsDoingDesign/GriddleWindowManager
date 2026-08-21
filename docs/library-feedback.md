@@ -246,3 +246,37 @@ export. Verified against `node_modules/@griddle/core/dist/*.d.ts` and
   at the call site and is really a layout mode. A name closer to
   `containment` / `sizing`, or a doc line saying what else it governs, would
   make the trap visible. Nothing to fix in the code.
+
+## FLIP origin ignores `pinned` (2026-08-20)
+
+`GriddleGrid.svelte`'s `runFlip` computes every tile's origin in grid-flow
+space:
+
+```js
+const x = t.col * colSize + halfGap;
+const y = t.row * rowSize + halfGap;
+```
+
+But a tile with `position: 'absolute'` is *rendered* from `pinnedToPixels`
+(`computeTileLayout`), which reads `tile.pinned`, not `tile.col/row`. Out-of-flow
+tiles keep their `col/row` fields by design — `positioning.ts` says so
+explicitly, "so they can fall back to in-flow if the user toggles position
+back" — so for any absolute tile whose `pinned` has diverged from its
+`col/row`, FLIP measures a delta against a position the tile was never drawn
+at and animates it in from a bogus offset.
+
+Reproduced in the settings grid editor, which mirrors overlapping snapshot
+tiles as `absolute` (a non-resizable window the brain keeps pinned). After a
+drag, the pinned tile slid in from roughly half a cell away while every
+in-flow tile animated correctly. It settles at the right place — the resting
+layout is exact — so it presents as "the tiles are offset after dragging"
+rather than as a permanent misplacement, which made it hard to pin down.
+
+Suggested fix: `runFlip` should use the same layout the renderer uses. Either
+call `computeTileLayout` per tile, or branch on `isOutOfFlow(tile)` and read
+`pinnedToPixels(tile.pinned, cfg)` for those. `prevRects` should store
+whichever space the tile is actually drawn in.
+
+Worked around app-side with `animation: { repositionDurationMs: 0 }` — the
+editor is a live map of the desktop and the real windows snap, so an
+animation there is wrong on its own terms regardless of this bug.
