@@ -317,3 +317,37 @@ from.
 
 Worked around app-side by clearing `transform`/`translate` on
 `[data-griddle-tile]` after `dragEnd`/`resizeEnd`.
+
+## The adapter does not resync its tile list when a gesture ends (2026-08-20)
+
+The one that actually produced "the windows look right but not the grid".
+
+`GriddleGrid.svelte` keeps a local `tilesAll` copy for rendering. During a
+drag it refreshes that copy from the engine explicitly, and says why:
+
+```js
+// restoreTiles() doesn't emit change events, so force-sync the local
+// tile list so FLIP picks up displaced tile resets (e.g. drag back to
+// the pickup cell).
+if (result.changed) tilesAll = api.grid.tiles;
+```
+
+`onPointerUp` has no equivalent. It calls `dragController.end()` — which
+repacks the engine, and on a rejected move calls `grid.restoreTiles(snapshot)`,
+the very method the comment above notes is silent — and then dispatches
+`dragEnd` without ever re-reading `api.grid.tiles`.
+
+So once a gesture finishes, the rendered arrangement can be one repack behind
+the engine. Observed in the settings grid editor as two tiles drawn stacked in
+one cell with the neighbouring cell empty, while the real desktop was laid out
+correctly. It resolves only when something else mutates the grid; in this app
+that is the next snapshot from the window manager, measured at well over a
+second.
+
+Suggested fix: resync in `onPointerUp` the same way `onPointerMove` does,
+after `dragController.end()` and before dispatching `dragEnd` — for the resize
+branch too, which commits through `api.moveTile`/`api.resizeTile` and has the
+same exposure.
+
+Worked around app-side by rebuilding the tiles through `api` when a gesture
+ends, which emits the change events the adapter does listen for.

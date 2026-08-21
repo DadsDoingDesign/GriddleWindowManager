@@ -137,12 +137,44 @@
     };
   }
 
-  function addTileAt(hwnd: string, slot: Slot): void {
+  /** Do two slots share any cell? */
+  function slotsOverlap(a: Slot, b: Slot): boolean {
+    return (
+      a.col < b.col + b.w &&
+      b.col < a.col + a.w &&
+      a.row < b.row + b.h &&
+      b.row < a.row + a.h
+    );
+  }
+
+  /**
+   * Which windows the snapshot itself says are stacked.
+   *
+   * Computed from the whole list rather than from whatever happens to be in
+   * the grid at the moment each tile is added. The old test was
+   * `api.grid.tilesIn(rect).length > 0` during a partial rebuild, which is
+   * order-dependent: a window could be pinned as absolute purely because
+   * reconcile had not yet moved the tile that was sitting in its cell. Pinned
+   * tiles are out of flow, so the engine will not displace them and a drop
+   * onto one is refused — that is how an ordinary window came to reject
+   * drags, and a refused drop is what left the map showing two tiles stacked
+   * in one cell.
+   */
+  function stackedInSnapshot(list: { hwnd: string; slot: Slot }[]): Set<string> {
+    const out = new Set<string>();
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        if (slotsOverlap(list[i]!.slot, list[j]!.slot)) out.add(list[j]!.hwnd);
+      }
+    }
+    return out;
+  }
+
+  function addTileAt(hwnd: string, slot: Slot, absolute: boolean): void {
     const rect = { col: slot.col, row: slot.row, w: slot.w, h: slot.h };
     // Stack grids overlap by design; in push/reflow grids an overlapping
     // snapshot tile is one the brain keeps absolute (non-resizable window),
     // so mirror it as absolute here to keep the in-flow engine consistent.
-    const absolute = mode === 'stack' || api.grid.tilesIn(rect).length > 0;
     if (absolute) {
       api.addTile({
         id: hwnd,
@@ -161,6 +193,7 @@
   /** Make the editor grid match the snapshot exactly. */
   function reconcile(list: TileSnapshot[]): void {
     const want = new Map(list.map((t) => [t.hwnd, t.slot]));
+    const stacked = stackedInSnapshot(list);
     for (const t of [...api.grid.tiles]) {
       if (!want.has(t.id)) api.removeTile(t.id);
     }
@@ -168,7 +201,7 @@
       const cur = api.grid.getTile(s.hwnd);
       if (cur && sameSlot(slotOf(cur), s.slot)) continue;
       if (cur) api.removeTile(s.hwnd);
-      addTileAt(s.hwnd, s.slot);
+      addTileAt(s.hwnd, s.slot, mode === 'stack' || stacked.has(s.hwnd));
     }
   }
 
@@ -223,6 +256,30 @@
     }
   }
 
+  /**
+   * Force the grid's adapter to re-read its own tiles.
+   *
+   * `GriddleGrid` keeps a local `tilesAll` copy for rendering and refreshes it
+   * from the engine during a drag — its pointermove handler does so
+   * explicitly, with a comment noting that internal repacks emit no change
+   * event. Its pointerup handler does not. So once a gesture ends the view can
+   * be a repack behind the engine, which is what put two tiles in one square
+   * with the neighbouring cell empty, for as long as it took the next snapshot
+   * to arrive (measured at well over a second).
+   *
+   * Rebuilding through `api` emits the change events the adapter does listen
+   * to. The arrangement is read back from the engine first, so this re-renders
+   * what is already true rather than moving anything.
+   */
+  function resyncFromEngine(): void {
+    const snap = api.grid.tiles.map((t) => ({ hwnd: t.id, slot: slotOf(t) }));
+    const stacked = stackedInSnapshot(snap);
+    for (const t of [...api.grid.tiles]) api.removeTile(t.id);
+    for (const s of snap) {
+      addTileAt(s.hwnd, s.slot, mode === 'stack' || stacked.has(s.hwnd));
+    }
+  }
+
   function endInteraction(e: CustomEvent<{ tileId: string; committed: boolean }>): void {
     interacting = false;
     if (e.detail.committed) {
@@ -230,8 +287,18 @@
       // deferred during the gesture is stale now.
       pending = null;
       commitTile(e.detail.tileId);
-    } else if (pending) {
-      reconcile(pending);
+      // The engine holds the committed arrangement; the adapter may not.
+      resyncFromEngine();
+    } else {
+      // The drop was refused. `DragController.end()` calls
+      // `grid.restoreTiles()`, which deliberately emits no change event, and
+      // GriddleGrid does not resync its own tile list afterwards the way its
+      // pointermove handler does. So what stays on screen is the mid-drag
+      // arrangement — the displaced neighbour still displaced and the dragged
+      // tile back in its pickup cell, the two overlapping in one square —
+      // until the next snapshot happens along. Re-render from the last
+      // authoritative one now instead of waiting.
+      reconcile(pending ?? tiles);
       pending = null;
     }
     void clearGestureOffsets();
