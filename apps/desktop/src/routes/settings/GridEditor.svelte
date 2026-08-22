@@ -214,6 +214,25 @@
 
   /** How long the resize snap flash lasts. */
   const SNAP_MS = 190;
+
+  /**
+   * Live outline of where a resize will land.
+   *
+   * The grid quantises a resize to whole cells with `Math.round(dx / colSize)`,
+   * and on this map a cell is ~119px wide — so nothing moves until the pointer
+   * has travelled 60px, a sixth of the whole map, and then it jumps a full
+   * column. With no other feedback that reads as "the preview never shrinks,
+   * it just snaps when I let go", which is exactly how it was reported.
+   *
+   * The library draws a drop indicator for drags but not for resizes, so this
+   * is ours: it appears the moment the grip is grabbed, showing the current
+   * footprint, and moves to each new target as the threshold is crossed. The
+   * dead zone is unchanged — it is inherent to snapping — but it stops being
+   * invisible, which was the actual complaint.
+   */
+  let resizeGhost = $state<Slot | null>(null);
+  /** Pointer position and footprint at the moment the grip was grabbed. */
+  let grip: { x: number; y: number; slot: Slot } | null = null;
   let snapObs: ResizeObserver | null = null;
   let snapTimer: ReturnType<typeof setTimeout> | null = null;
   let interacting = false;
@@ -294,6 +313,41 @@
     }, SNAP_MS);
   }
 
+  /**
+   * Record where the grip was grabbed. The `resizeStart` event does not carry
+   * a pointer position, so it is taken here, in the capture phase, before the
+   * grid's own handler runs.
+   */
+  function onEditorPointerDown(e: PointerEvent): void {
+    const el = e.target as HTMLElement | null;
+    if (!el?.closest('[data-griddle-handle]')) return;
+    const id = el.closest('[data-griddle-tile]')?.getAttribute('data-griddle-tile');
+    const tile = id ? api.grid.getTile(id) : null;
+    if (!tile) return;
+    grip = { x: e.clientX, y: e.clientY, slot: slotOf(tile) };
+    resizeGhost = grip.slot;
+  }
+
+  function onResizePointerMove(e: PointerEvent): void {
+    if (!grip) return;
+    // Same quantisation the grid uses, so the outline never disagrees with
+    // where the tile actually lands.
+    const colSize = layout.unitWidth + layout.gap;
+    const rowSize = layout.unitHeight + layout.gap;
+    const stepsX = Math.round((e.clientX - grip.x) / colSize);
+    const stepsY = Math.round((e.clientY - grip.y) / rowSize);
+    // Only the south-east grip is enabled, so the origin never moves.
+    const w = Math.min(Math.max(1, grip.slot.w + stepsX), cols - grip.slot.col);
+    const h = Math.min(Math.max(1, grip.slot.h + stepsY), rows - grip.slot.row);
+    const next = { col: grip.slot.col, row: grip.slot.row, w, h };
+    if (!resizeGhost || !sameSlot(resizeGhost, next)) resizeGhost = next;
+  }
+
+  function clearGrip(): void {
+    grip = null;
+    resizeGhost = null;
+  }
+
   function beginResize(e: CustomEvent<{ tileId: string }>): void {
     interacting = true;
     watchSnaps(e.detail.tileId);
@@ -301,6 +355,7 @@
 
   function endResize(e: CustomEvent<{ tileId: string; committed: boolean }>): void {
     stopWatchingSnaps();
+    clearGrip();
     endInteraction(e);
   }
 
@@ -472,7 +527,25 @@
   }
 </script>
 
-<div class="editor" bind:this={editorEl} style:width="{EDITOR_W}px">
+<svelte:window onpointermove={onResizePointerMove} onpointerup={clearGrip} onpointercancel={clearGrip} />
+
+<div
+  class="editor"
+  bind:this={editorEl}
+  style:width="{EDITOR_W}px"
+  onpointerdowncapture={onEditorPointerDown}
+>
+  {#if resizeGhost}
+    <!-- Where the resize will land. Purely presentational and pointer-inert,
+         so it can never intercept the gesture that is drawing it. -->
+    <div
+      class="resize-ghost"
+      style:left="{layout.padX + resizeGhost.col * (layout.unitWidth + layout.gap) + layout.gap / 2}px"
+      style:top="{layout.padY + resizeGhost.row * (layout.unitHeight + layout.gap) + layout.gap / 2}px"
+      style:width="{resizeGhost.w * layout.unitWidth + (resizeGhost.w - 1) * layout.gap}px"
+      style:height="{resizeGhost.h * layout.unitHeight + (resizeGhost.h - 1) * layout.gap}px"
+    ></div>
+  {/if}
   <!-- Scaled padding inset: the well showing through here is the same strip
        of desktop the real padding leaves free. -->
   <div class="pad" style:padding="{layout.padY}px {layout.padX}px">
@@ -517,7 +590,17 @@
 {/if}
 
 <style>
+  .resize-ghost {
+    position: absolute;
+    z-index: 5;
+    pointer-events: none;
+    border: 2px dashed var(--accent);
+    border-radius: 7px;
+    background: rgba(139, 124, 246, 0.1);
+  }
+
   .editor {
+    position: relative;
     border: 1px solid var(--border);
     border-radius: 10px;
     background: var(--well);
@@ -602,9 +685,47 @@
     border: 2px dashed rgba(139, 124, 246, 0.65);
     background: rgba(139, 124, 246, 0.12);
   }
+  /*
+   * The library hangs its resize grip 6px *outside* the tile corner
+   * (`bottom: -6px; right: -6px`) and shows it always. On a map this small
+   * that drops a 12px square into the gap or straight onto the neighbouring
+   * tile, and with one per tile it reads as stray overlay squares rather
+   * than grips — reported as "another square in the bottom right that
+   * doesn't exist". Tuck it inside its own tile, shrink it, and only show it
+   * on hover or keyboard focus so a resting map is just the map.
+   */
   .editor :global(.griddle-handle) {
     background: var(--accent);
     border-color: var(--well);
+    width: 10px;
+    height: 10px;
+    opacity: 0;
+    transition: opacity 120ms ease-out;
+  }
+  .editor :global(.griddle-handle-se) {
+    bottom: 3px;
+    right: 3px;
+  }
+  .editor :global(.griddle-handle-sw) {
+    bottom: 3px;
+    left: 3px;
+  }
+  .editor :global(.griddle-handle-ne) {
+    top: 3px;
+    right: 3px;
+  }
+  .editor :global(.griddle-handle-nw) {
+    top: 3px;
+    left: 3px;
+  }
+  .editor :global(.griddle-tile:hover .griddle-handle),
+  .editor :global(.griddle-tile:focus-within .griddle-handle) {
+    opacity: 1;
+  }
+  /* Keep it visible for the whole gesture, even if the pointer leaves the
+     tile it started on — which it does, because resizing moves the corner. */
+  .editor :global(.griddle-tile.griddle-resizing .griddle-handle) {
+    opacity: 1;
   }
 
   .wtile:focus-visible {
