@@ -440,7 +440,20 @@ export class WindowManagerBrain {
    * unrelated event.
    */
   setMonitors(mons: MonitorInfo[], windows: WindowInfo[] = []): void {
-    this.monitors = new Map(mons.map((m) => [m.id, m]));
+    // A monitor we cannot measure is one we cannot lay out (log review
+    // 2026-08-22). At boot the displays arrive one at a time and Windows can
+    // report an empty work area mid-transition; every cell size divides that
+    // work area, so a zero or inverted extent becomes zero-sized *windows* —
+    // 88 such moves reached the OS over three days, and a window given a 0x0
+    // rect comes back collapsed and half-painted.
+    //
+    // Dropping the monitor is right rather than clamping it: the topology is
+    // still changing and another `monitors-changed` is already on the way, so
+    // the grid simply waits one beat and lays out against real numbers. Grids
+    // on a dropped monitor release exactly as they do when it is unplugged,
+    // which is a path that already works.
+    const usable = mons.filter((m) => m.workWidth > 0 && m.workHeight > 0);
+    this.monitors = new Map(usable.map((m) => [m.id, m]));
 
     for (const id of [...this.grids.keys()]) {
       const mg = this.grids.get(id);

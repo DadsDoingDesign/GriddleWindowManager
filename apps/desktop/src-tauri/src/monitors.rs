@@ -138,6 +138,28 @@ mod win {
 
         let full = info.monitorInfo.rcMonitor;
         let work = info.monitorInfo.rcWork;
+        // Log review 2026-08-22: a monitor whose work area is empty or
+        // inverted must never enter the snapshot.
+        //
+        // At boot the displays arrive one at a time — the log shows "1
+        // monitor" then "2 monitors" within a second, repeatedly — and during
+        // that churn `GetMonitorInfoW` can hand back a degenerate rcWork. The
+        // brain divides the work area into cells, so a zero or negative
+        // extent turns straight into zero or negative *window* sizes: 88 of
+        // them reached SetWindowPos in three days, 68 of those 0x0. Applying
+        // that to a real window collapses it, which is what "my browser came
+        // back looking like this" was.
+        //
+        // Skipping is right rather than clamping: the topology is mid-change,
+        // another `monitors-changed` is already on its way, and a monitor we
+        // cannot measure is one we cannot lay out.
+        let (work_width, work_height) = (work.right - work.left, work.bottom - work.top);
+        if work_width <= 0 || work_height <= 0 {
+            log::warn!(
+                "{device}: work area is {work_width}x{work_height}; skipping it this sweep                  (display topology is probably still settling)"
+            );
+            return;
+        }
         monitors.push(MonitorInfo {
             id: monitor_id(&device, full.left, full.top),
             x: full.left,
@@ -146,8 +168,8 @@ mod win {
             height: full.bottom - full.top,
             work_x: work.left,
             work_y: work.top,
-            work_width: work.right - work.left,
-            work_height: work.bottom - work.top,
+            work_width,
+            work_height,
             dpi: dpi_x,
             primary: info.monitorInfo.dwFlags & MONITORINFOF_PRIMARY != 0,
         });

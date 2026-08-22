@@ -134,6 +134,22 @@ fn validated_targets(layout: &ApplyLayout) -> Vec<(isize, Rect)> {
                 log::warn!("apply_layout: hwnd {key} not in live eligible set, skipping");
                 return None;
             }
+            // Last line of defence before the OS (log review 2026-08-22).
+            // A degenerate rect is not a layout, it is a broken window: 88
+            // reached SetWindowPos in three days — 0x0, 396x0, -221x-41 —
+            // because a monitor reported an empty work area while the display
+            // topology settled and the cell maths divided it up faithfully.
+            // The source is fixed in `monitors`, but nothing else stands
+            // between a bad number and a collapsed window, so refuse here too
+            // and say which window it would have been.
+            if m.width <= 0 || m.height <= 0 {
+                log::error!(
+                    "apply_layout: refusing {}x{} for hwnd {key} — a non-positive size would                      collapse the window; dropping this move",
+                    m.width,
+                    m.height
+                );
+                return None;
+            }
             Some((
                 key,
                 Rect {
@@ -754,6 +770,51 @@ mod win_tests {
                 height: target.height,
             }],
         }
+    }
+
+    /// Log review 2026-08-22: a non-positive size must never reach the OS.
+    ///
+    /// These are not hypothetical — 0x0, 396x0 and -221x-41 all reached
+    /// `SetWindowPos` on a real desktop, because a monitor briefly reported
+    /// an empty work area while the displays were still coming up and the
+    /// cell arithmetic divided it up faithfully. Applying one collapses the
+    /// window. The source is fixed in `monitors`; this is the backstop, and
+    /// it drops only the bad move, never the whole layout.
+    #[test]
+    fn non_positive_sizes_are_refused_before_the_os_sees_them() {
+        let _guard = crate::tracker::live_set_test_lock()
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        let hwnd = create_test_window();
+        let key = track(hwnd);
+
+        let r = |x, y, width, height| Rect {
+            x,
+            y,
+            width,
+            height,
+        };
+        for bad in [
+            r(8, 8, 0, 0),       // seen 68 times
+            r(8, 8, 396, 0),     // seen 19 times
+            r(12, 9, -221, -41), // seen once
+        ] {
+            assert!(
+                validated_targets(&one_move(key, bad)).is_empty(),
+                "a {}x{} target must be dropped",
+                bad.width,
+                bad.height
+            );
+        }
+
+        // The guard is about the size, not the position: negative origins are
+        // ordinary on a left-of-primary monitor and must still go through.
+        let good = r(-1920, -40, 800, 600);
+        assert_eq!(
+            validated_targets(&one_move(key, good)).len(),
+            1,
+            "a negative *origin* is legitimate and must survive"
+        );
     }
 
     #[test]
