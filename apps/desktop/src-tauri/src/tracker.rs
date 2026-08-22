@@ -66,10 +66,20 @@ pub struct WindowProbe {
     /// Owning process id from `GetWindowThreadProcessId`.
     pub pid: u32,
     /// Lowercase exe basename (e.g. `"slack.exe"`), or `None` when the
-    /// process cannot be queried (elevated beyond us / protected) — such
-    /// windows are ineligible per spec §5.1/§7 (we could not move them
-    /// anyway).
+    /// process cannot be queried at all (protected) — such windows are
+    /// ineligible per spec §5.1/§7 (we could not move them anyway).
     pub exe: Option<String>,
+    /// The owning process runs at a higher integrity level than Griddle —
+    /// "run as administrator" while we are not (log review 2026-08-21).
+    ///
+    /// This is its own field because the exe name is *not* the signal it was
+    /// assumed to be. `PROCESS_QUERY_LIMITED_INFORMATION` is deliberately
+    /// granted across integrity levels, so `QueryFullProcessImageNameW`
+    /// happily names an elevated process, `exe` comes back `Some`, and the
+    /// window sailed through eligibility — then every `SetWindowPos` on it
+    /// failed with access-denied while the grid kept a tile for it and shoved
+    /// real windows aside to make room.
+    pub elevated: bool,
 }
 
 /// Spec §5.1 eligibility, as a pure function. Managed iff: visible, top-level
@@ -112,6 +122,7 @@ pub fn is_eligible_probe(
         && top_level
         && !probe.cloaked
         && !tool_window
+        && !probe.elevated
         && probe.pid != 0
         && (probe.pid != own_pid || allowed_own)
         && !exclusions.iter().any(|excluded| excluded == exe)
@@ -409,9 +420,10 @@ mod win {
     use windows::Win32::Graphics::Gdi::{
         GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITORINFOEXW, MONITOR_DEFAULTTONEAREST,
     };
+    use windows::Win32::Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY};
     use windows::Win32::System::Threading::{
-        GetCurrentProcessId, OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
-        PROCESS_QUERY_LIMITED_INFORMATION,
+        GetCurrentProcess, GetCurrentProcessId, OpenProcess, OpenProcessToken,
+        QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
     };
     use windows::Win32::UI::Accessibility::{SetWinEventHook, HWINEVENTHOOK};
     use windows::Win32::UI::WindowsAndMessaging::{
@@ -507,8 +519,113 @@ mod win {
                 cloaked: cloaked_val != 0,
                 pid,
                 exe: process_exe(pid),
+                elevated: process_is_elevated(pid),
             })
         }
+    }
+
+    /// First time this run that we have seen `exe` as an elevated program?
+    fn elevated_notice_is_new(exe: &str) -> bool {
+        use std::collections::HashSet;
+        use std::sync::{Mutex, OnceLock};
+        static SEEN: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+        SEEN.get_or_init(|| Mutex::new(HashSet::new()))
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(exe.to_string())
+    }
+
+    /// An elevated window we are declining to manage: say so, once per
+    /// program, per run.
+    ///
+    /// Without this the exclusion is invisible. The window simply never tiles
+    /// and nothing anywhere says why, which is a worse bug report than the one
+    /// this replaced — at least the old behaviour was visibly wrong.
+    ///
+    /// Only fires when elevation is the *sole* reason we passed: a cloaked or
+    /// tool window that also happens to be elevated is being skipped for
+    /// reasons the user does not need a notice about.
+    fn note_elevated(probe: &WindowProbe, own_pid: u32, allowed_own: bool) {
+        if !probe.elevated {
+            return;
+        }
+        let mut as_if_normal = probe.clone();
+        as_if_normal.elevated = false;
+        if !is_eligible_probe(&as_if_normal, own_pid, &exclusions(), allowed_own) {
+            return;
+        }
+        let Some(exe) = probe.exe.as_deref() else {
+            return;
+        };
+        // Once per program per run: this is re-probed on every sweep, so
+        // without the guard it would be a line every few seconds.
+        if !elevated_notice_is_new(exe) {
+            return;
+        }
+        log::info!(
+            "{exe} runs as administrator; leaving its windows out of the grid              (Windows refuses to move them)"
+        );
+    }
+
+    /// Does `pid` run at a higher integrity level than Griddle — the
+    /// "run as administrator" case?
+    ///
+    /// The discriminator is the process *token*, not the process handle.
+    /// `OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION)` is granted across
+    /// integrity levels by design — it is what lets us read an elevated
+    /// process's image name — so it tells us nothing. `OpenProcessToken` is
+    /// not granted downward, so being refused it is the signal.
+    ///
+    /// Conservative on every failure: if we cannot tell, we answer `false`
+    /// and leave the window managed, because wrongly excluding an ordinary
+    /// window is the worse mistake — it would silently vanish from the grid
+    /// with no way for the user to find out why.
+    ///
+    /// When Griddle itself is elevated it can move everything, so the whole
+    /// question is moot and this always answers `false`.
+    fn process_is_elevated(pid: u32) -> bool {
+        if pid == 0 || self_is_elevated() {
+            return false;
+        }
+        unsafe {
+            let Ok(proc) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else {
+                return false;
+            };
+            let mut token = windows::Win32::Foundation::HANDLE::default();
+            let opened = OpenProcessToken(proc, TOKEN_QUERY, &mut token).is_ok();
+            let _ = windows::Win32::Foundation::CloseHandle(proc);
+            if !opened {
+                // Refused the token on a process we could otherwise open:
+                // it sits above us. This is the elevated case.
+                return true;
+            }
+            let _ = windows::Win32::Foundation::CloseHandle(token);
+            false
+        }
+    }
+
+    /// Is Griddle itself elevated? Cached: it cannot change within a run.
+    fn self_is_elevated() -> bool {
+        use std::sync::OnceLock;
+        static SELF: OnceLock<bool> = OnceLock::new();
+        *SELF.get_or_init(|| unsafe {
+            let mut token = windows::Win32::Foundation::HANDLE::default();
+            if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token).is_err() {
+                return false;
+            }
+            let mut info = TOKEN_ELEVATION::default();
+            let mut len = 0u32;
+            let ok = GetTokenInformation(
+                token,
+                TokenElevation,
+                Some(&mut info as *mut _ as *mut c_void),
+                size_of::<TOKEN_ELEVATION>() as u32,
+                &mut len,
+            )
+            .is_ok();
+            let _ = windows::Win32::Foundation::CloseHandle(token);
+            ok && info.TokenIsElevated != 0
+        })
     }
 
     /// Spec §5.1 eligibility for a live window handle.
@@ -742,6 +859,8 @@ mod win {
                     if let Some(info) = window_info(hwnd, &probe) {
                         out.push(info);
                     }
+                } else {
+                    note_elevated(&probe, own_pid, allowed_own);
                 }
             }
             BOOL(1) // keep enumerating
@@ -904,6 +1023,7 @@ mod win {
             &exclusions(),
             allowed_own,
         ) {
+            note_elevated(&probe, unsafe { GetCurrentProcessId() }, allowed_own);
             return;
         }
         let Some(info) = window_info(hwnd, &probe) else {
@@ -1093,7 +1213,27 @@ mod tests {
             cloaked: false,
             pid: OTHER_PID,
             exe: Some("notepad.exe".into()),
+            elevated: false,
         }
+    }
+
+    /// Log review 2026-08-21: an elevated window is ineligible even though it
+    /// looks perfectly ordinary from every other angle. The old rule assumed
+    /// an unreadable exe stood in for elevation; it does not, because
+    /// `PROCESS_QUERY_LIMITED_INFORMATION` names elevated processes happily.
+    /// So the admin console sailed through, took a tile, pushed real windows
+    /// aside to make room, and then refused every move with access-denied.
+    #[test]
+    fn elevated_windows_are_never_eligible() {
+        let mut p = probe(WS_VISIBLE | WS_CAPTION | WS_THICKFRAME, 0);
+        assert!(eligible(&p), "the same window is eligible when not elevated");
+        p.elevated = true;
+        assert!(
+            !eligible(&p),
+            "an elevated window must stay out of the managed set entirely"
+        );
+        // Naming it is not the test: elevated processes can be named.
+        assert!(p.exe.is_some());
     }
 
     /// Style of a plain resizable app window (Notepad-like).
@@ -1480,6 +1620,7 @@ mod win_tests {
             cloaked: false,
             pid: 4242,
             exe: Some("griddle-wm.exe".into()),
+            elevated: false,
         };
         assert!(
             !is_eligible_probe(&p, 4242, &[], false),

@@ -48,4 +48,7 @@ windows = { version = "0.62", features = [
   "Win32_System_LibraryLoader",
   "Win32_UI_Shell",
   "Win32_System_ProcessStatus",
+  # Reading a process token to tell "runs as administrator" from "runs as us"
+  # (tracker::process_is_elevated).
+  "Win32_Security",
 ] }

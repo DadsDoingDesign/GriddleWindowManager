@@ -308,6 +308,7 @@ mod tests {
             cloaked: false,
             pid: 4242, // a *foreign* pid on purpose
             exe: Some("griddle-wm.exe".into()),
+            elevated: false,
         };
         assert!(
             !is_eligible_probe(&probe, 999, &[], false),
@@ -332,6 +333,7 @@ mod tests {
             cloaked: false,
             pid: 999,
             exe: Some("griddle-wm.exe".into()),
+            elevated: false,
         };
         assert!(!is_eligible_probe(&probe, 999, &[], false));
     }
