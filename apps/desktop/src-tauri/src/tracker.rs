@@ -50,6 +50,9 @@ pub mod style_bits {
     pub const WS_EX_TOOLWINDOW: u32 = 0x0000_0080;
     /// `WS_EX_APPWINDOW` — forces a taskbar button; treated like a caption.
     pub const WS_EX_APPWINDOW: u32 = 0x0004_0000;
+    /// `WS_EX_NOACTIVATE` — the window refuses focus. Tooltips, dropdown
+    /// popups, IME candidate lists and notification toasts all set it.
+    pub const WS_EX_NOACTIVATE: u32 = 0x0800_0000;
 }
 
 /// Everything the eligibility filter needs to know about a window, gathered
@@ -115,6 +118,19 @@ pub fn is_eligible_probe(
     let visible = probe.style & WS_VISIBLE != 0;
     let top_level = probe.style & WS_CHILD == 0;
     let tool_window = probe.exstyle & WS_EX_TOOLWINDOW != 0;
+    // A window that refuses activation is chrome, not a workspace window
+    // (field report 2026-08-22). Hovering a tile in the settings map made a
+    // tooltip appear *in the grid* as "Window 1776002": WebView2 renders
+    // tooltips as real top-level windows — `Chrome_WidgetWin_1`, no title, no
+    // owner, WS_POPUP, and crucially not WS_EX_TOOLWINDOW, so every other
+    // gate let it through. It was tracked, given a tile, and shoved the real
+    // windows aside to make room for a tooltip.
+    //
+    // This is the discriminator the removed caption gate used to provide by
+    // accident. Activation is the better test anyway: it asks whether the
+    // user can work in the window, rather than how it is decorated, so the
+    // borderless windows that gate was dropped for stay managed.
+    let cannot_focus = probe.exstyle & WS_EX_NOACTIVATE != 0;
     let Some(exe) = probe.exe.as_deref() else {
         return false;
     };
@@ -122,6 +138,7 @@ pub fn is_eligible_probe(
         && top_level
         && !probe.cloaked
         && !tool_window
+        && !cannot_focus
         && !probe.elevated
         && probe.pid != 0
         && (probe.pid != own_pid || allowed_own)
@@ -1258,6 +1275,43 @@ mod tests {
             exe: Some("notepad.exe".into()),
             elevated: false,
         }
+    }
+
+    /// Field report 2026-08-22: hovering a tile in the settings map put a
+    /// *tooltip* in the grid, tiled as "Window 1776002".
+    ///
+    /// WebView2 renders tooltips as genuine top-level windows. Captured live
+    /// while hovering: class `Chrome_WidgetWin_1`, no title, no owner,
+    /// WS_POPUP, no caption, no thick frame — and not WS_EX_TOOLWINDOW, which
+    /// is the gate that would normally have caught it. So it was tracked,
+    /// given a cell, and pushed the real windows aside.
+    ///
+    /// `WS_EX_NOACTIVATE` is the honest test: a window that refuses focus is
+    /// not one the user works in. The caption gate used to exclude these as a
+    /// side effect; it was removed so borderless windows could be managed,
+    /// and this replaces it without bringing that back.
+    #[test]
+    fn windows_that_refuse_focus_are_never_eligible() {
+        // The tooltip, exactly as probed on the desktop.
+        let mut tip = probe(WS_VISIBLE, WS_EX_NOACTIVATE);
+        tip.exe = Some("msedgewebview2.exe".into());
+        assert!(!eligible(&tip), "a tooltip must never take a cell");
+
+        // Still ineligible even if it otherwise looks like an app window.
+        let mut dressed = probe(APP_STYLE, WS_EX_NOACTIVATE);
+        dressed.exe = Some("msedgewebview2.exe".into());
+        assert!(
+            !eligible(&dressed),
+            "caption and sizing border do not make an unfocusable window managed"
+        );
+
+        // And the borderless case the caption gate was removed for still
+        // works: no caption, no thick frame, but it can be focused.
+        let borderless = probe(WS_VISIBLE, 0);
+        assert!(
+            eligible(&borderless),
+            "a focusable borderless window is exactly what this must not break"
+        );
     }
 
     /// Log review 2026-08-21: an elevated window is ineligible even though it
