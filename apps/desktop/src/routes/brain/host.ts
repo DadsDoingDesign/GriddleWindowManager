@@ -31,6 +31,7 @@ import {
   onMonitorsChanged,
   onMoveSizeEnd,
   onMoveSizeStart,
+  onElevatedDrag,
   onSettingsWindowMoved,
   onWindowUnmovable,
   onOverlayReady,
@@ -162,6 +163,10 @@ export async function startBrainHost(): Promise<BrainHost> {
       console.error('write_config failed:', e);
     }
   };
+
+  /** How long the elevated-window notice stays on the overlay. */
+  const ELEVATED_NOTICE_MS = 3200;
+  let elevatedNotice: ReturnType<typeof setTimeout> | null = null;
 
   const scheduleSave = () => {
     if (destroyed || !userActed) return;
@@ -494,6 +499,31 @@ export async function startBrainHost(): Promise<BrainHost> {
     // An elevated window the actuator cannot move (spec 2026-08-20): find
     // the grid that believes it owns the window and say so on its overlay —
     // the one place the user is already looking.
+    // Dragging a window Griddle left out of the grid because it runs as
+    // administrator. The exclusion is right — Windows would refuse the move,
+    // and trying took ordinary windows down with it — but it is invisible,
+    // and a drag is exactly when that matters. Say so on the overlay of the
+    // grid covering that monitor, then clear it like a toast: this is a
+    // notice, not a state the user has to dismiss.
+    onElevatedDrag((p) => {
+      const grid = (lastSnapshot?.grids ?? []).find(
+        (g) => g.enabled && g.monitorIds.includes(p.monitorId),
+      );
+      if (!grid) return; // no grid on that monitor: nothing to explain
+      publishPreview({
+        gridId: grid.id,
+        visible: true,
+        footprint: null,
+        ghosts: [],
+        refusal: `${p.exe} runs as administrator — Griddle cannot place its windows`,
+      });
+      if (elevatedNotice !== null) clearTimeout(elevatedNotice);
+      elevatedNotice = setTimeout(() => {
+        elevatedNotice = null;
+        if (destroyed) return;
+        publishPreview({ gridId: grid.id, visible: false, footprint: null, ghosts: [] });
+      }, ELEVATED_NOTICE_MS);
+    }),
     onWindowUnmovable((p) => {
       const tiles = lastSnapshot?.tiles ?? {};
       for (const [gridId, list] of Object.entries(tiles)) {
@@ -719,6 +749,7 @@ export async function startBrainHost(): Promise<BrainHost> {
       clearInterval(beatTimer);
       if (monitorsDebounce !== null) clearTimeout(monitorsDebounce);
       if (saveTimer !== null) clearTimeout(saveTimer);
+      if (elevatedNotice !== null) clearTimeout(elevatedNotice);
       for (const t of overlayHideTimers.values()) clearTimeout(t);
       overlayHideTimers.clear();
       for (const u of unlisteners) u();

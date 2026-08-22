@@ -366,6 +366,27 @@ export function onWindowUnmovable(cb: (p: HwndPayload) => void): Promise<Unliste
 }
 
 /**
+ * Payload of `elevated-drag`: the user is dragging a window Griddle left out
+ * of the grid because it runs as administrator. Carries the monitor, not a
+ * grid — an elevated window is untracked and so has no tile to look a grid
+ * up by, so the host maps monitor to grid itself.
+ */
+export interface ElevatedDragPayload {
+  hwnd: string;
+  monitorId: string;
+  exe: string;
+}
+
+/**
+ * Log review 2026-08-21: elevated windows are deliberately excluded, which is
+ * correct and silent. A drag is the moment the silence is confusing — nothing
+ * tiles and nothing says why — so the host answers on that monitor's overlay.
+ */
+export function onElevatedDrag(cb: (p: ElevatedDragPayload) => void): Promise<UnlistenFn> {
+  return on('elevated-drag', cb);
+}
+
+/**
  * Spec 2026-08-20 addendum: the user dragged the settings pop-out. No
  * payload — Rust owns the coordinates and stamps them into the next config
  * write, so all this asks for is that a write happen.

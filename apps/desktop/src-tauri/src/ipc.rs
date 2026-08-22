@@ -382,4 +382,21 @@ pub mod events {
     /// carries no payload — it exists purely to ask the brain host for a
     /// config write, which is what makes a drag survive a quit.
     pub const SETTINGS_WINDOW_MOVED: &str = "settings-window-moved";
+    /// The user is dragging a window Griddle has deliberately left out of the
+    /// grid because it runs as administrator (log review 2026-08-21). The
+    /// exclusion is correct but silent, and a drag is the moment the silence
+    /// is confusing — the window simply does not tile and nothing says why.
+    /// The host answers on the overlay of whichever grid covers that monitor.
+    pub const ELEVATED_DRAG: &str = "elevated-drag";
+}
+
+/// Payload of [`events::ELEVATED_DRAG`]. Carries the monitor rather than a
+/// grid because an elevated window is untracked and so has no tile to look a
+/// grid up by — the host maps monitor to grid itself.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ElevatedDrag {
+    pub hwnd: String,
+    pub monitor_id: String,
+    pub exe: String,
 }

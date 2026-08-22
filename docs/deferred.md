@@ -23,11 +23,17 @@ minisign key, which is a different thing from an Authenticode certificate.
 ## Elevated windows (spec §6)
 
 Elevated windows are treated as unmanageable by the non-elevated process.
-Deferred beyond that baseline:
 
-- One-time explanatory notification the first time an elevated window is
-  skipped (currently they are skipped silently).
-- Optional "restart as admin" setting.
+- ~~One-time explanatory notification the first time an elevated window is
+  skipped.~~ **Done 2026-08-21.** Not one-time-per-run in the end: it fires
+  when the user *drags* one, which is the moment the exclusion is confusing,
+  and it reuses the overlay's existing refusal message rather than the
+  dedicated notice webview that failed with `STATUS_ENTRYPOINT_NOT_FOUND`.
+  A per-run notice at startup would have arrived before the user asked
+  anything.
+- Optional "restart as admin" setting — still deferred. It is the only way to
+  actually manage these windows, but it means shipping a path that runs the
+  whole app elevated, which deserves its own think.
 
 ## Distribution (spec §7)
 

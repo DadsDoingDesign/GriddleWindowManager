@@ -193,6 +193,25 @@ pub fn exclusions() -> Vec<String> {
         .clone()
 }
 
+/// Would this window be managed if it were not elevated?
+///
+/// Shared by the log notice and the drag-time overlay notice so the two can
+/// never disagree about which windows the message is about. A cloaked or tool
+/// window that also happens to be elevated is being skipped for reasons the
+/// user does not need a notice about, so it answers false — the notice is
+/// only ever "this would have tiled, but it runs as administrator".
+///
+/// Pure, and deliberately outside `mod win`: it makes no Win32 call, and
+/// keeping it here is what lets the truth table below cover it.
+pub fn elevated_is_the_only_reason(probe: &WindowProbe, own_pid: u32, allowed_own: bool) -> bool {
+    if !probe.elevated {
+        return false;
+    }
+    let mut as_if_normal = probe.clone();
+    as_if_normal.elevated = false;
+    is_eligible_probe(&as_if_normal, own_pid, &exclusions(), allowed_own)
+}
+
 /// Whether the settings pop-out is eligible for tiling like any other window
 /// (`AppConfig.manage_settings_window`, spec 2026-08-20 addendum). Mirrored
 /// out of the config so the hot WinEvent path can read it without touching
@@ -546,12 +565,7 @@ mod win {
     /// tool window that also happens to be elevated is being skipped for
     /// reasons the user does not need a notice about.
     fn note_elevated(probe: &WindowProbe, own_pid: u32, allowed_own: bool) {
-        if !probe.elevated {
-            return;
-        }
-        let mut as_if_normal = probe.clone();
-        as_if_normal.elevated = false;
-        if !is_eligible_probe(&as_if_normal, own_pid, &exclusions(), allowed_own) {
+        if !super::elevated_is_the_only_reason(probe, own_pid, allowed_own) {
             return;
         }
         let Some(exe) = probe.exe.as_deref() else {
@@ -1160,7 +1174,36 @@ mod win {
             // The commonest reason a drag "does nothing": the window is not in
             // the live eligible set, so no overlay and no placement can follow.
             log::debug!("movesize-start: hwnd {key} is NOT tracked; ignoring the drag");
+            // When the reason is "runs as administrator", say so. This is the
+            // moment the exclusion is confusing: the user is dragging, nothing
+            // tiles, and until now nothing anywhere explained it.
+            announce_elevated_drag(hwnd, key);
         }
+    }
+
+    /// Tell the host the user is dragging an elevated window, so it can put
+    /// the reason on that monitor's overlay. Cheap to compute and only ever
+    /// runs on an untracked drag start, which is rare.
+    fn announce_elevated_drag(hwnd: HWND, key: isize) {
+        let Some(probe) = probe_window(hwnd) else {
+            return;
+        };
+        let own_pid = unsafe { GetCurrentProcessId() };
+        if !super::elevated_is_the_only_reason(&probe, own_pid, super::own_window_is_managed(key)) {
+            return;
+        }
+        let Some(exe) = probe.exe.clone() else {
+            return;
+        };
+        let monitor_id = monitor_id_of(hwnd);
+        emit(
+            events::ELEVATED_DRAG,
+            crate::ipc::ElevatedDrag {
+                hwnd: key.to_string(),
+                monitor_id,
+                exe,
+            },
+        );
     }
 
     fn on_movesize_end(hwnd: HWND) {
@@ -1234,6 +1277,33 @@ mod tests {
         );
         // Naming it is not the test: elevated processes can be named.
         assert!(p.exe.is_some());
+    }
+
+    /// The drag-time notice must fire for exactly the windows a user would
+    /// expect to tile — otherwise it either stays silent on the admin console
+    /// (the bug) or shouts about invisible plumbing windows (the overcorrect).
+    #[test]
+    fn the_elevated_notice_fires_only_when_elevation_is_the_sole_reason() {
+        let only = |p: &WindowProbe| elevated_is_the_only_reason(p, OWN_PID, false);
+
+        // The admin console: ordinary in every way except elevation.
+        let mut admin = probe(APP_STYLE, 0);
+        admin.elevated = true;
+        assert!(only(&admin), "an otherwise-ordinary elevated window is the whole point");
+
+        // Not elevated: there is nothing to explain.
+        assert!(!only(&probe(APP_STYLE, 0)), "a managed window needs no notice");
+
+        // Elevated *and* ineligible for another reason: the user never
+        // expected these to tile, so a notice would be noise.
+        let mut cloaked = probe(APP_STYLE, 0);
+        cloaked.elevated = true;
+        cloaked.cloaked = true;
+        assert!(!only(&cloaked), "a cloaked window is skipped for its own reasons");
+
+        let mut tool = probe(APP_STYLE, WS_EX_TOOLWINDOW);
+        tool.elevated = true;
+        assert!(!only(&tool), "a tool window is skipped for its own reasons");
     }
 
     /// Style of a plain resizable app window (Notepad-like).

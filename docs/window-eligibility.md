@@ -37,12 +37,13 @@ say), the exclusion list is the tool for that, per app, by your choice.
 | Other virtual desktops / UWP ghosts | DWM-cloaked | Touching windows on another desktop would rearrange a workspace you cannot see |
 | Invisible or child windows | `WS_VISIBLE` / `WS_CHILD` | Not user-facing windows |
 | Excluded apps | The user's exclusion list | Explicit user intent — it also outranks the Settings carve-out |
-| Elevated beyond query | Exe unreadable | Windows will not even let Griddle ask; it certainly will not let it move them |
+| Elevated ("run as administrator") | `OpenProcessToken` refused | Windows refuses the move (UIPI), and trying took *other* windows down with it — a failed `DeferWindowPos` batch loses every window in it. Detected by the process **token**, not the handle: `PROCESS_QUERY_LIMITED_INFORMATION` is granted across integrity levels by design, so the exe name is readable and cannot stand in for elevation. Conservative on failure — if we cannot tell, the window stays managed |
 
 ## Managed, but with honest limits
 
 | Situation | Behaviour |
 | --- | --- |
-| **Elevated but queryable** (e.g. an installer run as admin) | Tracked and tiled, but Windows refuses the actual move (UIPI access-denied). Griddle now says so on the overlay — "Windows will not let Griddle move this window — it runs as administrator" — instead of failing only into the log |
+| **Elevated, dragged by the user** | Not tracked at all (see above), so nothing tiles. Dragging one puts the reason on that monitor's overlay — "&lt;exe&gt; runs as administrator — Griddle cannot place its windows" — and clears it after a few seconds. The notice fires only when elevation is the *sole* reason the window was skipped, so cloaked and tool windows stay quiet |
+| **Access-denied on a tracked window** | A window that turns unmovable while managed (rare) still reports `window-unmovable`, and the overlay says so on the grid that owns its tile |
 | **Maximized** | Left alone by design (`minimized` in the tracker means `IsIconic \|\| WS_MAXIMIZE`). Dragging one makes Windows restore it, at which point it is placed or floats — and floating windows can be dragged onto a grid (drag intake, spec 2026-08-20) |
 | **Full grids** | Placement is refused and the overlay says "No room — this grid is full" |
