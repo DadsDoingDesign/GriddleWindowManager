@@ -15,11 +15,13 @@
 //! 3. **Batched apply** — `apply_layout` validates every hwnd against the
 //!    tracker's live eligible set (contract §C2 security rule: unknown hwnds
 //!    are skipped and logged), then moves the survivors in one
-//!    `BeginDeferWindowPos`/`DeferWindowPos`/`EndDeferWindowPos` batch with
-//!    `SWP_NOACTIVATE | SWP_NOZORDER | SWP_ASYNCWINDOWPOS` (a hung app can
-//!    never stall the whole transaction), falling back to per-window
-//!    `SetWindowPos` if the batch is rejected mid-build. Dead handles are
-//!    untracked and reported via `window-destroyed`.
+//!    per-window `SetWindowPos` with
+//!    `SWP_NOACTIVATE | SWP_NOZORDER | SWP_ASYNCWINDOWPOS`, so a hung app can
+//!    never stall the whole transaction. This used to attempt a
+//!    `BeginDeferWindowPos` batch first; that batch could never commit,
+//!    because `DeferWindowPos` rejects `SWP_ASYNCWINDOWPOS`
+//!    (`defer_window_pos_rejects_async_flag`). Dead handles are untracked and
+//!    reported via `window-destroyed`.
 
 use crate::ipc::{events, ApplyLayout, Hwnd, HwndPayload};
 use std::collections::HashMap;
@@ -298,9 +300,9 @@ mod win {
     use windows::Win32::Foundation::{HWND, RECT};
     use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS};
     use windows::Win32::UI::WindowsAndMessaging::{
-        BeginDeferWindowPos, DeferWindowPos, EndDeferWindowPos, GetWindowRect, IsIconic, IsWindow,
-        IsZoomed, SetForegroundWindow, SetWindowPos, ShowWindow, HDWP, SET_WINDOW_POS_FLAGS,
-        SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOZORDER, SW_RESTORE,
+        GetWindowRect, IsIconic, IsWindow, IsZoomed, SetForegroundWindow, SetWindowPos,
+        ShowWindow, SET_WINDOW_POS_FLAGS, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOZORDER,
+        SW_RESTORE,
     };
 
     /// Flags for every managed-window move. `SWP_ASYNCWINDOWPOS` posts the
@@ -417,69 +419,22 @@ mod win {
             return 0;
         }
 
-        if apply_batched(&prepared) {
-            return prepared.len();
-        }
-        log::warn!(
-            "apply_layout: DeferWindowPos batch failed, falling back to per-window SetWindowPos"
-        );
+        // No `DeferWindowPos` batch. `MOVE_FLAGS` carries `SWP_ASYNCWINDOWPOS`,
+        // and `DeferWindowPos` rejects that flag outright with
+        // ERROR_INVALID_PARAMETER — see `defer_window_pos_rejects_async_flag`,
+        // which pins it. So the batch has *never* committed: every apply since
+        // this code was written built a doomed transaction, logged an error and
+        // a warning, and then did the whole job again per window. The release
+        // log carried ~980 of those pairs.
+        //
+        // Dropping the flag to make batching work is the tempting fix and is
+        // the wrong one here: without `SWP_ASYNCWINDOWPOS` the deferred commit
+        // sends `WM_WINDOWPOSCHANGING` synchronously into every target thread,
+        // so one not-responding app stalls the whole layout — the exact hang
+        // the flag was added to prevent (critique fix, actuator robustness).
+        // Between atomicity we have never actually had and a freeze the user
+        // is already reporting, keep the async path and stop pretending.
         apply_individually(&prepared, on_destroyed, on_unmovable)
-    }
-
-    /// One `BeginDeferWindowPos`/`EndDeferWindowPos` transaction. `false` if
-    /// the batch could not be built or committed (nothing moved in that
-    /// case: deferred positions only take effect at `EndDeferWindowPos`).
-    fn apply_batched(prepared: &[PreparedMove]) -> bool {
-        unsafe {
-            let mut hdwp: HDWP = match BeginDeferWindowPos(prepared.len() as i32) {
-                Ok(h) => h,
-                Err(e) => {
-                    log::error!("BeginDeferWindowPos failed: {e}");
-                    return false;
-                }
-            };
-            for p in prepared {
-                match DeferWindowPos(
-                    hdwp,
-                    p.hwnd,
-                    None,
-                    p.raw.x,
-                    p.raw.y,
-                    p.raw.width,
-                    p.raw.height,
-                    MOVE_FLAGS,
-                ) {
-                    Ok(next) => hdwp = next,
-                    Err(e) => {
-                        // Per Win32 docs the HDWP is invalid after a failure;
-                        // abandon the whole batch.
-                        //
-                        // Carry the rect: a bare "the parameter is incorrect"
-                        // says nothing, and this line is the only record of
-                        // why a batch fell back to per-window moves. Rects are
-                        // Griddle's own geometry, never window content, so
-                        // this stays within the log privacy rule.
-                        log::error!(
-                            "DeferWindowPos failed for hwnd {} at {}x{}+{}+{}                              (batch of {}): {e}",
-                            p.key,
-                            p.raw.width,
-                            p.raw.height,
-                            p.raw.x,
-                            p.raw.y,
-                            prepared.len(),
-                        );
-                        return false;
-                    }
-                }
-            }
-            match EndDeferWindowPos(hdwp) {
-                Ok(()) => true,
-                Err(e) => {
-                    log::error!("EndDeferWindowPos failed: {e}");
-                    false
-                }
-            }
-        }
     }
 
     /// Fallback path: apply each move on its own so one bad window cannot
@@ -734,6 +689,49 @@ mod win_tests {
     use super::*;
     use crate::ipc::Move;
     use crate::test_windows::{frame_bounds, raw_rect, wait_for_frame};
+
+    /// Diagnostic (log review 2026-08-21): the release log carries ~980
+    /// `DeferWindowPos failed ... The parameter is incorrect. (0x80070057)`
+    /// errors, essentially one per move, each followed by a successful
+    /// per-window `SetWindowPos` fallback with the *same* flags. Same
+    /// arguments, one API rejects them and the other does not — so the
+    /// suspect is the flag set, not the window. This pins which flag.
+    #[test]
+    #[cfg(windows)]
+    fn defer_window_pos_rejects_async_flag() {
+        use windows::Win32::UI::WindowsAndMessaging::{
+            BeginDeferWindowPos, DeferWindowPos, EndDeferWindowPos, HWND_TOP,
+            SET_WINDOW_POS_FLAGS, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOZORDER,
+        };
+        let hwnd = crate::test_windows::create_test_window("Griddle defer flag probe", 400, 300);
+        let with_async = SET_WINDOW_POS_FLAGS(
+            SWP_NOACTIVATE.0 | SWP_NOZORDER.0 | SWP_ASYNCWINDOWPOS.0,
+        );
+        let without_async = SET_WINDOW_POS_FLAGS(SWP_NOACTIVATE.0 | SWP_NOZORDER.0);
+
+        let try_flags = |flags| unsafe {
+            let hdwp = BeginDeferWindowPos(1).expect("begin");
+            let r = DeferWindowPos(hdwp, hwnd, Some(HWND_TOP), 10, 10, 400, 300, flags);
+            match r {
+                Ok(h) => {
+                    let _ = EndDeferWindowPos(h);
+                    Ok(())
+                }
+                Err(e) => Err(format!("{e}")),
+            }
+        };
+
+        let a = try_flags(with_async);
+        let b = try_flags(without_async);
+        eprintln!("DeferWindowPos with SWP_ASYNCWINDOWPOS : {a:?}");
+        eprintln!("DeferWindowPos without it             : {b:?}");
+        assert!(b.is_ok(), "without the async flag it must succeed: {b:?}");
+        assert!(
+            a.is_err(),
+            "if this now passes, the 0x80070057 storm has another cause"
+        );
+    }
+
     use windows::Win32::Foundation::HWND;
     use windows::Win32::UI::WindowsAndMessaging::DestroyWindow;
 
