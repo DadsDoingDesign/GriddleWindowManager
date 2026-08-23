@@ -1,15 +1,26 @@
-/* Settings window base theme (dark). Component-level styles live in the
-   Svelte components; this file only sets the page-wide palette and reset. */
+/* Settings window palette. Component-level styles live in the Svelte
+   components; this file only sets the page-wide tokens and reset.
+
+   Dark is the default and light is an override on `[data-theme='light']`,
+   set from the persisted preference. The two palettes are the Light and Dark
+   modes of the `Griddle · Color` collection in Figma, so a value changed
+   there has exactly one place to land here. */
 
 :root {
-  --bg: #0f1116;
-  --card: #171a21;
-  --well: #10131a;
-  --border: #262b36;
-  --text: #c6ccd6;
-  --text-strong: #eef0f4;
-  --text-dim: #828b9a;
-  --accent: #8b7cf6;
+  /* Dark = the `Griddle · Color` Dark mode, value for value. There are four
+     background levels, not three: ground, panel, surface and surface-2. The
+     old palette collapsed ground and surface-2 to within one step of each
+     other (#0f1116 vs #10131a), which is why the banded rows read as flat. */
+  --bg: #09090d; /* bg/ground   */
+  --panel: #121218; /* bg/panel    */
+  --card: #1a1a22; /* bg/surface  */
+  --well: #15151c; /* bg/surface-2 */
+  --border: #282833; /* border/line */
+  --border-soft: #1f1f28; /* border/line-soft */
+  --text: #9b9ba9; /* text/muted */
+  --text-strong: #f3f3f7; /* text/ink   */
+  --text-dim: #6e6e7e; /* text/faint */
+  --accent: #8c8cf5; /* accent/base */
 
   --sans: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
   --mono: 'Cascadia Mono', ui-monospace, Consolas, monospace;
@@ -20,6 +31,21 @@
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+:root[data-theme='light'] {
+  --bg: #fbfbfc;
+  --panel: #f1f1f5;
+  --card: #ffffff;
+  --well: #fafafc;
+  --border: #e3e3ea;
+  --border-soft: #ededf2;
+  --text: #6e6e7a;
+  --text-strong: #0b0b12;
+  --text-dim: #9c9ca8;
+  --accent: #5b5bd6;
+
+  color-scheme: light;
 }
 
 body {

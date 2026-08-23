@@ -504,7 +504,11 @@ pub fn open_settings(app: &AppHandle) -> tauri::Result<()> {
             // container, which is a real change to a component that carries
             // an editor/desktop parity guarantee. Tracked in docs/deferred.md.
             .inner_size(460.0, 560.0)
-            .min_inner_size(380.0, 420.0)
+            // Fixed, not resizable. The panel is a table of fixed-height rows
+            // with a map that fits the remainder, so there is nothing a
+            // larger window would reveal and nothing a smaller one would hide
+            // — only a chance to make it wrong.
+            .resizable(false)
             .always_on_top(true);
     // Must match the brain's args or WebView2 refuses the environment and
     // this build() fails after the native window is already on screen -
@@ -1452,6 +1456,7 @@ mod tests {
             work_height: height,
             dpi: 96,
             primary,
+            model: None,
         }
     }
 

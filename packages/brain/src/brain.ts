@@ -387,6 +387,8 @@ export class WindowManagerBrain {
    * position on the next config write from any other cause.
    */
   private settingsWindowPos: import('./types').WindowPos | null;
+  /** Widget appearance; `null` is dark. Round-tripped like the pop-out pos. */
+  private theme: 'dark' | 'light' | null;
 
   constructor(cb: BrainCallbacks, cfg?: AppConfig, opts?: { now?: () => number }) {
     this.cb = cb;
@@ -402,6 +404,7 @@ export class WindowManagerBrain {
     this.windowsSnapOriginal = cfg?.windowsSnapOriginal ?? null;
     this.manageSettingsWindow = cfg?.manageSettingsWindow === true;
     this.settingsWindowPos = cfg?.settingsWindowPos ?? null;
+    this.theme = cfg?.theme ?? null;
     // A pause that survived a restart (config `paused: true`) is already
     // running when the constructor returns — start its clock here so the
     // startup view's claim window is not eaten by it.
@@ -1772,7 +1775,7 @@ export class WindowManagerBrain {
     const layouts: Record<string, unknown> = { ...this.storedLayouts };
     for (const [id, mg] of this.grids) layouts[id] = mg.grid.toJSON();
     return {
-      version: 6,
+      version: 7,
       grids: [...this.gridSettings.values()].map((g) => ({ ...g })),
       templates: [...this.templates],
       exclusions: [...this.exclusions],
@@ -1788,6 +1791,7 @@ export class WindowManagerBrain {
       windowsSnapOriginal: this.windowsSnapOriginal,
       manageSettingsWindow: this.manageSettingsWindow,
       settingsWindowPos: this.settingsWindowPos,
+      theme: this.theme,
     };
   }
 
@@ -1821,6 +1825,7 @@ export class WindowManagerBrain {
     autoCheckUpdates?: boolean;
     suppressWindowsSnap?: boolean;
     manageSettingsWindow?: boolean;
+    theme?: 'dark' | 'light';
   }): void {
     let changed = false;
     if (prefs.paused !== undefined && prefs.paused !== this.paused) {
@@ -1870,6 +1875,10 @@ export class WindowManagerBrain {
       this.manageSettingsWindow = prefs.manageSettingsWindow;
       // Intent only. Rust reads the persisted flag when deciding whether the
       // pop-out's own hwnd is eligible, and resyncs the tracker on write.
+      changed = true;
+    }
+    if (prefs.theme !== undefined && prefs.theme !== this.theme) {
+      this.theme = prefs.theme;
       changed = true;
     }
     if (

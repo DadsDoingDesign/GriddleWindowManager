@@ -58,7 +58,10 @@ mod win {
     use windows::Win32::Graphics::Gdi::{
         EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO, MONITORINFOEXW,
     };
+    use windows::core::PCWSTR;
+    use windows::Win32::Graphics::Gdi::{EnumDisplayDevicesW, DISPLAY_DEVICEW};
     use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows::Win32::System::Registry::{RegGetValueW, HKEY_LOCAL_MACHINE, RRF_RT_REG_BINARY};
     use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
     use windows::Win32::UI::WindowsAndMessaging::{
         CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, RegisterClassExW,
@@ -172,7 +175,126 @@ mod win {
             work_height,
             dpi: dpi_x,
             primary: info.monitorInfo.dwFlags & MONITORINFOF_PRIMARY != 0,
+            model: monitor_model(&device),
         });
+    }
+
+    /// `EDD_GET_DEVICE_INTERFACE_NAME` — asks `EnumDisplayDevicesW` for the
+    /// PnP interface path in `DeviceID` rather than a driver description. The
+    /// `windows` crate does not re-export it, and it is a stable Win32 flag.
+    const EDD_GET_DEVICE_INTERFACE_NAME: u32 = 0x0000_0001;
+
+    /// The monitor's own name, read out of its EDID.
+    ///
+    /// `\.\DISPLAY1` is an adapter output, not a monitor — it says nothing
+    /// about what is plugged into it, and the numbering shuffles when displays
+    /// are re-detected. The EDID carries the name the manufacturer wrote, so
+    /// the UI can say "Gigabyte M28U" instead of "DISPLAY1".
+    ///
+    /// Best-effort at every step. Virtual, remote and some capture displays
+    /// have no EDID at all, and the caller falls back to the device name.
+    fn monitor_model(device: &str) -> Option<String> {
+        let wide: Vec<u16> = device.encode_utf16().chain(std::iter::once(0)).collect();
+        let mut dd = DISPLAY_DEVICEW {
+            cb: std::mem::size_of::<DISPLAY_DEVICEW>() as u32,
+            ..Default::default()
+        };
+        // Index 0: the monitor attached to this output.
+        let ok = unsafe {
+            EnumDisplayDevicesW(
+                PCWSTR(wide.as_ptr()),
+                0,
+                &mut dd,
+                EDD_GET_DEVICE_INTERFACE_NAME,
+            )
+        };
+        if !ok.as_bool() {
+            return None;
+        }
+        let id = wide_to_string(&dd.DeviceID);
+        // \\?\DISPLAY#GSM5B09#5&1234abcd&0&UID4353#{guid}
+        let rest = id.strip_prefix("\\\\?\\").unwrap_or(&id);
+        let parts: Vec<&str> = rest.split('#').collect();
+        if parts.len() < 3 {
+            return None;
+        }
+        let key = format!(
+            "SYSTEM\\CurrentControlSet\\Enum\\{}\\{}\\{}\\Device Parameters",
+            parts[0], parts[1], parts[2]
+        );
+        let edid = read_binary_value(&key, "EDID")?;
+        parse_edid_name(&edid)
+    }
+
+    /// Pull the display name out of an EDID block.
+    ///
+    /// An EDID has four 18-byte descriptors at 0x36, 0x48, 0x5A and 0x6C. A
+    /// descriptor whose first three bytes are zero is a text block, and type
+    /// 0xFC is the monitor name — up to 13 characters, terminated by 0x0A and
+    /// space-padded. Any other descriptor (timings, serial, range limits) is
+    /// skipped, and a block with no 0xFC descriptor simply has no name.
+    pub(super) fn parse_edid_name(edid: &[u8]) -> Option<String> {
+        if edid.len() < 128 {
+            return None;
+        }
+        for off in [0x36usize, 0x48, 0x5A, 0x6C] {
+            let d = &edid[off..off + 18];
+            if d[0] != 0 || d[1] != 0 || d[2] != 0 || d[3] != 0xFC {
+                continue;
+            }
+            let raw = &d[5..18];
+            let end = raw.iter().position(|&b| b == 0x0A).unwrap_or(raw.len());
+            let name = String::from_utf8_lossy(&raw[..end]).trim().to_string();
+            if !name.is_empty() {
+                return Some(name);
+            }
+        }
+        None
+    }
+
+    /// Read one REG_BINARY value from HKLM, or `None` for any failure.
+    fn read_binary_value(subkey: &str, value: &str) -> Option<Vec<u8>> {
+        let k: Vec<u16> = subkey.encode_utf16().chain(std::iter::once(0)).collect();
+        let v: Vec<u16> = value.encode_utf16().chain(std::iter::once(0)).collect();
+        let mut len: u32 = 0;
+        // First call sizes the buffer.
+        let rc = unsafe {
+            RegGetValueW(
+                HKEY_LOCAL_MACHINE,
+                PCWSTR(k.as_ptr()),
+                PCWSTR(v.as_ptr()),
+                RRF_RT_REG_BINARY,
+                None,
+                None,
+                Some(&mut len),
+            )
+        };
+        if rc.is_err() || len == 0 || len > 64 * 1024 {
+            return None;
+        }
+        let mut buf = vec![0u8; len as usize];
+        let rc = unsafe {
+            RegGetValueW(
+                HKEY_LOCAL_MACHINE,
+                PCWSTR(k.as_ptr()),
+                PCWSTR(v.as_ptr()),
+                RRF_RT_REG_BINARY,
+                None,
+                Some(buf.as_mut_ptr() as *mut _),
+                Some(&mut len),
+            )
+        };
+        if rc.is_err() {
+            return None;
+        }
+        buf.truncate(len as usize);
+        Some(buf)
+    }
+
+    /// Decode a UTF-16 field that may or may not be NUL-terminated.
+    fn wide_to_string(buf: &[u16]) -> String {
+        let end = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+        String::from_utf16_lossy(&buf[..end])
     }
 
     /// Spawn the display-change watcher thread. Idempotent: a second call is
@@ -303,6 +425,24 @@ mod win {
 
 #[cfg(test)]
 mod tests {
+    /// EDID descriptor 0xFC carries the manufacturer's own name for the
+    /// display. Pure, so the parsing is testable without a monitor attached.
+    #[test]
+    fn edid_monitor_name_is_read_from_the_fc_descriptor() {
+        let mut edid = vec![0u8; 128];
+        // Descriptor 2 (offset 0x48): type 0xFC, "Gigabyte M28U" + 0x0A pad.
+        edid[0x48 + 3] = 0xFC;
+        let name = b"Gigabyte M28U";
+        edid[0x48 + 5..0x48 + 5 + name.len()].copy_from_slice(name);
+        edid[0x48 + 5 + name.len()] = 0x0A;
+        assert_eq!(super::win::parse_edid_name(&edid).as_deref(), Some("Gigabyte M28U"));
+
+        // No 0xFC descriptor anywhere: nothing to report, and no panic.
+        assert_eq!(super::win::parse_edid_name(&vec![0u8; 128]), None);
+        // Too short to be an EDID block at all.
+        assert_eq!(super::win::parse_edid_name(&[0u8; 10]), None);
+    }
+
     use super::*;
 
     #[test]

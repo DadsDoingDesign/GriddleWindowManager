@@ -30,14 +30,28 @@
     mode: PlacementMode;
     monitor: MonitorInfo;
     tiles: TileSnapshot[];
+    /** Measured size of the band this editor fills. */
+    width?: number;
+    height?: number;
     /** Grid spacing (spec v0.2 §1), physical px — scaled into editor space. */
     gap: number;
     padding: number;
     /** Live per-app rules (spec v0.2 §2) — drive the tile context menu. */
     appRules: AppRule[];
   }
-  const { gridId, cols, rows, mode, monitor, tiles, gap, padding, appRules }: Props =
-    $props();
+  const {
+    gridId,
+    cols,
+    rows,
+    mode,
+    monitor,
+    tiles,
+    gap,
+    padding,
+    appRules,
+    width = 0,
+    height = 0,
+  }: Props = $props();
 
   // Editor mirrors the monitor's aspect ratio at a fixed width. The grid's
   // gap/padding pass through the same effectiveSpacing (incl. the coercion
@@ -46,11 +60,24 @@
   // (spec v0.2 §1 editor parity). Reading props once at init is on purpose:
   // the parent keys this component on gridId/cols/rows/mode/gap/padding, so
   // any config change remounts it.
-  // Sized for the settings pop-out, which is a narrow panel rather than a
-  // page. 632 was the full-width page figure and made the map the tallest
-  // thing in the window by a wide margin; 360 keeps it clearly readable as a
-  // map of the display while leaving room for the controls stacked beneath.
-  const EDITOR_W = 360;
+  // The map spans its band edge to edge. The width is measured by the parent
+  // and passed in, because the pop-out is resizable *and* can be tiled into a
+  // grid cell of any width — a constant left gutters the moment either
+  // happened. The parent also keys this component on that width, so the
+  // read-props-once-at-init contract (and with it editor/desktop parity)
+  // stays exactly as it was: a different width is a different instance.
+  // Fit the band without distorting the display it maps. The band gives us a
+  // box; the monitor gives us a shape. Take whichever of the two constraints
+  // binds first, so a wide band letterboxes vertically and a tall one
+  // letterboxes horizontally, and the aspect ratio is never the thing that
+  // gives — a minimap whose proportions are a function of the window is not a
+  // map of anything.
+  const EDITOR_W = (() => {
+    const w = width > 0 ? width : 460;
+    const h = height > 0 ? height : 0;
+    const aspect = monitor.workWidth / Math.max(1, monitor.workHeight);
+    return h > 0 ? Math.max(80, Math.min(w, Math.floor(h * aspect))) : w;
+  })();
   /* svelte-ignore state_referenced_locally */
   const layout = (() => {
     const eff = effectiveSpacing(monitor, { cols, rows, gap, padding });
@@ -601,8 +628,10 @@
 
   .editor {
     position: relative;
-    border: 1px solid var(--border);
-    border-radius: 10px;
+    /* Flush in its band: the band's own rule separates it from the row above,
+       so a border and a radius here would draw a second, inset frame. */
+    border: 0;
+    border-radius: 0;
     background: var(--well);
     overflow: hidden;
     /* The monitor decides this box's shape, so it must not absorb slack from

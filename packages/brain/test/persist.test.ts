@@ -117,7 +117,7 @@ describe("serializeConfig / parseConfig", () => {
 
   it("round-trips a populated config", () => {
     const cfg: AppConfig = {
-      version: 6,
+      version: 7,
       grids: [
         makeGridSettings(),
         makeGridSettings({ id: "grid:other", enabled: false }),
@@ -163,6 +163,7 @@ describe("serializeConfig / parseConfig", () => {
       windowsSnapOriginal: null,
       manageSettingsWindow: false,
       settingsWindowPos: null,
+    theme: null,
     };
     expect(parseConfig(serializeConfig(cfg))).toEqual(cfg);
   });

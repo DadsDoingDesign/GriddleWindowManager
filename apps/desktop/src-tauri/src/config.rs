@@ -23,11 +23,12 @@ use std::path::{Path, PathBuf};
 /// version on read. v4 also renames the two original placement modes, which
 /// the `GridMode` serde aliases absorb: a pre-v4 file's `collision`/`overlay`
 /// read as `push`/`stack` and persist under the new names, with no change in
-/// behavior. v6 adds `manage_settings_window` + `settings_window_pos`
+/// behavior. v7 adds `theme` over v6, which added `manage_settings_window`
+/// + `settings_window_pos`
 /// over v5, which added `suppress_windows_snap` + `windows_snap_original`
 /// (spec 2026-08-19), both `#[serde(default)]` like every addition before
 /// them. Only *future* versions are quarantined.
-const CONFIG_VERSION: u32 = 6;
+const CONFIG_VERSION: u32 = 7;
 /// Oldest schema version the migration path accepts.
 const MIN_CONFIG_VERSION: u32 = 1;
 
@@ -397,6 +398,7 @@ mod tests {
             windows_snap_original: None,
             manage_settings_window: false,
             settings_window_pos: None,
+            theme: None,
         }
     }
 

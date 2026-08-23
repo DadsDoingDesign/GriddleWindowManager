@@ -17,7 +17,7 @@ import { MAX_SPACING_PX } from './coords';
  * their own parse and read back as `null`, i.e. "corrupt, start over".
  * Bumping a schema must be one edit, not four.
  */
-export const CONFIG_VERSION = 6;
+export const CONFIG_VERSION = 7;
 import type {
   AppConfig,
   AppRule,
@@ -79,6 +79,7 @@ export function defaultConfig(): AppConfig {
     // remembered position, so it opens by the tray.
     manageSettingsWindow: false,
     settingsWindowPos: null,
+    theme: null,
   };
 }
 
@@ -372,6 +373,9 @@ export function sanitizeConfig(raw: unknown): AppConfig | null {
     // otherwise treat a malformed value as "never placed".
     manageSettingsWindow: raw.manageSettingsWindow === true,
     settingsWindowPos: isWindowPos(raw.settingsWindowPos) ? raw.settingsWindowPos : null,
+    // Anything but the two known names reads as dark, so a hand-edited or
+    // future value can never leave the widget unstyled.
+    theme: raw.theme === 'light' || raw.theme === 'dark' ? raw.theme : null,
   };
 }
 

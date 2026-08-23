@@ -15,6 +15,12 @@ export interface MonitorInfo {
   workHeight: number;
   dpi: number;
   primary: boolean;
+  /**
+   * The display's own name from its EDID, e.g. "Gigabyte M28U". `null` when
+   * the display has no EDID (virtual and remote displays often do not), and
+   * the UI falls back to the device name.
+   */
+  model?: string | null;
 }
 
 export interface WindowInfo {
@@ -265,10 +271,11 @@ export interface AppConfig {
   // `windowsSnapOriginal` (default null), the Windows-snap suppression pair.
   // v6 (spec 2026-08-20 addendum): adds `manageSettingsWindow` (default
   // false) + `settingsWindowPos` (default null), for the settings pop-out.
+  // v7: adds `theme` (default null = dark).
   // The loaders (persist.ts and the Rust mirror's serde defaults) migrate
   // older configs in place — defaults `appRules: [], views: [],
   // startupViewId: null, autoCheckUpdates: false`, spacing absent-means-0.
-  version: 6;
+  version: 7;
   grids: GridSettings[];
   templates: Template[];
   exclusions: string[]; // lowercase exe names
@@ -317,6 +324,11 @@ export interface AppConfig {
    * the tray-corner default applying on a fresh install and never after.
    */
   settingsWindowPos: WindowPos | null;
+  /**
+   * Widget appearance. `null` means dark, which is what every config written
+   * before this field existed should keep looking like.
+   */
+  theme: 'dark' | 'light' | null;
 }
 
 /** A remembered top-left corner in physical screen pixels. */

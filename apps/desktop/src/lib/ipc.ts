@@ -208,6 +208,8 @@ export interface SettingsSetPrefsPayload {
    * occupy one of the cells it is describing.
    */
   manageSettingsWindow?: boolean;
+  /** Widget appearance. Absent leaves it unchanged. */
+  theme?: 'dark' | 'light';
 }
 
 // ---------------------------------------------------------------------------

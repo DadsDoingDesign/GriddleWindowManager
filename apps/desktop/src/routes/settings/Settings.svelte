@@ -177,6 +177,24 @@
   let manageSettingsWindow = $state(false);
   /** Templates live behind a button on the manager row (Figma 110-344). */
   let templatesOpen = $state(false);
+  /**
+   * Widget appearance. Applied to the document element, because the palette
+   * lives on `:root` in settings.css — the whole window reskins, not just the
+   * band table. Dark is the default and what an absent preference means.
+   */
+  let theme = $state<'dark' | 'light'>('dark');
+  /** Measured size of the map band, so the editor can fit itself to it. */
+  let mapW = $state(0);
+  let mapH = $state(0);
+  function applyTheme(next: 'dark' | 'light'): void {
+    theme = next;
+    document.documentElement.dataset.theme = next;
+  }
+  function toggleTheme(): void {
+    const next = theme === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
+    void emitSettingsSetPrefs({ theme: next });
+  }
   let firstRunSuppressSnap = $state(false);
   let hotkeyDraft = $state(DISPLAY_DEFAULT_HOTKEY);
   let savedHotkey = $state(DISPLAY_DEFAULT_HOTKEY);
@@ -236,6 +254,7 @@
       autostart = cfg.autostart;
       suppressWindowsSnap = cfg.suppressWindowsSnap;
       manageSettingsWindow = cfg.manageSettingsWindow;
+      applyTheme(cfg.theme === 'light' ? 'light' : 'dark');
       hotkeyDraft = toDisplayHotkey(cfg.hotkey);
       savedHotkey = toDisplayHotkey(cfg.hotkey);
       seedExclusions = cfg.exclusions;
@@ -436,8 +455,23 @@
     return device.replace(/^[\\.]+/, '') || id;
   }
 
+  /**
+   * What to call a display. `\.\DISPLAY1` is an adapter output, not a
+   * monitor: it says nothing about what is plugged in and the numbering
+   * shuffles on re-detect. Prefer the name the manufacturer wrote into the
+   * EDID, and fall back to the device name when there is none.
+   */
+  /** Position in the sorted list, 1-based — "Display 1", "Display 2". */
+  function displayOrdinalFromId(id: string): string {
+    const i = sortedMonitors.findIndex((m) => m.id === id);
+    return i >= 0 ? `Display ${i + 1}` : monNameFromId(id);
+  }
+  function displayOrdinal(m: MonitorInfo): string {
+    return displayOrdinalFromId(m.id);
+  }
+
   function monName(m: MonitorInfo): string {
-    return monNameFromId(m.id);
+    return m.model?.trim() || monNameFromId(m.id);
   }
 
   function dpiScale(m: MonitorInfo): number {
@@ -472,14 +506,18 @@
   }
 
   const tabs: Tab[] = $derived([
+    // Tabs are positions, not products: "Display 1" tells you where you are
+    // at a glance and stays the same width whatever is plugged in. The model
+    // name is the heading of the panel you land on, where there is room for
+    // it and where it answers "which monitor is this?".
     ...sortedMonitors
       // A monitor covered by a spanning grid is configured on the span's own
       // tab; showing both would offer two places to change one thing.
       .filter((m) => !spanFor(m.id))
-      .map((m) => ({ key: `mon:${m.id}`, label: monName(m), kind: 'monitor' as const })),
+      .map((m) => ({ key: `mon:${m.id}`, label: displayOrdinal(m), kind: 'monitor' as const })),
     ...spanGrids.map((g) => ({
       key: `span:${g.id}`,
-      label: g.monitorIds.map(monNameFromId).join(' + '),
+      label: g.monitorIds.map(displayOrdinalFromId).join(' + '),
       kind: 'span' as const,
     })),
     { key: 'add', label: '+', kind: 'add' as const },
@@ -961,6 +999,20 @@
   >
 {/snippet}
 
+{#snippet sunIcon()}
+  <svg class="ico" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+    ><circle cx="8" cy="8" r="3.1" /><path
+      d="M8 1.2v1.5M8 13.3v1.5M14.8 8h-1.5M2.7 8H1.2M12.8 3.2l-1.1 1.1M4.3 11.7l-1.1 1.1M12.8 12.8l-1.1-1.1M4.3 4.3L3.2 3.2"
+    /></svg
+  >
+{/snippet}
+
+{#snippet moonIcon()}
+  <svg class="ico" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"
+    ><path d="M13.3 10.1A5.7 5.7 0 0 1 6 2.7a5.9 5.9 0 1 0 7.3 7.4Z" /></svg
+  >
+{/snippet}
+
 {#snippet pauseIcon()}
   <svg class="ico" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"
     ><rect x="3.5" y="2.5" width="3.4" height="11" rx="1.1" /><rect
@@ -1181,8 +1233,18 @@
       <div class="cell label nodivide" data-tauri-drag-region>
         {@render brandMark()}
         <span class="wordmark" data-tauri-drag-region>Griddle</span>
+        <span class="product" data-tauri-drag-region>Window Manager</span>
         {#if appVersion}<span class="version" data-tauri-drag-region>{appVersion}</span>{/if}
       </div>
+      <button
+        class="cell icon"
+        title={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
+        aria-label={theme === 'dark' ? 'Switch to light appearance' : 'Switch to dark appearance'}
+        aria-pressed={theme === 'light'}
+        onclick={toggleTheme}
+      >
+        {#if theme === 'dark'}{@render sunIcon()}{:else}{@render moonIcon()}{/if}
+      </button>
       <button
         class="cell wide ghost pause"
         class:on={snapshot?.paused}
@@ -1338,7 +1400,7 @@
          control sits in its own 32px cell against the right edge. The label
          cell carries the vertical rule, so the controls line up in a column
          down the whole widget regardless of how long the labels are. -->
-    <section class="rows" data-tauri-drag-region>
+    <section class="rows fill" data-tauri-drag-region>
       <div class="row" data-tauri-drag-region>
         <div class="cell label" data-tauri-drag-region>
           <span class="mon-name">{monName(mon)}</span>
@@ -1365,10 +1427,14 @@
       {/if}
 
       {#if spanned === undefined}
+        <!-- One block, not four bands: the dimension controls belong together,
+             so the rules go around the group rather than between its rows. -->
+        <div class="group">
         {@render stepper('Columns', null, dims.cols, 1, MAX_COLS, 1, !enabled, (v) => setDims(mon, v, dims.rows))}
         {@render stepper('Rows', null, dims.rows, 1, MAX_ROWS, 1, !enabled, (v) => setDims(mon, dims.cols, v))}
         {@render stepper('Gap', 'px', spacing.gap, 0, MAX_SPACING_PX, SPACING_STEP, !enabled || !grid, (v) => grid && setGridSpacing(grid, v, spacing.padding))}
         {@render stepper('Padding', 'px', spacing.padding, 0, MAX_SPACING_PX, SPACING_STEP, !enabled || !grid, (v) => grid && setGridSpacing(grid, spacing.gap, v))}
+        </div>
 
         {#if enabled && grid}
           <div class="row">
@@ -1414,10 +1480,15 @@
              editor stays mounted but hidden, so the band keeps exactly the
              height it had and nothing below it moves. The gallery then scrolls
              sideways inside that fixed box. -->
-        <div class="mapband" data-tauri-drag-region>
+        <div
+          class="mapband"
+          data-tauri-drag-region
+          bind:clientWidth={mapW}
+          bind:clientHeight={mapH}
+        >
           <div class="mapstack" class:swapped={templatesOpen}>
             <div class="mapinner" inert={templatesOpen}>
-              {#key `${grid.id}:${grid.cols}x${grid.rows}:${grid.mode}:${grid.gap ?? 0}:${grid.padding ?? 0}`}
+              {#key `${grid.id}:${grid.cols}x${grid.rows}:${grid.mode}:${grid.gap ?? 0}:${grid.padding ?? 0}:${mapW}x${mapH}`}
                 <GridEditor
                   gridId={grid.id}
                   cols={grid.cols}
@@ -1426,6 +1497,8 @@
                   monitor={mon}
                   gap={grid.gap ?? 0}
                   padding={grid.padding ?? 0}
+                  width={mapW}
+                  height={mapH}
                   {tiles}
                   {appRules}
                 />
@@ -2225,18 +2298,36 @@
     display: flex;
     flex-direction: column;
   }
+  /* The display tab owns the remaining height so its map can fill it. */
+  .rows.fill {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
 
   /* Brand and tab bands. The brand row sits on the panel tone and the tabs on
      the well tone, so the chrome reads as one unit above the settings table
      without needing a heavier divider. */
+  /* Band tones follow the design: brand on panel, tabs on surface-2, the
+     settings table on surface. Three distinct levels, so the chrome separates
+     from the content without needing a heavier rule. */
   .brandrow {
-    background: var(--bg);
+    background: var(--panel);
   }
   .brandrow .wordmark {
-    font-size: 15px;
+    font-size: 16px;
     font-weight: 700;
     color: var(--text-strong);
     letter-spacing: -0.01em;
+  }
+  /* The name completes the lockup without competing with it. */
+  .brandrow .product {
+    font-size: 13px;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .brandrow .brandmark {
+    width: 16px;
+    height: 16px;
   }
   .cell.nodivide {
     border-right: 0;
@@ -2281,6 +2372,18 @@
   }
   .row.dimmed {
     opacity: 0.55;
+  }
+
+  /* The dimension block: one rule underneath it, none inside, and no vertical
+     divider either — the numbers already form their own column. */
+  .group {
+    border-bottom: 1px solid var(--border);
+  }
+  .group .row {
+    border-bottom: 0;
+  }
+  .group .cell.label {
+    border-right: 0;
   }
 
   .cell {
@@ -2343,8 +2446,21 @@
     opacity: 0.35;
     cursor: default;
   }
+  /* Fixed, and it stays fixed while you type. A flex item defaults to
+     `min-width: auto`, so the focused input's border pushed the cell past its
+     basis and shoved the minus button left mid-edit. Pinning the width and
+     letting the field fill it means focus changes nothing but the outline. */
   .cell.num {
-    flex: 0 0 40px;
+    flex: 0 0 44px;
+    min-width: 0;
+  }
+  .cell.num :global(.numfield) {
+    width: 100%;
+    justify-content: center;
+  }
+  .cell.num :global(.numfield input) {
+    width: 100%;
+    box-sizing: border-box;
   }
 
   .ico {
@@ -2409,12 +2525,18 @@
   }
 
   /* The map is the one band that is not a row: full bleed, its own inset. */
+  /* The map takes whatever height is left rather than dictating it. That is
+     what lets the window be a fixed size on any monitor: the editor fits
+     itself to this box, letterboxing to keep the display's proportions. */
   .mapband {
     background: var(--card);
-    border-bottom: 1px solid var(--border);
-    padding: 16px;
+    padding: 0;
     display: flex;
+    align-items: center;
     justify-content: center;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
   }
 
   /* The editor holds the box open; the gallery is laid over it. Swapping this
@@ -2520,11 +2642,15 @@
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    /* No gap: the bands stack directly, each delimited by its own rule. A
+       flex gap here left a strip of ground showing between the tab row and
+       the table, which read as a seam in a surface that should be continuous. */
+    gap: 0;
     height: 100%;
     box-sizing: border-box;
-    overflow-y: auto;
-    overscroll-behavior: contain;
+    /* Fixed window, fixed content: the map absorbs the slack, so there is
+       never anything to scroll to. */
+    overflow: hidden;
   }
 
 

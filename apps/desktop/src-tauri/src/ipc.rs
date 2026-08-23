@@ -26,6 +26,11 @@ pub struct MonitorInfo {
     pub work_height: i32,
     pub dpi: u32,
     pub primary: bool,
+    /// The monitor's own name from its EDID, e.g. "Gigabyte M28U". `None`
+    /// when the display has no EDID to read (virtual and remote displays
+    /// often do not), in which case the UI falls back to the device name.
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -307,6 +312,10 @@ pub struct AppConfig {
     /// the tray-corner default apply on a fresh install and never again.
     #[serde(default)]
     pub settings_window_pos: Option<WindowPos>,
+    /// Widget appearance. Absent means `"dark"`, which is what every config
+    /// written before this field existed should keep looking like.
+    #[serde(default)]
+    pub theme: Option<String>,
 }
 
 /// A remembered top-left corner in physical screen pixels. Signed because a
