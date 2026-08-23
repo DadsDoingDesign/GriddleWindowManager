@@ -23,9 +23,23 @@
     /** The grid's current dims — Apply discloses when a template differs. */
     gridCols: number;
     gridRows: number;
+    /**
+     * Laid over the grid map instead of below it, in the map's own box
+     * (Figma 110-344 follow-up). The cards flow sideways and the box scrolls
+     * horizontally; how many rows fit is decided by the height available, so
+     * a tall portrait map gets two and a wide one gets a single strip.
+     */
+    carousel?: boolean;
   }
-  const { gridId, templates, activeTemplateId, tileCount, gridCols, gridRows }: Props =
-    $props();
+  const {
+    gridId,
+    templates,
+    activeTemplateId,
+    tileCount,
+    gridCols,
+    gridRows,
+    carousel = false,
+  }: Props = $props();
 
   /**
    * The layout a template actually describes (spec 2026-08-20): "Two
@@ -121,7 +135,7 @@
   }
 </script>
 
-<div class="gallery">
+<div class="gallery" class:carousel>
   <div class="gallery-head">
     <span class="lbl">Templates</span>
     {#if capturing}
@@ -299,6 +313,34 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
     gap: 10px;
+  }
+
+  /* Carousel: fill the map's box, flow the cards along it, and let the height
+     decide the number of rows rather than fixing it. `auto-fill` with a row
+     minimum means one strip on a landscape map and two on a tall one, which
+     is the "it can be two stacked" case without forcing it into a box too
+     short to read. */
+  .gallery.carousel {
+    height: 100%;
+    gap: 8px;
+    min-height: 0;
+  }
+  .gallery.carousel .cards {
+    flex: 1 1 auto;
+    min-height: 0;
+    grid-auto-flow: column;
+    grid-template-columns: none;
+    grid-template-rows: repeat(auto-fill, minmax(112px, 1fr));
+    grid-auto-columns: 156px;
+    align-content: start;
+    padding-bottom: 2px;
+  }
+  .gallery.carousel .tcard {
+    min-height: 0;
+  }
+  /* The footer note is a page-level aside; in a scrolling strip it is noise. */
+  .gallery.carousel > .hint {
+    display: none;
   }
 
   .tcard {

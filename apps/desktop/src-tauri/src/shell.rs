@@ -491,17 +491,19 @@ pub fn open_settings(app: &AppHandle) -> tauri::Result<()> {
             .skip_taskbar(true)
             .shadow(true)
             .maximizable(false)
-            // A narrow panel, not a page: the controls are stacked one per
-            // line and the map is 360px wide, which is ~198px of map on a
-            // 16:9 display. Sized so that stack fits unscrolled, erring tall
-            // on purpose - surplus height is invisible background, whereas
-            // being short clips the map, which is the whole point of the tab.
+            // Sized to the band table (Figma 110-344), which is far more
+            // compact than the card layout it replaced: brand, tabs, display,
+            // four steppers, behaviour and the manager row are 32px each, and
+            // the map adds ~230 on a 16:9 display. That totals ~526, which is
+            // what the design itself measures. Erring a little tall on
+            // purpose - surplus is background, whereas being short clips the
+            // map, which is the point of the tab.
             //
             // Other aspect ratios still scroll, and that is the honest
             // trade: the alternative is making the editor responsive to its
             // container, which is a real change to a component that carries
             // an editor/desktop parity guarantee. Tracked in docs/deferred.md.
-            .inner_size(460.0, 730.0)
+            .inner_size(460.0, 560.0)
             .min_inner_size(380.0, 420.0)
             .always_on_top(true);
     // Must match the brain's args or WebView2 refuses the environment and
@@ -531,7 +533,7 @@ fn place_settings(win: &tauri::WebviewWindow) {
     let size = win
         .outer_size()
         .map(|s| (s.width as i32, s.height as i32))
-        .unwrap_or((460, 730));
+        .unwrap_or((460, 560));
     let Some(pos) = settings_pos().or_else(|| default_settings_pos(size)) else {
         return;
     };

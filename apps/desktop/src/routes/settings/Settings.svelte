@@ -175,6 +175,8 @@
   let suppressWindowsSnap = $state(false);
   /** Spec 2026-08-20 addendum: let Griddle tile this pop-out like any window. */
   let manageSettingsWindow = $state(false);
+  /** Templates live behind a button on the manager row (Figma 110-344). */
+  let templatesOpen = $state(false);
   let firstRunSuppressSnap = $state(false);
   let hotkeyDraft = $state(DISPLAY_DEFAULT_HOTKEY);
   let savedHotkey = $state(DISPLAY_DEFAULT_HOTKEY);
@@ -895,6 +897,119 @@
   holds — below 32px the counter has to go solid instead.
   Source of truth: apps/desktop/app-icon.svg.
 -->
+{#snippet minusIcon()}
+  <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"
+    ><path d="M3 8h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg
+  >
+{/snippet}
+
+{#snippet plusIcon()}
+  <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"
+    ><path
+      d="M8 3v10M3 8h10"
+      stroke="currentColor"
+      stroke-width="1.6"
+      stroke-linecap="round"
+    /></svg
+  >
+{/snippet}
+
+{#snippet tick()}
+  <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"
+    ><path
+      d="M3.5 8.5l3 3 6-7"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    /></svg
+  >
+{/snippet}
+
+{#snippet squares()}
+  <svg class="ico" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"
+    ><rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1.4" /><rect
+      x="9"
+      y="1.5"
+      width="5.5"
+      height="5.5"
+      rx="1.4"
+    /><rect x="1.5" y="9" width="5.5" height="5.5" rx="1.4" /><rect
+      x="9"
+      y="9"
+      width="5.5"
+      height="5.5"
+      rx="1.4"
+    /></svg
+  >
+{/snippet}
+
+{#snippet collapseIcon()}
+  <svg class="ico" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"
+    ><path d="M9.5 6.5h4M9.5 6.5v-4M9.5 6.5L14 2M6.5 9.5h-4M6.5 9.5v4M6.5 9.5L2 14" /></svg
+  >
+{/snippet}
+
+{#snippet gearIcon()}
+  <!-- A solid cog rather than a circle with spokes: at 15px the spoked version
+       reads as a sunburst, which is not what a settings control should say. -->
+  <svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"
+    ><path
+      d="M19.14 12.94a7.07 7.07 0 0 0 0-1.88l2-1.58a.5.5 0 0 0 .12-.61l-1.92-3.32a.5.5 0 0 0-.59-.22l-2.39.96a7.03 7.03 0 0 0-1.62-.94l-.36-2.54a.5.5 0 0 0-.5-.42H10.6a.5.5 0 0 0-.5.42l-.36 2.54a7.03 7.03 0 0 0-1.62.94l-2.39-.96a.5.5 0 0 0-.59.22L3.22 8.87a.5.5 0 0 0 .12.61l2 1.58a7.07 7.07 0 0 0 0 1.88l-2 1.58a.5.5 0 0 0-.12.61l1.92 3.32a.5.5 0 0 0 .59.22l2.39-.96a7.03 7.03 0 0 0 1.62.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54a7.03 7.03 0 0 0 1.62-.94l2.39.96a.5.5 0 0 0 .59-.22l1.92-3.32a.5.5 0 0 0-.12-.61ZM12 15.6A3.6 3.6 0 1 1 15.6 12 3.6 3.6 0 0 1 12 15.6Z"
+    /></svg
+  >
+{/snippet}
+
+{#snippet pauseIcon()}
+  <svg class="ico" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"
+    ><rect x="3.5" y="2.5" width="3.4" height="11" rx="1.1" /><rect
+      x="9.1"
+      y="2.5"
+      width="3.4"
+      height="11"
+      rx="1.1"
+    /></svg
+  >
+{/snippet}
+
+<!-- One band of the settings table: a label cell that carries the vertical
+     rule, then the minus / value / plus cells pinned to the right edge. -->
+{#snippet stepper(
+  label: string,
+  unit: string | null,
+  value: number,
+  min: number,
+  max: number,
+  step: number,
+  disabled: boolean,
+  commit: (v: number) => void,
+)}
+  <div class="row" class:dimmed={disabled}>
+    <div class="cell label">
+      <span class="lbl">{label}</span>
+      {#if unit}<span class="unit">({unit})</span>{/if}
+    </div>
+    <button
+      class="cell step"
+      aria-label={`Decrease ${label}`}
+      disabled={disabled || value <= min}
+      onclick={() => commit(value - step)}
+      use:holdRepeat={() => commit(value - step)}>{@render minusIcon()}</button
+    >
+    <div class="cell num">
+      <NumberField {value} {min} {max} {label} {disabled} onCommit={commit} />
+    </div>
+    <button
+      class="cell step"
+      aria-label={`Increase ${label}`}
+      disabled={disabled || value >= max}
+      onclick={() => commit(value + step)}
+      use:holdRepeat={() => commit(value + step)}>{@render plusIcon()}</button
+    >
+  </div>
+{/snippet}
+
 {#snippet brandMark()}
   <svg class="brandmark" viewBox="0 0 150 150" fill="none" aria-hidden="true">
     <path
@@ -1059,63 +1174,63 @@
        pass underneath; the negative margins cancel the page padding so
        the bar spans edge to edge and actually occludes what it covers. -->
   <div class="topbar">
-  <header class="slim" data-tauri-drag-region>
-    <div class="brand" data-tauri-drag-region>
-      {@render brandMark()}
-      <div data-tauri-drag-region>
-        <h1 data-tauri-drag-region>
-          Griddle{#if appVersion}<span class="version" data-tauri-drag-region>{appVersion}</span
-            >{/if}
-        </h1>
+    <!-- Brand band (Figma 110-344): mark, name, version, and Pause as a
+         labelled action rather than a switch — it is the panic button, so it
+         reads as something you press, not a preference you set. -->
+    <div class="row brandrow" data-tauri-drag-region>
+      <div class="cell label nodivide" data-tauri-drag-region>
+        {@render brandMark()}
+        <span class="wordmark" data-tauri-drag-region>Griddle</span>
+        {#if appVersion}<span class="version" data-tauri-drag-region>{appVersion}</span>{/if}
       </div>
-    </div>
-    <!-- Pause is the panic button (spec §6) — it lives where a stressed
-         user looks first, not at the bottom of General. -->
-    <div class="header-pause">
-      {#if snapshot?.paused}
-        <span class="badge paused">Paused</span>
-      {/if}
-      <label class="switch row">
-        <input
-          type="checkbox"
-          checked={snapshot?.paused ?? false}
-          onchange={(e) => togglePaused(e.currentTarget.checked)}
-        />
-        <span class="track"><span class="thumb"></span></span>
-        <span class="switch-label wide">Pause window management</span>
-      </label>
-    </div>
-  </header>
-  <!-- Tab bar (spec 2026-08-20): one tab per grid, `+` to add a spanning or
-       custom grid, gear for preferences, and a hide control that returns the
-       pop-out to the tray — it floats always-on-top, so a one-click way out
-       of the way is not a nicety. -->
-  {#if tabs.length > 0}
-    <nav class="tabbar" aria-label="Displays and settings" data-tauri-drag-region>
-      <div class="tabs" role="tablist">
-        {#each tabs as t (t.key)}
-          <button
-            role="tab"
-            class="tab"
-            class:sel={isActive(t.key)}
-            class:glyph={t.kind === 'add' || t.kind === 'prefs'}
-            aria-selected={isActive(t.key)}
-            title={t.kind === 'add'
-              ? 'Add a spanning or custom grid'
-              : t.kind === 'prefs'
-                ? 'Preferences'
-                : t.label}
-            onclick={() => (activeTabKey = t.key)}
-          >
-            {t.label}
-          </button>
-        {/each}
-      </div>
-      <button class="tab glyph hide" title="Hide to tray" onclick={() => void hideSettings()}>
-        &#x2304;
+      <button
+        class="cell wide ghost pause"
+        class:on={snapshot?.paused}
+        aria-pressed={snapshot?.paused ?? false}
+        title="Suspend tracking and placement everywhere"
+        onclick={() => togglePaused(!(snapshot?.paused ?? false))}
+      >
+        <span>{snapshot?.paused ? 'Paused' : 'Pause'}</span>
+        {@render pauseIcon()}
       </button>
-    </nav>
-  {/if}
+    </div>
+
+    <!-- Tab band: one segment per grid plus `+`, each divided by a rule, then
+         the two window actions pinned right. The gear selects the preferences
+         tab like any other, but reads as an action because that is what it is
+         next to — it is not a display. -->
+    {#if tabs.length > 0}
+      <nav class="row tabrow" aria-label="Displays and settings" data-tauri-drag-region>
+        <div class="tabs" role="tablist">
+          {#each tabs.filter((t) => t.kind !== 'prefs') as t (t.key)}
+            <button
+              role="tab"
+              class="tab"
+              class:sel={isActive(t.key)}
+              class:glyph={t.kind === 'add'}
+              aria-selected={isActive(t.key)}
+              title={t.kind === 'add' ? 'Add a spanning or custom grid' : t.label}
+              onclick={() => (activeTabKey = t.key)}
+            >
+              {t.label}
+            </button>
+          {/each}
+        </div>
+        <div class="spacer" data-tauri-drag-region></div>
+        <button class="cell icon" title="Hide to tray" onclick={() => void hideSettings()}>
+          {@render collapseIcon()}
+        </button>
+        <button
+          class="cell icon"
+          class:sel={isActive('prefs')}
+          aria-pressed={isActive('prefs')}
+          title="Preferences"
+          onclick={() => (activeTabKey = 'prefs')}
+        >
+          {@render gearIcon()}
+        </button>
+      </nav>
+    {/if}
   </div>
 
   <!-- Update banner (spec §7). Nothing here happens on its own: the release
@@ -1218,185 +1333,60 @@
     {@const dims = dimsFor(mon)}
     {@const spacing = spacingView(mon, grid)}
     {@const tiles = (grid && snapshot?.tiles[grid.id]) || []}
-    <section class="card map" data-tauri-drag-region>
-      <div class="card-head compact" data-tauri-drag-region>
-        <div class="mon-info" data-tauri-drag-region>
-          <h2 class="one-line">
-            <span class="mon-name">{monName(mon)}</span>
-            <span class="meta-inline">
-              {mon.width}×{mon.height} · {dpiScale(mon)}%
-            </span>
-            {#if mon.primary}<span class="badge">Primary</span>{/if}
-            {#if spanned}<span class="badge">Spanned</span>{/if}
-          </h2>
+    <!-- Structure per the Figma spec (node 110-344): the panel is a table of
+         full-width bands, each 32px tall with a hairline under it, and every
+         control sits in its own 32px cell against the right edge. The label
+         cell carries the vertical rule, so the controls line up in a column
+         down the whole widget regardless of how long the labels are. -->
+    <section class="rows" data-tauri-drag-region>
+      <div class="row" data-tauri-drag-region>
+        <div class="cell label" data-tauri-drag-region>
+          <span class="mon-name">{monName(mon)}</span>
+          <span class="meta-inline">{mon.width}×{mon.height}</span>
+          {#if spanned}<span class="badge">Spanned</span>{/if}
         </div>
-        <label class="switch row">
+        <label class="cell wide check" title={spanned ? 'Part of a spanning grid' : 'Apply the grid to this display'}>
+          <span class="check-label">Grid applied</span>
           <input
             type="checkbox"
             checked={enabled}
             disabled={spanned !== undefined}
             onchange={(e) => toggleGrid(mon, e.currentTarget.checked)}
           />
-          <span class="track"><span class="thumb"></span></span>
-          <span class="switch-label">
-            {spanned ? 'Spanned' : enabled ? 'Grid on' : 'Grid off'}
-          </span>
+          <span class="box" aria-hidden="true">{@render tick()}</span>
         </label>
       </div>
+
       {#if spanned}
-        <p class="hint">
+        <p class="rowhint">
           This monitor is part of a spanning grid — disable that grid to manage
           it on its own.
         </p>
       {/if}
 
-      <div
-        class="controls"
-        class:dimmed={!enabled}
-        class:hidden={spanned !== undefined}
-        data-tauri-drag-region
-      >
-        <div class="stepper">
-          <span class="lbl">Columns</span>
-          <button
-            aria-label="Fewer columns"
-            disabled={!enabled || dims.cols <= 1}
-            onclick={() => setDims(mon, dims.cols - 1, dims.rows)}
-            use:holdRepeat={() => setDims(mon, dims.cols - 1, dims.rows)}>−</button
-          >
-          <NumberField
-            value={dims.cols}
-            min={1}
-            max={MAX_COLS}
-            label="Columns"
-            disabled={!enabled}
-            onCommit={(v) => setDims(mon, v, dims.rows)}
-          />
-          <button
-            aria-label="More columns"
-            disabled={!enabled || dims.cols >= MAX_COLS}
-            onclick={() => setDims(mon, dims.cols + 1, dims.rows)}
-            use:holdRepeat={() => setDims(mon, dims.cols + 1, dims.rows)}>+</button
-          >
-        </div>
-        <div class="stepper">
-          <span class="lbl">Rows</span>
-          <button
-            aria-label="Fewer rows"
-            disabled={!enabled || dims.rows <= 1}
-            onclick={() => setDims(mon, dims.cols, dims.rows - 1)}
-            use:holdRepeat={() => setDims(mon, dims.cols, dims.rows - 1)}>−</button
-          >
-          <NumberField
-            value={dims.rows}
-            min={1}
-            max={MAX_ROWS}
-            label="Rows"
-            disabled={!enabled}
-            onCommit={(v) => setDims(mon, dims.cols, v)}
-          />
-          <button
-            aria-label="More rows"
-            disabled={!enabled || dims.rows >= MAX_ROWS}
-            onclick={() => setDims(mon, dims.cols, dims.rows + 1)}
-            use:holdRepeat={() => setDims(mon, dims.cols, dims.rows + 1)}>+</button
-          >
-        </div>
+      {#if spanned === undefined}
+        {@render stepper('Columns', null, dims.cols, 1, MAX_COLS, 1, !enabled, (v) => setDims(mon, v, dims.rows))}
+        {@render stepper('Rows', null, dims.rows, 1, MAX_ROWS, 1, !enabled, (v) => setDims(mon, dims.cols, v))}
+        {@render stepper('Gap', 'px', spacing.gap, 0, MAX_SPACING_PX, SPACING_STEP, !enabled || !grid, (v) => grid && setGridSpacing(grid, v, spacing.padding))}
+        {@render stepper('Padding', 'px', spacing.padding, 0, MAX_SPACING_PX, SPACING_STEP, !enabled || !grid, (v) => grid && setGridSpacing(grid, spacing.gap, v))}
+
         {#if enabled && grid}
-          <PlacementPicker
-            value={grid.mode}
-            options={PLACEMENT_MODES}
-            onchange={(v) => setMode(grid, v as PlacementMode)}
-          />
-          <span class="tile-count">
-            {tiles.length}
-            {tiles.length === 1 ? 'window' : 'windows'}
-          </span>
+          <div class="row">
+            <div class="cell label"><span class="lbl">Grid behavior</span></div>
+            <div class="cell behavior">
+              <PlacementPicker
+                value={grid.mode}
+                options={PLACEMENT_MODES}
+                compact
+                onchange={(v) => setMode(grid, v as PlacementMode)}
+              />
+            </div>
+          </div>
         {/if}
-      </div>
-      <!-- Spacing steppers (spec v0.2 §1): every click re-applies live. -->
-      <div
-        class="controls"
-        class:dimmed={!enabled}
-        class:hidden={spanned !== undefined}
-        data-tauri-drag-region
-      >
-        <div class="stepper">
-          <span class="lbl" title="Space between neighboring windows">Gap</span>
-          <button
-            aria-label="Smaller gap"
-            disabled={!enabled || !grid || spacing.gap <= 0}
-            onclick={() =>
-              grid && setGridSpacing(grid, spacing.gap - SPACING_STEP, spacing.padding)}
-            use:holdRepeat={() =>
-              grid && setGridSpacing(grid, spacing.gap - SPACING_STEP, spacing.padding)}
-            >−</button
-          >
-          <NumberField
-            value={spacing.gap}
-            min={0}
-            max={MAX_SPACING_PX}
-            label="Gap in pixels"
-            suffix="px"
-            disabled={!enabled || !grid}
-            onCommit={(v) => grid && setGridSpacing(grid, v, spacing.padding)}
-          />
-          {#if spacing.coerced}
-            <span
-              class="coerced-note"
-              title={`Capped at ${cappedGap(spacing)} — this grid's cells are too small for ${spacing.gap}px`}
-              >→ {cappedGap(spacing)}</span
-            >
-          {/if}
-          <button
-            aria-label="Larger gap"
-            disabled={!enabled || !grid || spacing.gap >= MAX_SPACING_PX}
-            onclick={() =>
-              grid && setGridSpacing(grid, spacing.gap + SPACING_STEP, spacing.padding)}
-            use:holdRepeat={() =>
-              grid && setGridSpacing(grid, spacing.gap + SPACING_STEP, spacing.padding)}
-            >+</button
-          >
-        </div>
-        <div class="stepper">
-          <span class="lbl" title="Margin between the grid and the monitor edges">
-            Padding
-          </span>
-          <button
-            aria-label="Less padding"
-            disabled={!enabled || !grid || spacing.padding <= 0}
-            onclick={() =>
-              grid && setGridSpacing(grid, spacing.gap, spacing.padding - SPACING_STEP)}
-            use:holdRepeat={() =>
-              grid && setGridSpacing(grid, spacing.gap, spacing.padding - SPACING_STEP)}
-            >−</button
-          >
-          <NumberField
-            value={spacing.padding}
-            min={0}
-            max={MAX_SPACING_PX}
-            label="Padding in pixels"
-            suffix="px"
-            disabled={!enabled || !grid}
-            onCommit={(v) => grid && setGridSpacing(grid, spacing.gap, v)}
-          />
-          <button
-            aria-label="More padding"
-            disabled={!enabled || !grid || spacing.padding >= MAX_SPACING_PX}
-            onclick={() =>
-              grid && setGridSpacing(grid, spacing.gap, spacing.padding + SPACING_STEP)}
-            use:holdRepeat={() =>
-              grid && setGridSpacing(grid, spacing.gap, spacing.padding + SPACING_STEP)}
-            >+</button
-          >
-        </div>
-      </div>
-      <!-- The gap/padding and placement explanations used to occupy four
-           lines above the editor. In a minimap the editor is the point, so
-           they became the controls' own tooltips — except a *coerced* gap,
-           which is the app overriding you and still says so out loud. -->
+      {/if}
+
       {#if !spanned && spacing.coerced}
-        <p class="hint" class:dimmed={!enabled}>
+        <p class="rowhint">
           This grid's cells are too small for a {spacing.gap}px gap, so it is
           capped at {cappedGap(spacing)} — the editor and your desktop both
           show the capped value.
@@ -1404,36 +1394,58 @@
       {/if}
 
       {#if enabled && grid}
-        {#key `${grid.id}:${grid.cols}x${grid.rows}:${grid.mode}:${grid.gap ?? 0}:${grid.padding ?? 0}`}
-          <GridEditor
-            gridId={grid.id}
-            cols={grid.cols}
-            rows={grid.rows}
-            mode={grid.mode}
-            monitor={mon}
-            gap={grid.gap ?? 0}
-            padding={grid.padding ?? 0}
-            {tiles}
-            {appRules}
-          />
-        {/key}
-        <p class="hint tiny">
-          Drag tiles to rearrange the real windows · right-click a tile to make
-          its spot that app's default
-        </p>
-        <!-- Templates are an occasional action, not part of the map: folded
-             away so the editor keeps the height. -->
-        <details class="fold">
-          <summary>Templates</summary>
-          <TemplateGallery
-            gridId={grid.id}
-            templates={snapshot?.templates ?? []}
-            activeTemplateId={grid.activeTemplateId}
-            tileCount={tiles.length}
-            gridCols={grid.cols}
-            gridRows={grid.rows}
-          />
-        </details>
+        <div class="row" data-tauri-drag-region>
+          <div class="cell label" data-tauri-drag-region>
+            <span class="lbl strong">Live grid manager</span>
+            <span class="meta-inline">drag and resize from here</span>
+          </div>
+          <button
+            class="cell wide ghost"
+            aria-expanded={templatesOpen}
+            title="Saved slot arrangements you can apply to this grid"
+            onclick={() => (templatesOpen = !templatesOpen)}
+          >
+            <span>Templates</span>
+            {@render squares()}
+          </button>
+        </div>
+
+        <!-- Templates take the map's place rather than pushing it down: the
+             editor stays mounted but hidden, so the band keeps exactly the
+             height it had and nothing below it moves. The gallery then scrolls
+             sideways inside that fixed box. -->
+        <div class="mapband" data-tauri-drag-region>
+          <div class="mapstack" class:swapped={templatesOpen}>
+            <div class="mapinner" inert={templatesOpen}>
+              {#key `${grid.id}:${grid.cols}x${grid.rows}:${grid.mode}:${grid.gap ?? 0}:${grid.padding ?? 0}`}
+                <GridEditor
+                  gridId={grid.id}
+                  cols={grid.cols}
+                  rows={grid.rows}
+                  mode={grid.mode}
+                  monitor={mon}
+                  gap={grid.gap ?? 0}
+                  padding={grid.padding ?? 0}
+                  {tiles}
+                  {appRules}
+                />
+              {/key}
+            </div>
+            {#if templatesOpen}
+              <div class="carousel">
+                <TemplateGallery
+                  gridId={grid.id}
+                  templates={snapshot?.templates ?? []}
+                  activeTemplateId={grid.activeTemplateId}
+                  tileCount={tiles.length}
+                  gridCols={grid.cols}
+                  gridRows={grid.rows}
+                  carousel
+                />
+              </div>
+            {/if}
+          </div>
+        </div>
       {/if}
     </section>
   {/each}
@@ -2180,38 +2192,10 @@
 </div>
 
 <style>
-  /* Minimap layout (spec 2026-08-20, stage 3). The display tab is a map
-     first: a single-line header, one wrapping row of controls, and the grid
-     editor taking every pixel that is left. Everything that used to explain
-     itself in a paragraph above the editor now lives in a tooltip on the
-     control it describes. */
-  .card.map {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-  }
 
-  .card-head.compact {
-    align-items: center;
-    padding-bottom: 2px;
-  }
 
-  .card-head.compact h2.one-line {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    flex-wrap: nowrap;
-    min-width: 0;
-    font-size: 15px;
-  }
 
-  .card-head.compact .mon-name {
-    white-space: nowrap;
-  }
 
-  .card-head.compact .badge {
-    flex: 0 0 auto;
-  }
 
   /*
    * The bar the sections scroll under. Sticky rather than a separate flex
@@ -2224,22 +2208,243 @@
     top: 0;
     z-index: 5;
     background: var(--bg);
-    margin: 0 -16px 0;
-    padding: 14px 16px 6px;
+    margin: 0;
+    padding: 0;
+    border-bottom: 0;
+  }
+
+  /* ---------------------------------------------------------------------
+     The band table (Figma 110-344)
+     ---------------------------------------------------------------------
+     Every setting is a full-width row, 32px tall, with a hairline under it.
+     The label cell takes the slack and carries the vertical rule, so the
+     controls stack into one column down the right edge no matter how long
+     the labels get. Controls are square cells, not floating buttons: the
+     grid the widget configures is echoed by the widget's own structure. */
+  .rows {
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Brand and tab bands. The brand row sits on the panel tone and the tabs on
+     the well tone, so the chrome reads as one unit above the settings table
+     without needing a heavier divider. */
+  .brandrow {
+    background: var(--bg);
+  }
+  .brandrow .wordmark {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-strong);
+    letter-spacing: -0.01em;
+  }
+  .cell.nodivide {
+    border-right: 0;
+  }
+  .ghost.pause.on {
+    color: var(--accent);
+  }
+
+  .tabrow {
+    background: var(--well);
+    align-items: stretch;
+  }
+  .tabrow .tabs {
+    display: flex;
+    align-items: stretch;
+    min-width: 0;
+  }
+  .tabrow .spacer {
+    flex: 1 1 auto;
+    border-right: 1px solid var(--border);
+  }
+  .cell.icon {
+    cursor: pointer;
+    color: var(--text-dim);
+    border-right: 1px solid var(--border);
+  }
+  .cell.icon:last-child {
+    border-right: 0;
+  }
+  .cell.icon:hover,
+  .cell.icon.sel {
+    background: var(--card);
+    color: var(--text-strong);
+  }
+
+  .row {
+    display: flex;
+    align-items: stretch;
+    min-height: 32px;
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+  }
+  .row.dimmed {
+    opacity: 0.55;
+  }
+
+  .cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 32px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+  }
+  /* Takes the slack and owns the vertical rule the controls line up against. */
+  .cell.label {
+    flex: 1 1 auto;
+    justify-content: flex-start;
+    gap: 8px;
+    padding: 0 12px;
+    min-width: 0;
+    border-right: 1px solid var(--border);
+  }
+  .cell.wide {
+    flex: 0 0 auto;
+    gap: 8px;
+    padding: 0 12px;
+  }
+
+  .cell .lbl {
+    font-size: 12.5px;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .cell .lbl.strong {
+    color: var(--text-strong);
+    font-weight: 600;
+  }
+  .cell .unit {
+    font-size: 11.5px;
+    color: var(--text-dim);
+  }
+  .cell .mon-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-strong);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .cell.step {
+    cursor: pointer;
+    color: var(--text-dim);
+  }
+  .cell.step:hover:not(:disabled) {
+    background: var(--well);
+    color: var(--text-strong);
+  }
+  .cell.step:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+  .cell.num {
+    flex: 0 0 40px;
+  }
+
+  .ico {
+    width: 15px;
+    height: 15px;
+    flex: 0 0 auto;
+    display: block;
+  }
+
+  /* "Grid applied" — a checkbox in the spec, not a switch: it states a fact
+     about the display rather than flipping a mode. */
+  .check {
+    cursor: pointer;
+  }
+  .check input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+  .check .check-label {
+    font-size: 12.5px;
+    color: var(--text);
+  }
+  .check .box {
+    width: 17px;
+    height: 17px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: var(--well);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: transparent;
+  }
+  .check input:checked + .box {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .check input:focus-visible + .box {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .check input:disabled + .box {
+    opacity: 0.4;
+  }
+
+  .cell.behavior {
+    flex: 0 0 46%;
+    padding: 0;
+  }
+
+  .ghost {
+    cursor: pointer;
+    font-size: 12.5px;
+    color: var(--text);
+  }
+  .ghost:hover {
+    background: var(--well);
+    color: var(--text-strong);
+  }
+
+  /* The map is the one band that is not a row: full bleed, its own inset. */
+  .mapband {
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    padding: 16px;
+    display: flex;
+    justify-content: center;
+  }
+
+  /* The editor holds the box open; the gallery is laid over it. Swapping this
+     way is what keeps "don't change the size of the grid container" true for
+     any monitor aspect, without duplicating the editor's sizing maths. */
+  .mapstack {
+    position: relative;
+  }
+  .mapstack.swapped .mapinner {
+    visibility: hidden;
+  }
+  .carousel {
+    position: absolute;
+    inset: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+  }
+
+  .rowhint {
+    margin: 0;
+    padding: 7px 12px;
+    font-size: 11.5px;
+    line-height: 1.45;
+    color: var(--text-dim);
+    background: var(--card);
     border-bottom: 1px solid var(--border);
   }
 
-  /* Slim brand row: mark + version only. */
-  header.slim {
-    padding-bottom: 4px;
-  }
 
-  header.slim h1 {
-    font-size: 17px;
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-  }
 
   .meta-inline {
     font-size: 12px;
@@ -2248,61 +2453,13 @@
     white-space: nowrap;
   }
 
-  .hint.tiny {
-    font-size: 11.5px;
-    margin: 2px 0 0;
-  }
 
-  /* Folded sections (templates): present, out of the way, and obviously
-     openable — a disclosure triangle beats a wall of cards in a small map. */
-  .fold {
-    border-top: 1px solid var(--border);
-    padding-top: 8px;
-  }
 
-  .fold > summary {
-    cursor: pointer;
-    font-size: 12.5px;
-    font-weight: 600;
-    color: var(--text-dim);
-    list-style: none;
-    user-select: none;
-  }
 
-  .fold > summary::-webkit-details-marker {
-    display: none;
-  }
 
-  .fold > summary::before {
-    content: 'b8';
-    display: inline-block;
-    margin-right: 6px;
-    transition: transform 0.12s ease;
-  }
 
-  .fold[open] > summary::before {
-    transform: rotate(90deg);
-  }
 
-  .fold > summary:hover {
-    color: var(--text-strong);
-  }
 
-  /* Tab bar (spec 2026-08-20). Sticky so the map's chrome stays put while a
-     tab's own content scrolls, and the hide control is pushed to the far
-     right where a window's dismiss affordance is expected. */
-  .tabbar {
-    position: sticky;
-    top: 0;
-    z-index: 5;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 0 10px;
-    background: var(--bg);
-    border-bottom: 1px solid var(--border);
-    margin-bottom: 14px;
-  }
 
   .tabs {
     display: flex;
@@ -2346,11 +2503,6 @@
     font-size: 15px;
   }
 
-  .tab.hide {
-    flex: 0 0 auto;
-    font-size: 18px;
-    line-height: 1;
-  }
 
   /*
    * `body` is clipped to the rounded frame (settings.css), so the scroll has
@@ -2362,10 +2514,10 @@
   .page {
     max-width: 720px;
     margin: 0 auto;
-    /* No top padding: the sticky top bar owns it, so `top: 0` pins against
-       the very top of the scrollport instead of 14px down, which would leak
-       a strip of scrolling content above the bar. */
-    padding: 0 16px 20px;
+    /* No padding at all: the band table is the panel. Every row runs edge to
+       edge and carries its own rule, so an outer gutter would just float the
+       whole thing inside a frame it is already acting as. */
+    padding: 0;
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -2375,22 +2527,12 @@
     overscroll-behavior: contain;
   }
 
-  /* The mark is part of the drag handle, not a target in it: let the pointer
-     fall through to the row that carries `data-tauri-drag-region`. */
-  header.slim .brandmark {
-    pointer-events: none;
-  }
 
   header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     margin-bottom: 4px;
-  }
-  .header-pause {
-    display: inline-flex;
-    align-items: center;
-    gap: 12px;
   }
   .brand {
     display: flex;
@@ -2540,11 +2682,6 @@
     color: var(--accent);
     border: 1px solid rgba(139, 124, 246, 0.35);
   }
-  .badge.paused {
-    background: rgba(246, 173, 85, 0.14);
-    color: #f6ad55;
-    border-color: rgba(246, 173, 85, 0.4);
-  }
   .badge.experimental {
     background: rgba(246, 173, 85, 0.14);
     color: #f6ad55;
@@ -2667,34 +2804,6 @@
     flex-wrap: wrap;
   }
 
-  /*
-   * In the pop-out the controls are a list, one setting per line, label left
-   * and control right — the same shape the toggles already use. Wrapping a
-   * horizontal row into a narrow panel produced ragged two-up/one-up lines
-   * that moved as values changed width; a stack is stable and scannable.
-   */
-  .card.map .controls {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 9px;
-  }
-  .card.map .controls .stepper {
-    display: flex;
-    align-items: center;
-    width: 100%;
-    gap: 8px;
-  }
-  /* Push the control cluster right, leaving the label alone on the left.
-     `margin-left: auto` on the first control keeps this working whatever
-     the cluster contains (the gap stepper adds a coercion note). */
-  .card.map .controls .stepper > button:first-of-type {
-    margin-left: auto;
-  }
-  /* The window count is an annotation, not a row: it rides under the
-     placement picker rather than claiming a line of its own. */
-  .card.map .controls .tile-count {
-    align-self: flex-end;
-  }
 
   /* A controls row whose only child is a list-row switch should let it span
      the full card width rather than hugging its content. */
@@ -2708,12 +2817,6 @@
     font-size: 12px;
     color: var(--text-dim);
     white-space: nowrap;
-  }
-  .controls.dimmed {
-    opacity: 0.55;
-  }
-  .controls.hidden {
-    display: none;
   }
 
   .pick {
@@ -2793,10 +2896,6 @@
     margin: 0;
     font-size: 12px;
     color: var(--text-dim);
-  }
-  /* Matches the dimming of the disabled controls the hint explains. */
-  .hint.dimmed {
-    opacity: 0.55;
   }
 
   .quiet {

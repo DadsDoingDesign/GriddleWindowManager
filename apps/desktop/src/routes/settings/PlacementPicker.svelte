@@ -31,12 +31,19 @@
     onchange,
     disabled = false,
     label = 'Placement',
+    compact = false,
   }: {
     value: string;
     options: Option[];
     onchange: (v: string) => void;
     disabled?: boolean;
     label?: string;
+    /**
+     * Sit inside a band that already names the control (Figma 110-344): drop
+     * the built-in label and the inline blurb, and let the trigger fill its
+     * cell rather than drawing a second box inside one.
+     */
+    compact?: boolean;
   } = $props();
 
   let open = $state(false);
@@ -114,8 +121,8 @@
 
 <svelte:document onpointerdown={onDocPointerDown} />
 
-<div class="picker" bind:this={root} class:disabled>
-  <span class="lbl" id="{listId}-label">{label}</span>
+<div class="picker" bind:this={root} class:disabled class:compact>
+  <span class="lbl" id="{listId}-label" class:sr-only={compact}>{label}</span>
   <button
     type="button"
     class="trigger"
@@ -134,7 +141,7 @@
     <span class="value">
       {#if selected}
         <span class="name">{selected.label}</span>
-        <span class="blurb">— {selected.blurb}</span>
+        {#if !compact}<span class="blurb">— {selected.blurb}</span>{/if}
       {/if}
     </span>
     <span class="caret" aria-hidden="true">&#x2304;</span>
@@ -178,6 +185,42 @@
     font-size: 12.5px;
     color: var(--text-dim);
     white-space: nowrap;
+  }
+
+  /* Kept for screen readers: the band's own label is visual only. */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  /* In a band the cell *is* the control: no second border, full height. */
+  .picker.compact {
+    height: 100%;
+    gap: 0;
+  }
+  .picker.compact .trigger {
+    max-width: none;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    padding: 0 10px 0 12px;
+    justify-content: space-between;
+  }
+  .picker.compact .trigger:hover:not(:disabled) {
+    background: var(--well);
+  }
+  .picker.compact .list {
+    top: calc(100% + 1px);
+    right: 0;
   }
 
   .trigger {
