@@ -466,6 +466,26 @@
     const i = sortedMonitors.findIndex((m) => m.id === id);
     return i >= 0 ? `Display ${i + 1}` : monNameFromId(id);
   }
+  /**
+   * Turn a vertical wheel into sideways travel on the template strip.
+   *
+   * The strip only scrolls on one axis, and Chromium is supposed to redirect
+   * a vertical wheel into it — measured on the installed build, it does not.
+   * Most mice have no horizontal wheel, so without this the only way along
+   * the strip is to drag the scrollbar.
+   */
+  function wheelSideways(e: WheelEvent): void {
+    const box = (e.currentTarget as HTMLElement).querySelector<HTMLElement>('[data-strip]');
+    if (box === null) return;
+    const travel = e.deltaX !== 0 ? e.deltaX : e.deltaY;
+    if (travel === 0) return;
+    const before = box.scrollLeft;
+    box.scrollLeft = before + travel;
+    // Only swallow the event if it actually moved something, so a wheel at
+    // either end still reaches whatever is underneath.
+    if (box.scrollLeft !== before) e.preventDefault();
+  }
+
   function displayOrdinal(m: MonitorInfo): string {
     return displayOrdinalFromId(m.id);
   }
@@ -1246,16 +1266,6 @@
         {#if theme === 'dark'}{@render sunIcon()}{:else}{@render moonIcon()}{/if}
       </button>
       <button
-        class="cell wide ghost pause"
-        class:on={snapshot?.paused}
-        aria-pressed={snapshot?.paused ?? false}
-        title="Suspend tracking and placement everywhere"
-        onclick={() => togglePaused(!(snapshot?.paused ?? false))}
-      >
-        <span>{snapshot?.paused ? 'Paused' : 'Pause'}</span>
-        {@render pauseIcon()}
-      </button>
-      <button
         class="cell icon"
         class:sel={isActive('prefs')}
         aria-pressed={isActive('prefs')}
@@ -1266,6 +1276,19 @@
       </button>
       <button class="cell icon" title="Hide to tray" onclick={() => void hideSettings()}>
         {@render collapseIcon()}
+      </button>
+      <!-- Pause is last on purpose: the icon buttons group together, and the
+           one labelled control — the panic button — ends the row where the
+           eye stops. -->
+      <button
+        class="cell wide ghost pause"
+        class:on={snapshot?.paused}
+        aria-pressed={snapshot?.paused ?? false}
+        title="Suspend tracking and placement everywhere"
+        onclick={() => togglePaused(!(snapshot?.paused ?? false))}
+      >
+        <span>{snapshot?.paused ? 'Paused' : 'Pause'}</span>
+        {@render pauseIcon()}
       </button>
     </div>
 
@@ -1505,7 +1528,7 @@
               {/key}
             </div>
             {#if templatesOpen}
-              <div class="carousel">
+              <div class="carousel" onwheel={wheelSideways}>
                 <TemplateGallery
                   gridId={grid.id}
                   templates={snapshot?.templates ?? []}
@@ -2551,9 +2574,7 @@
   .carousel {
     position: absolute;
     inset: 0;
-    overflow-x: auto;
-    overflow-y: hidden;
-    overscroll-behavior-x: contain;
+    overflow: hidden;
   }
 
   .rowhint {

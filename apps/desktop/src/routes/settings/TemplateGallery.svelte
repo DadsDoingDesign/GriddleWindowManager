@@ -167,9 +167,14 @@
     {/if}
   </div>
 
-  <div class="cards">
+  <div class="cards" data-strip>
     {#each templates as t (t.id)}
       {@const active = t.id === activeTemplateId}
+      <!-- One grid track per template. The delete button used to be a sibling
+           of the card, which made it a track of its own once the cards flowed
+           by column — and, being absolutely positioned with no positioned
+           parent of its own, it landed in the corner of the whole strip. -->
+      <div class="slot">
       <button
         class="tcard"
         class:active
@@ -214,6 +219,7 @@
           onclick={() => requestDelete(t)}>{armedDeleteId === t.id ? '!' : '×'}</button
         >
       {/if}
+      </div>
     {/each}
   </div>
   <p class="hint">Saved templates are shared across all grids.</p>
@@ -300,7 +306,7 @@
   .cards {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
-    gap: 10px;
+    gap: var(--sp-2);
   }
 
   /* Carousel: fill the map's box, flow the cards along it, and let the height
@@ -320,18 +326,55 @@
     width: 100%;
     min-width: 0;
   }
+  /* The strip is the scroll box, not the gallery: with the whole gallery
+     scrolling, "Capture layout" slid off the left edge and out of reach as
+     soon as you moved along the templates. */
   .gallery.carousel .cards {
     flex: 1 1 auto;
     min-height: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    /* A default Windows scrollbar is ~17px of a box that is only as tall as
+       the map band: left alone it takes the height back out of the very
+       cards it exists to reach. */
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
     width: 100%;
     min-width: 0;
     grid-auto-flow: column;
     grid-template-columns: none;
     grid-template-rows: minmax(0, 1fr);
-    grid-auto-columns: 132px;
+    /* Two and a half at a time. The half is the point: a card cut by the edge
+       says "keep going" in a way a row of whole cards and a scrollbar does
+       not. Sized off the box rather than fixed in pixels, so the promise holds
+       whatever width the map band ends up with. */
+    grid-auto-columns: calc((100% - 2 * var(--sp-2)) / 2.5);
     align-content: stretch;
   }
+  .gallery.carousel .cards::-webkit-scrollbar {
+    height: 6px;
+  }
+  .gallery.carousel .cards::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .gallery.carousel .cards::-webkit-scrollbar-thumb {
+    border-radius: var(--radius-pill);
+    background: var(--line);
+  }
+  .gallery.carousel .cards::-webkit-scrollbar-thumb:hover {
+    background: var(--faint);
+  }
+  .gallery.carousel .slot,
   .gallery.carousel .tcard {
+    min-height: 0;
+    height: 100%;
+  }
+  /* One tall tile: the preview takes the slack and the name sits under it,
+     rather than a short picture floating at the top of an empty card. */
+  .gallery.carousel .preview {
+    flex: 1 1 auto;
+    height: auto;
     min-height: 0;
   }
   /* The footer note is a page-level aside; in a scrolling strip it is noise. */
@@ -345,10 +388,21 @@
    * re-dimension the grid — is in the tooltip, because at this size a caption
    * competes with the thing it is captioning.
    */
-  .tcard {
+  .slot {
     position: relative;
     display: flex;
+    min-width: 0;
+    min-height: 0;
+  }
+  .slot > .tcard {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .tcard {
+    display: flex;
     flex-direction: column;
+    justify-content: center;
     gap: var(--sp-1);
     padding: var(--sp-2);
     border-radius: var(--radius);
@@ -406,7 +460,7 @@
     opacity: 0;
     transition: opacity var(--dur) var(--ease);
   }
-  .tcard:hover + .tdel,
+  .slot:hover .tdel,
   .tdel:hover,
   .tdel:focus-visible {
     opacity: 1;
