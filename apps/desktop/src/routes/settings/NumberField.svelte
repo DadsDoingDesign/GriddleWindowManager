@@ -117,7 +117,7 @@
     border: 1px solid transparent;
     border-radius: 6px;
     background: transparent;
-    color: var(--text-strong);
+    color: var(--text);
     font: inherit;
     font-variant-numeric: tabular-nums;
     text-align: center;
@@ -126,25 +126,25 @@
 
   /* Readable as editable before it is clicked, without shouting. */
   input:hover:not(:disabled) {
-    border-color: var(--border);
-    background: var(--well);
+    border-color: var(--line);
+    background: var(--surface-2);
   }
 
   input:focus {
     outline: none;
     border-color: var(--accent);
-    background: var(--well);
+    background: var(--surface-2);
     /* Widen while editing so a typed 3-digit value is fully visible. */
     width: 4ch;
   }
 
   input:disabled {
     cursor: default;
-    color: var(--text-dim);
+    color: var(--faint);
   }
 
   .suffix {
     font-size: 12px;
-    color: var(--text-dim);
+    color: var(--faint);
   }
 </style>

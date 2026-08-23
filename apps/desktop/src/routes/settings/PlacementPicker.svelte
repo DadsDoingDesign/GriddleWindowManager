@@ -183,7 +183,7 @@
 
   .lbl {
     font-size: 12.5px;
-    color: var(--text-dim);
+    color: var(--faint);
     white-space: nowrap;
   }
 
@@ -216,7 +216,7 @@
     justify-content: space-between;
   }
   .picker.compact .trigger:hover:not(:disabled) {
-    background: var(--well);
+    background: var(--surface-2);
   }
   .picker.compact .list {
     top: calc(100% + 1px);
@@ -231,9 +231,9 @@
     gap: 6px;
     padding: 6px 8px 6px 10px;
     border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--well);
-    color: var(--text);
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+    color: var(--muted);
     font: inherit;
     font-size: 12.5px;
     cursor: pointer;
@@ -243,8 +243,8 @@
     border-color: var(--accent);
   }
   .trigger:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-offset);
   }
   .trigger:disabled {
     opacity: 0.55;
@@ -260,15 +260,15 @@
   }
   .value .name {
     font-weight: 600;
-    color: var(--text-strong);
+    color: var(--text);
   }
   .value .blurb {
-    color: var(--text-dim);
+    color: var(--faint);
   }
 
   .caret {
     flex: 0 0 auto;
-    color: var(--text-dim);
+    color: var(--faint);
     line-height: 1;
   }
 
@@ -286,8 +286,8 @@
     padding: 4px;
     list-style: none;
     border-radius: 10px;
-    border: 1px solid var(--border);
-    background: var(--card);
+    border: 1px solid var(--line);
+    background: var(--surface);
     box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5);
   }
 
@@ -302,12 +302,12 @@
   .opt .name {
     font-size: 12.5px;
     font-weight: 600;
-    color: var(--text-strong);
+    color: var(--text);
   }
   .opt .blurb {
     grid-column: 1 / -1;
     font-size: 11.5px;
-    color: var(--text-dim);
+    color: var(--faint);
   }
   .opt.active {
     background: rgba(139, 124, 246, 0.16);

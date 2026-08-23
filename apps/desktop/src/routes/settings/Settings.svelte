@@ -2314,15 +2314,15 @@
     background: var(--panel);
   }
   .brandrow .wordmark {
-    font-size: 16px;
-    font-weight: 700;
-    color: var(--text-strong);
+    font-size: var(--fs-h1);
+    font-weight: var(--fw-bold);
+    color: var(--text);
     letter-spacing: -0.01em;
   }
   /* The name completes the lockup without competing with it. */
   .brandrow .product {
-    font-size: 13px;
-    color: var(--text);
+    font-size: var(--fs-h2);
+    color: var(--muted);
     white-space: nowrap;
   }
   .brandrow .brandmark {
@@ -2337,7 +2337,7 @@
   }
 
   .tabrow {
-    background: var(--well);
+    background: var(--surface-2);
     align-items: stretch;
   }
   .tabrow .tabs {
@@ -2347,28 +2347,28 @@
   }
   .tabrow .spacer {
     flex: 1 1 auto;
-    border-right: 1px solid var(--border);
+    border-right: 1px solid var(--line);
   }
   .cell.icon {
     cursor: pointer;
-    color: var(--text-dim);
-    border-right: 1px solid var(--border);
+    color: var(--faint);
+    border-right: 1px solid var(--line);
   }
   .cell.icon:last-child {
     border-right: 0;
   }
   .cell.icon:hover,
   .cell.icon.sel {
-    background: var(--card);
-    color: var(--text-strong);
+    background: var(--surface);
+    color: var(--text);
   }
 
   .row {
     display: flex;
     align-items: stretch;
-    min-height: 32px;
-    background: var(--card);
-    border-bottom: 1px solid var(--border);
+    min-height: var(--row-h);
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
   }
   .row.dimmed {
     opacity: 0.55;
@@ -2377,7 +2377,7 @@
   /* The dimension block: one rule underneath it, none inside, and no vertical
      divider either — the numbers already form their own column. */
   .group {
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--line);
   }
   .group .row {
     border-bottom: 0;
@@ -2390,7 +2390,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    flex: 0 0 32px;
+    flex: 0 0 var(--cell-w);
     padding: 0;
     border: 0;
     background: none;
@@ -2401,34 +2401,34 @@
   .cell.label {
     flex: 1 1 auto;
     justify-content: flex-start;
-    gap: 8px;
-    padding: 0 12px;
+    gap: var(--sp-2);
+    padding: 0 var(--sp-3);
     min-width: 0;
-    border-right: 1px solid var(--border);
+    border-right: 1px solid var(--line);
   }
   .cell.wide {
     flex: 0 0 auto;
-    gap: 8px;
-    padding: 0 12px;
+    gap: var(--sp-2);
+    padding: 0 var(--sp-3);
   }
 
   .cell .lbl {
     font-size: 12.5px;
-    color: var(--text);
+    color: var(--muted);
     white-space: nowrap;
   }
   .cell .lbl.strong {
-    color: var(--text-strong);
+    color: var(--text);
     font-weight: 600;
   }
   .cell .unit {
     font-size: 11.5px;
-    color: var(--text-dim);
+    color: var(--faint);
   }
   .cell .mon-name {
-    font-size: 13px;
-    font-weight: 700;
-    color: var(--text-strong);
+    font-size: var(--fs-h2);
+    font-weight: var(--fw-bold);
+    color: var(--text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -2436,11 +2436,11 @@
 
   .cell.step {
     cursor: pointer;
-    color: var(--text-dim);
+    color: var(--faint);
   }
   .cell.step:hover:not(:disabled) {
-    background: var(--well);
-    color: var(--text-strong);
+    background: var(--surface-2);
+    color: var(--text);
   }
   .cell.step:disabled {
     opacity: 0.35;
@@ -2483,14 +2483,14 @@
   }
   .check .check-label {
     font-size: 12.5px;
-    color: var(--text);
+    color: var(--muted);
   }
   .check .box {
     width: 17px;
     height: 17px;
-    border-radius: 4px;
-    border: 1px solid var(--border);
-    background: var(--well);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--line);
+    background: var(--surface-2);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2502,8 +2502,8 @@
     color: #fff;
   }
   .check input:focus-visible + .box {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-offset);
   }
   .check input:disabled + .box {
     opacity: 0.4;
@@ -2517,11 +2517,11 @@
   .ghost {
     cursor: pointer;
     font-size: 12.5px;
-    color: var(--text);
+    color: var(--muted);
   }
   .ghost:hover {
-    background: var(--well);
-    color: var(--text-strong);
+    background: var(--surface-2);
+    color: var(--text);
   }
 
   /* The map is the one band that is not a row: full bleed, its own inset. */
@@ -2529,7 +2529,7 @@
      what lets the window be a fixed size on any monitor: the editor fits
      itself to this box, letterboxing to keep the display's proportions. */
   .mapband {
-    background: var(--card);
+    background: var(--surface);
     padding: 0;
     display: flex;
     align-items: center;
@@ -2561,9 +2561,9 @@
     padding: 7px 12px;
     font-size: 11.5px;
     line-height: 1.45;
-    color: var(--text-dim);
-    background: var(--card);
-    border-bottom: 1px solid var(--border);
+    color: var(--faint);
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
   }
 
 
@@ -2571,7 +2571,7 @@
   .meta-inline {
     font-size: 12px;
     font-weight: 500;
-    color: var(--text-dim);
+    color: var(--faint);
     white-space: nowrap;
   }
 
@@ -2592,37 +2592,46 @@
     overflow-x: auto;
   }
 
+  /* Segments of the tab band, not pills floating in it: square, full height,
+     divided by a rule, and the selected one filled solid (Figma 112-234).
+     A rounded outline inside a band reads as a second container. */
   .tab {
-    padding: 6px 12px;
-    border: 1px solid transparent;
-    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    border: 0;
+    border-right: 1px solid var(--line);
+    border-radius: 0;
     background: transparent;
-    color: var(--text-dim);
+    color: var(--faint);
     font: inherit;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 600;
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
     white-space: nowrap;
     cursor: pointer;
-    transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+    transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
   }
 
-  .tab:hover {
-    color: var(--text-strong);
-    background: var(--well);
+  .tab:hover:not(.sel) {
+    color: var(--text);
+    background: var(--surface);
   }
 
   .tab.sel {
-    color: var(--text-strong);
-    background: var(--well);
-    border-color: var(--accent);
+    background: var(--accent);
+    color: #fff;
   }
 
   /* `+` and the gear are glyphs, not words: square them up so they read as
      controls beside the display names. */
   .tab.glyph {
-    min-width: 34px;
-    text-align: center;
+    min-width: 32px;
+    justify-content: center;
+    padding: 0;
     font-size: 15px;
+    letter-spacing: 0;
   }
 
 
@@ -2670,25 +2679,25 @@
     width: 28px;
     height: 28px;
     flex: none;
-    color: var(--text-strong);
+    color: var(--text);
   }
   h1 {
     font-size: 22px;
     font-weight: 650;
     letter-spacing: -0.3px;
     margin: 0;
-    color: var(--text-strong);
+    color: var(--text);
   }
   .tagline {
     margin: 2px 0 0;
     font-size: 13px;
-    color: var(--text-dim);
+    color: var(--faint);
   }
   .version {
     margin-left: 8px;
     font-size: 11.5px;
-    font-family: var(--mono);
-    color: var(--text-dim);
+    font-family: var(--font-mono);
+    color: var(--faint);
     opacity: 0.8;
   }
   .hint.error {
@@ -2702,21 +2711,21 @@
     background: linear-gradient(
       180deg,
       rgba(139, 124, 246, 0.1),
-      var(--card) 70%
+      var(--surface) 70%
     );
   }
   .update-banner.failed {
     border-color: rgba(246, 106, 106, 0.5);
-    background: linear-gradient(180deg, rgba(246, 106, 106, 0.09), var(--card) 70%);
+    background: linear-gradient(180deg, rgba(246, 106, 106, 0.09), var(--surface) 70%);
   }
   .release-notes {
     max-height: 220px;
     overflow-y: auto;
     padding: 12px 14px;
-    border: 1px solid var(--border);
+    border: 1px solid var(--line);
     border-radius: 10px;
-    background: var(--well);
-    color: var(--text);
+    background: var(--surface-2);
+    color: var(--muted);
     font-size: 13px;
     line-height: 1.55;
     white-space: pre-wrap;
@@ -2728,8 +2737,8 @@
   .progress {
     height: 8px;
     border-radius: 999px;
-    background: var(--well);
-    border: 1px solid var(--border);
+    background: var(--surface-2);
+    border: 1px solid var(--line);
     overflow: hidden;
   }
   .progress .bar {
@@ -2763,13 +2772,13 @@
   }
 
   .empty {
-    color: var(--text-dim);
+    color: var(--faint);
     font-size: 14px;
   }
 
   .card {
-    background: var(--card);
-    border: 1px solid var(--border);
+    background: var(--surface);
+    border: 1px solid var(--line);
     border-radius: 14px;
     padding: 18px 20px 20px;
     display: flex;
@@ -2786,12 +2795,12 @@
     font-size: 15px;
     font-weight: 600;
     margin: 0;
-    color: var(--text-strong);
+    color: var(--text);
   }
   .meta {
     margin: 2px 0 0;
     font-size: 12.5px;
-    color: var(--text-dim);
+    color: var(--faint);
     display: flex;
     align-items: center;
     gap: 8px;
@@ -2851,7 +2860,7 @@
   /* Hairlines between adjacent rows, never a trailing one. Each switch sits
      in its own `.controls` wrapper, so the rule targets those siblings. */
   .controls:has(> .switch.row) + .controls:has(> .switch.row) {
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--line);
   }
   .switch input {
     position: absolute;
@@ -2863,8 +2872,8 @@
     width: 38px;
     height: 22px;
     border-radius: 999px;
-    background: var(--well);
-    border: 1px solid var(--border);
+    background: var(--surface-2);
+    border: 1px solid var(--line);
     display: inline-flex;
     align-items: center;
     padding: 2px;
@@ -2875,7 +2884,7 @@
     width: 16px;
     height: 16px;
     border-radius: 50%;
-    background: var(--text-dim);
+    background: var(--faint);
     transition: transform 0.15s ease, background 0.15s ease;
   }
   .switch input:checked + .track {
@@ -2887,12 +2896,12 @@
     background: var(--accent);
   }
   .switch input:focus-visible + .track {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-offset);
   }
   .switch-label {
     font-size: 13px;
-    color: var(--text);
+    color: var(--muted);
     min-width: 52px;
   }
   .switch-label.wide {
@@ -2906,21 +2915,21 @@
   }
   .field .lbl {
     font-size: 12.5px;
-    color: var(--text-dim);
+    color: var(--faint);
     white-space: nowrap;
   }
   .hotkey-input {
-    border: 1px solid var(--border);
+    border: 1px solid var(--line);
     border-radius: 8px;
-    background: var(--well);
-    color: var(--text-strong);
-    font: 500 13px/1.2 var(--mono);
+    background: var(--surface-2);
+    color: var(--text);
+    font: 500 13px/1.2 var(--font-mono);
     padding: 7px 10px;
     width: 180px;
   }
   .hotkey-input:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-offset);
   }
 
   .controls {
@@ -2941,7 +2950,7 @@
      shows what you set, this shows what the grid could actually use. */
   .coerced-note {
     font-size: 12px;
-    color: var(--text-dim);
+    color: var(--faint);
     white-space: nowrap;
   }
 
@@ -2950,7 +2959,7 @@
     align-items: center;
     gap: 7px;
     font-size: 13px;
-    color: var(--text);
+    color: var(--muted);
     cursor: pointer;
     user-select: none;
   }
@@ -2966,7 +2975,7 @@
     border-radius: 9px;
     background: rgba(139, 124, 246, 0.18);
     color: var(--accent);
-    font: 600 12.5px/1 var(--sans);
+    font: 600 12.5px/1 var(--font-body);
     padding: 8px 14px;
     cursor: pointer;
     transition: background 0.12s ease;
@@ -2986,15 +2995,15 @@
   }
   .stepper .lbl {
     font-size: 12.5px;
-    color: var(--text-dim);
+    color: var(--faint);
   }
   .stepper button {
     width: 26px;
     height: 26px;
     border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--well);
-    color: var(--text-strong);
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+    color: var(--text);
     font-size: 15px;
     line-height: 1;
     cursor: pointer;
@@ -3014,29 +3023,29 @@
 
   .tile-count {
     font-size: 12.5px;
-    color: var(--text-dim);
+    color: var(--faint);
     margin-left: auto;
   }
 
   .hint {
     margin: 0;
     font-size: 12px;
-    color: var(--text-dim);
+    color: var(--faint);
   }
 
   .quiet {
-    border: 1px solid var(--border);
+    border: 1px solid var(--line);
     border-radius: 9px;
     background: transparent;
-    color: var(--text-dim);
-    font: 600 12.5px/1 var(--sans);
+    color: var(--faint);
+    font: 600 12.5px/1 var(--font-body);
     padding: 8px 14px;
     cursor: pointer;
     transition: border-color 0.12s ease, color 0.12s ease;
   }
   .quiet:hover {
     border-color: var(--accent);
-    color: var(--text);
+    color: var(--muted);
   }
   /* Armed destructive action, same palette as the template gallery's. */
   .quiet.danger:hover,
@@ -3054,7 +3063,7 @@
     margin: 0;
     font-size: 13.5px;
     line-height: 1.55;
-    color: var(--text);
+    color: var(--muted);
     max-width: 58ch;
   }
   .fr-monitors {
@@ -3066,9 +3075,9 @@
     display: flex;
     flex-direction: column;
     gap: 3px;
-    border: 1px solid var(--border);
+    border: 1px solid var(--line);
     border-radius: 11px;
-    background: var(--well);
+    background: var(--surface-2);
     padding: 12px 16px;
     min-width: 150px;
     cursor: pointer;
@@ -3089,17 +3098,17 @@
     height: 0;
   }
   .fr-mon:has(input:focus-visible) {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-offset);
   }
   .fr-mon-name {
     font-size: 14px;
     font-weight: 600;
-    color: var(--text-strong);
+    color: var(--text);
   }
   .fr-mon-meta {
     font-size: 12px;
-    color: var(--text-dim);
+    color: var(--faint);
   }
 
   /* The "no windows here yet" hint. Both states use the existing palette:
@@ -3108,12 +3117,12 @@
      tone — picking an empty monitor is allowed, just worth knowing first. */
   .fr-mon-windows {
     font-size: 12px;
-    color: var(--text-dim);
+    color: var(--faint);
     line-height: 1.35;
   }
 
   .fr-mon-windows.empty {
-    color: var(--text);
+    color: var(--muted);
   }
 
   /* Exclusions editor (plan Task 19) */
@@ -3129,15 +3138,15 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    border: 1px solid var(--border);
+    border: 1px solid var(--line);
     border-radius: 999px;
-    background: var(--well);
+    background: var(--surface-2);
     padding: 4px 6px 4px 12px;
   }
   .excl-chip code {
-    font-family: var(--mono);
+    font-family: var(--font-mono);
     font-size: 12px;
-    color: var(--text);
+    color: var(--muted);
   }
   .chip-x {
     width: 18px;
@@ -3145,7 +3154,7 @@
     border: none;
     border-radius: 50%;
     background: transparent;
-    color: var(--text-dim);
+    color: var(--faint);
     font-size: 13px;
     line-height: 1;
     cursor: pointer;
@@ -3159,21 +3168,21 @@
     color: #f66a6a;
   }
   .chip-x:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-offset);
   }
   .excl-input {
-    border: 1px solid var(--border);
+    border: 1px solid var(--line);
     border-radius: 8px;
-    background: var(--well);
-    color: var(--text-strong);
-    font: 500 13px/1.2 var(--mono);
+    background: var(--surface-2);
+    color: var(--text);
+    font: 500 13px/1.2 var(--font-mono);
     padding: 7px 10px;
     width: 200px;
   }
   .excl-input:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-offset);
   }
   .pick-list {
     list-style: none;
@@ -3200,21 +3209,21 @@
   }
   .pick-row:hover {
     background: rgba(139, 124, 246, 0.1);
-    border-color: var(--border);
+    border-color: var(--line);
   }
   .pick-row:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-offset);
   }
   .pick-row code {
-    font-family: var(--mono);
+    font-family: var(--font-mono);
     font-size: 12px;
-    color: var(--text-strong);
+    color: var(--text);
     white-space: nowrap;
   }
   .pick-titles {
     font-size: 12px;
-    color: var(--text-dim);
+    color: var(--faint);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -3234,9 +3243,9 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    border: 1px solid var(--border);
+    border: 1px solid var(--line);
     border-radius: 9px;
-    background: var(--well);
+    background: var(--surface-2);
     padding: 6px 8px 6px 12px;
   }
   /* Miniature of the rule's slot inside its grid — the same visual idea as
@@ -3251,7 +3260,7 @@
   }
   .rule-preview .frame {
     fill: none;
-    stroke: var(--border);
+    stroke: var(--line);
     stroke-width: 1px;
     vector-effect: non-scaling-stroke;
   }
@@ -3262,9 +3271,9 @@
     vector-effect: non-scaling-stroke;
   }
   .rule-exe {
-    font-family: var(--mono);
+    font-family: var(--font-mono);
     font-size: 12px;
-    color: var(--text-strong);
+    color: var(--text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -3282,13 +3291,13 @@
     white-space: nowrap;
   }
   .rule-scope.all {
-    color: var(--text-dim);
+    color: var(--faint);
     background: rgba(255, 255, 255, 0.04);
-    border-color: var(--border);
+    border-color: var(--line);
   }
   .rule-slot {
     font-size: 12px;
-    color: var(--text-dim);
+    color: var(--faint);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
     margin-left: auto;
@@ -3307,15 +3316,15 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    border: 1px solid var(--border);
+    border: 1px solid var(--line);
     border-radius: 9px;
-    background: var(--well);
+    background: var(--surface-2);
     padding: 6px 8px 6px 12px;
   }
   .view-name {
     font-size: 13px;
     font-weight: 600;
-    color: var(--text-strong);
+    color: var(--text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -3324,7 +3333,7 @@
   }
   .view-summary {
     font-size: 12px;
-    color: var(--text-dim);
+    color: var(--faint);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
@@ -3340,30 +3349,30 @@
   }
   .view-input,
   .view-rename {
-    border: 1px solid var(--border);
+    border: 1px solid var(--line);
     border-radius: 8px;
-    background: var(--well);
-    color: var(--text-strong);
-    font: 500 13px/1.2 var(--sans);
+    background: var(--surface-2);
+    color: var(--text);
+    font: 500 13px/1.2 var(--font-body);
     padding: 7px 10px;
     width: 200px;
   }
   .view-rename {
-    background: var(--card);
+    background: var(--surface);
     padding: 5px 8px;
     width: 160px;
   }
   .view-input:focus-visible,
   .view-rename:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-offset);
   }
   .startup-pick {
     gap: 12px;
   }
   .startup-pick .lbl {
     font-size: 12.5px;
-    color: var(--text-dim);
+    color: var(--faint);
   }
 
   .floating {
@@ -3382,16 +3391,16 @@
     font-size: 13px;
   }
   .ftitle {
-    color: var(--text);
+    color: var(--muted);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .floating code {
-    font-family: var(--mono);
+    font-family: var(--font-mono);
     font-size: 11.5px;
-    color: var(--text-dim);
-    background: var(--well);
+    color: var(--faint);
+    background: var(--surface-2);
     border-radius: 5px;
     padding: 2px 6px;
   }

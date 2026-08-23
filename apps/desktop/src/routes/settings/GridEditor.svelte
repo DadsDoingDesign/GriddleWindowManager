@@ -632,7 +632,7 @@
        so a border and a radius here would draw a second, inset frame. */
     border: 0;
     border-radius: 0;
-    background: var(--well);
+    background: var(--surface-2);
     overflow: hidden;
     /* The monitor decides this box's shape, so it must not absorb slack from
        the flex column that holds it. */
@@ -725,7 +725,7 @@
    */
   .editor :global(.griddle-handle) {
     background: var(--accent);
-    border-color: var(--well);
+    border-color: var(--surface-2);
     width: 10px;
     height: 10px;
     opacity: 0;
@@ -774,20 +774,20 @@
     border-radius: var(--griddle-tile-radius, 6px);
     background: rgba(139, 124, 246, 0.14);
     border: 1px solid rgba(139, 124, 246, 0.42);
-    color: var(--text);
+    color: var(--muted);
   }
   .wtitle {
     font-size: 12px;
     font-weight: 600;
-    color: var(--text-strong);
+    color: var(--text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
   .wexe {
     font-size: 10px;
-    font-family: var(--mono);
-    color: var(--text-dim);
+    font-family: var(--font-mono);
+    color: var(--faint);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

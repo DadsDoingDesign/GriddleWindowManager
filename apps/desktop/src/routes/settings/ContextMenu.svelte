@@ -171,9 +171,9 @@
     flex-direction: column;
     gap: 2px;
     padding: 5px;
-    border: 1px solid var(--border);
+    border: 1px solid var(--line);
     border-radius: 10px;
-    background: var(--card);
+    background: var(--surface);
     box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
   }
 
@@ -182,9 +182,9 @@
   .menu-header {
     padding: 6px 10px 7px;
     margin-bottom: 2px;
-    border-bottom: 1px solid var(--border);
-    font: 600 11.5px/1.35 var(--sans);
-    color: var(--text-dim);
+    border-bottom: 1px solid var(--line);
+    font: 600 11.5px/1.35 var(--font-body);
+    color: var(--faint);
     overflow-wrap: anywhere;
   }
 
@@ -195,8 +195,8 @@
     border: none;
     border-radius: 7px;
     background: transparent;
-    color: var(--text);
-    font: 500 12.5px/1.35 var(--sans);
+    color: var(--muted);
+    font: 500 12.5px/1.35 var(--font-body);
     padding: 7px 10px;
     cursor: pointer;
     white-space: nowrap;
@@ -207,7 +207,7 @@
   button:hover,
   button:focus-visible {
     background: rgba(139, 124, 246, 0.16);
-    color: var(--text-strong);
+    color: var(--text);
     outline: none;
   }
   button.danger {

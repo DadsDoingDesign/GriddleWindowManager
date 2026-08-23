@@ -1,49 +1,134 @@
-/* Settings window palette. Component-level styles live in the Svelte
-   components; this file only sets the page-wide tokens and reset.
-
-   Dark is the default and light is an override on `[data-theme='light']`,
-   set from the persisted preference. The two palettes are the Light and Dark
-   modes of the `Griddle · Color` collection in Figma, so a value changed
-   there has exactly one place to land here. */
+/*
+ * Token architecture
+ * ------------------
+ * Every value the settings UI draws with is named here, grouped by what the
+ * name *means* rather than what it looks like, so a component never reaches
+ * for a literal. Modelled on the Fieldwatch design system's structure:
+ * surfaces, text, accent + semantic, spacing, type, radius, elevation,
+ * motion, layering, focus and hit targets — the same categories, Griddle's
+ * own values.
+ *
+ * Colour is the only axis that changes with the theme, and it does so by
+ * redefining these same names under `[data-theme='light']`. Nothing below
+ * the colour block is theme-dependent, which is the point: a component that
+ * uses `--sp-3` and `--radius` cannot drift between modes.
+ *
+ * The colour values are the Dark and Light modes of the `Griddle · Color`
+ * collection in Figma, value for value, so the design file stays the source
+ * of truth for hue and the code stays the source of truth for structure.
+ */
 
 :root {
-  /* Dark = the `Griddle · Color` Dark mode, value for value. There are four
-     background levels, not three: ground, panel, surface and surface-2. The
-     old palette collapsed ground and surface-2 to within one step of each
-     other (#0f1116 vs #10131a), which is why the banded rows read as flat. */
-  --bg: #09090d; /* bg/ground   */
-  --panel: #121218; /* bg/panel    */
-  --card: #1a1a22; /* bg/surface  */
-  --well: #15151c; /* bg/surface-2 */
-  --border: #282833; /* border/line */
-  --border-soft: #1f1f28; /* border/line-soft */
-  --text: #9b9ba9; /* text/muted */
-  --text-strong: #f3f3f7; /* text/ink   */
-  --text-dim: #6e6e7e; /* text/faint */
-  --accent: #8c8cf5; /* accent/base */
+  /* ---------- colour: grounds & surfaces ---------- */
+  --bg: #09090d; /* the ground behind the panel */
+  --panel: #121218; /* chrome: brand row */
+  --surface: #1a1a22; /* content: the settings table */
+  --surface-2: #15151c; /* recessed: tab band, wells, inputs */
+  --line: #282833; /* every rule and border */
+  --line-soft: #1f1f28; /* dividers inside a group */
 
-  --sans: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
-  --mono: 'Cascadia Mono', ui-monospace, Consolas, monospace;
+  /* ---------- colour: text ---------- */
+  --text: #f3f3f7; /* primary */
+  --muted: #9b9ba9; /* secondary — labels, values at rest */
+  --faint: #6e6e7e; /* tertiary — hints, units, disabled */
+
+  /* ---------- colour: accent & semantic ---------- */
+  --accent: #8c8cf5;
+  --accent-soft: rgba(140, 140, 245, 0.14); /* tinted fills */
+  --accent-line: rgba(140, 140, 245, 0.5); /* tinted borders */
+  --on-accent: #ffffff; /* text on a filled accent */
+  --good: #5fbf87;
+  --warn: #e0b23a;
+  --bad: #e0674f;
+
+  /* ---------- spacing (4px base) ---------- */
+  --sp-px: 2px; /* hairline nudges only */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+
+  /* ---------- typography ---------- */
+  --font-body: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'Cascadia Mono', ui-monospace, Consolas, monospace;
+  --fs-h1: 16px; /* wordmark */
+  --fs-h2: 13px; /* display name */
+  --fs-body: 12.5px; /* row labels, values */
+  --fs-sm: 12px; /* meta */
+  --fs-xs: 11px; /* units, exe names */
+  --lh-tight: 1.15;
+  --lh-body: 1.45;
+  --fw-regular: 400;
+  --fw-medium: 600;
+  --fw-bold: 700;
+  --tracking-label: 0.04em; /* uppercase tabs */
+
+  /* ---------- shape ---------- */
+  --radius-sm: 4px;
+  --radius: 8px;
+  --radius-lg: 10px;
+  --radius-pill: 999px;
+
+  /* ---------- structure ---------- */
+  --row-h: 32px; /* one band of the settings table */
+  --cell-w: 32px; /* one control cell */
+
+  /* ---------- elevation ---------- */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-2: 0 12px 28px rgba(0, 0, 0, 0.5);
+
+  /* ---------- motion ---------- */
+  --dur-fast: 80ms;
+  --dur: 120ms;
+  --dur-slow: 220ms;
+  --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+
+  /* ---------- layering ---------- */
+  --z-base: 1;
+  --z-raised: 5;
+  --z-sticky: 20;
+  --z-popover: 40;
+
+  /* ---------- focus ---------- */
+  --focus-ring: 2px solid var(--accent);
+  --focus-offset: 1px;
+
+  /* ---------- hit targets ---------- */
+  --hit-min: 32px; /* pointer-only app; a band is the minimum */
 
   color-scheme: dark;
-  font: 14px/1.45 var(--sans);
-  color: var(--text);
+  font: var(--fs-body) / var(--lh-body) var(--font-body);
+  color: var(--muted);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
+/* Only colour changes with the theme. */
 :root[data-theme='light'] {
   --bg: #fbfbfc;
   --panel: #f1f1f5;
-  --card: #ffffff;
-  --well: #fafafc;
-  --border: #e3e3ea;
-  --border-soft: #ededf2;
-  --text: #6e6e7a;
-  --text-strong: #0b0b12;
-  --text-dim: #9c9ca8;
+  --surface: #ffffff;
+  --surface-2: #fafafc;
+  --line: #e3e3ea;
+  --line-soft: #ededf2;
+
+  --text: #0b0b12;
+  --muted: #6e6e7a;
+  --faint: #9c9ca8;
+
   --accent: #5b5bd6;
+  --accent-soft: rgba(91, 91, 214, 0.1);
+  --accent-line: rgba(91, 91, 214, 0.45);
+  --on-accent: #ffffff;
+  --good: #1f8a4c;
+  --warn: #9a6b00;
+  --bad: #b3402a;
+
+  --shadow-1: 0 1px 2px rgba(16, 16, 32, 0.08);
+  --shadow-2: 0 12px 28px rgba(16, 16, 32, 0.16);
 
   color-scheme: light;
 }
@@ -89,7 +174,7 @@ body {
 }
 
 body {
-  border: 1px solid var(--border);
+  border: 1px solid var(--line);
   box-sizing: border-box;
 }
 

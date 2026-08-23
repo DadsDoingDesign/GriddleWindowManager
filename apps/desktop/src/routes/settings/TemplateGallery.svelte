@@ -241,13 +241,13 @@
   }
   .lbl {
     font-size: 12.5px;
-    color: var(--text-dim);
+    color: var(--faint);
   }
 
   .hint {
     margin: 0;
     font-size: 12px;
-    color: var(--text-dim);
+    color: var(--faint);
   }
 
   .capture-form {
@@ -261,33 +261,33 @@
     box-sizing: border-box;
     padding: 0 10px;
     border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--well);
-    color: var(--text-strong);
-    font: 13px/1 var(--sans);
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+    color: var(--text);
+    font: 13px/1 var(--font-body);
     -webkit-user-select: text;
     user-select: text;
   }
   .capture-form input:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-offset);
   }
 
   .btn {
     height: 28px;
     padding: 0 12px;
     border-radius: 8px;
-    border: 1px solid var(--border);
-    background: var(--well);
-    color: var(--text);
-    font: 600 12px/1 var(--sans);
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+    color: var(--muted);
+    font: 600 12px/1 var(--font-body);
     cursor: pointer;
     transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
   }
   .btn:hover:not(:disabled) {
     border-color: var(--accent);
     background: rgba(139, 124, 246, 0.12);
-    color: var(--text-strong);
+    color: var(--text);
   }
   .btn:disabled {
     opacity: 0.45;
@@ -350,8 +350,8 @@
     gap: 8px;
     padding: 10px;
     border-radius: 10px;
-    border: 1px solid var(--border);
-    background: var(--well);
+    border: 1px solid var(--line);
+    background: var(--surface-2);
     transition: border-color 0.12s ease;
   }
   .tcard:hover {
@@ -384,14 +384,14 @@
   .tname {
     font-size: 12.5px;
     font-weight: 600;
-    color: var(--text-strong);
+    color: var(--text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
   .tmeta {
     font-size: 11px;
-    color: var(--text-dim);
+    color: var(--faint);
   }
 
   .tactions {
