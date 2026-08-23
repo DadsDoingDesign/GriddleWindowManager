@@ -132,6 +132,11 @@ uppercase tabs.
   `--ov-*` colours and does not consume this token set. It is a separate,
   click-through surface with different constraints, but the two palettes can
   drift and nothing catches it.
+- **Nothing enforces the "tokens only" rule.** The settings components are at
+  zero literals today, and that was worth doing — the sweep turned up real
+  light-mode bugs, including grid lines drawn in `rgba(255,255,255,.05)` that
+  were invisible on a white well, and a `#f56565` red that only worked on a
+  dark ground. A lint rule would stop them coming back; there is not one.
 - **No contrast audit** has been run on either theme.
 - `--good` / `--warn` / `--bad` are defined but only lightly used; they have
   not been checked at body size on either ground.

@@ -288,7 +288,7 @@
     border-radius: 10px;
     border: 1px solid var(--line);
     background: var(--surface);
-    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5);
+    box-shadow: var(--shadow-2);
   }
 
   .opt {
@@ -310,7 +310,7 @@
     color: var(--faint);
   }
   .opt.active {
-    background: rgba(139, 124, 246, 0.16);
+    background: var(--accent-soft);
   }
   .opt[aria-selected='true'] .name {
     color: var(--accent);

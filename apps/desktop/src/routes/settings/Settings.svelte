@@ -1255,6 +1255,18 @@
         <span>{snapshot?.paused ? 'Paused' : 'Pause'}</span>
         {@render pauseIcon()}
       </button>
+      <button
+        class="cell icon"
+        class:sel={isActive('prefs')}
+        aria-pressed={isActive('prefs')}
+        title="Preferences"
+        onclick={() => (activeTabKey = 'prefs')}
+      >
+        {@render gearIcon()}
+      </button>
+      <button class="cell icon" title="Hide to tray" onclick={() => void hideSettings()}>
+        {@render collapseIcon()}
+      </button>
     </div>
 
     <!-- Tab band: one segment per grid plus `+`, each divided by a rule, then
@@ -1279,18 +1291,6 @@
           {/each}
         </div>
         <div class="spacer" data-tauri-drag-region></div>
-        <button class="cell icon" title="Hide to tray" onclick={() => void hideSettings()}>
-          {@render collapseIcon()}
-        </button>
-        <button
-          class="cell icon"
-          class:sel={isActive('prefs')}
-          aria-pressed={isActive('prefs')}
-          title="Preferences"
-          onclick={() => (activeTabKey = 'prefs')}
-        >
-          {@render gearIcon()}
-        </button>
       </nav>
     {/if}
   </div>
@@ -2427,7 +2427,7 @@
   }
   .cell .mon-name {
     font-size: var(--fs-h2);
-    font-weight: var(--fw-bold);
+    font-weight: var(--fw-medium);
     color: var(--text);
     white-space: nowrap;
     overflow: hidden;
@@ -2701,22 +2701,22 @@
     opacity: 0.8;
   }
   .hint.error {
-    color: #f66a6a;
+    color: var(--bad);
   }
 
   /* Update banner (spec §7): the one card allowed to raise its voice, and
      only while something is actually on offer. */
   .update-banner {
-    border-color: rgba(139, 124, 246, 0.55);
+    border-color: var(--accent-line);
     background: linear-gradient(
       180deg,
-      rgba(139, 124, 246, 0.1),
+      var(--accent-soft),
       var(--surface) 70%
     );
   }
   .update-banner.failed {
-    border-color: rgba(246, 106, 106, 0.5);
-    background: linear-gradient(180deg, rgba(246, 106, 106, 0.09), var(--surface) 70%);
+    border-color: var(--bad);
+    background: linear-gradient(180deg, var(--bad-soft), var(--surface) 70%);
   }
   .release-notes {
     max-height: 220px;
@@ -2813,14 +2813,14 @@
     letter-spacing: 0.06em;
     padding: 2px 7px;
     border-radius: 999px;
-    background: rgba(139, 124, 246, 0.16);
+    background: var(--accent-soft);
     color: var(--accent);
-    border: 1px solid rgba(139, 124, 246, 0.35);
+    border: 1px solid var(--accent-line);
   }
   .badge.experimental {
-    background: rgba(246, 173, 85, 0.14);
-    color: #f6ad55;
-    border-color: rgba(246, 173, 85, 0.4);
+    background: var(--warn-soft);
+    color: var(--warn);
+    border-color: var(--warn);
   }
 
   /* Toggle switch */
@@ -2888,7 +2888,7 @@
     transition: transform 0.15s ease, background 0.15s ease;
   }
   .switch input:checked + .track {
-    background: rgba(139, 124, 246, 0.35);
+    background: var(--accent-line);
     border-color: var(--accent);
   }
   .switch input:checked + .track .thumb {
@@ -2973,7 +2973,7 @@
   .primary {
     border: 1px solid var(--accent);
     border-radius: 9px;
-    background: rgba(139, 124, 246, 0.18);
+    background: var(--accent-soft);
     color: var(--accent);
     font: 600 12.5px/1 var(--font-body);
     padding: 8px 14px;
@@ -2981,7 +2981,7 @@
     transition: background 0.12s ease;
   }
   .primary:hover:not(:disabled) {
-    background: rgba(139, 124, 246, 0.28);
+    background: var(--accent-soft);
   }
   .primary:disabled {
     opacity: 0.45;
@@ -3014,7 +3014,7 @@
   }
   .stepper button:hover:not(:disabled) {
     border-color: var(--accent);
-    background: rgba(139, 124, 246, 0.12);
+    background: var(--accent-soft);
   }
   .stepper button:disabled {
     opacity: 0.4;
@@ -3050,9 +3050,9 @@
   /* Armed destructive action, same palette as the template gallery's. */
   .quiet.danger:hover,
   .quiet.danger.armed {
-    border-color: rgba(245, 101, 101, 0.6);
-    background: rgba(245, 101, 101, 0.12);
-    color: #f56565;
+    border-color: var(--bad);
+    background: var(--bad-soft);
+    color: var(--bad);
   }
 
   /* First-run (plan Task 19) */
@@ -3089,7 +3089,7 @@
   }
   .fr-mon.selected {
     border-color: var(--accent);
-    background: rgba(139, 124, 246, 0.12);
+    background: var(--accent-soft);
   }
   .fr-mon input {
     position: absolute;
@@ -3164,8 +3164,8 @@
     transition: background 0.12s ease, color 0.12s ease;
   }
   .chip-x:hover {
-    background: rgba(246, 106, 106, 0.18);
-    color: #f66a6a;
+    background: var(--bad-soft);
+    color: var(--bad);
   }
   .chip-x:focus-visible {
     outline: var(--focus-ring);
@@ -3208,7 +3208,7 @@
     transition: background 0.12s ease, border-color 0.12s ease;
   }
   .pick-row:hover {
-    background: rgba(139, 124, 246, 0.1);
+    background: var(--accent-soft);
     border-color: var(--line);
   }
   .pick-row:focus-visible {
@@ -3256,7 +3256,7 @@
     flex: none;
     display: block;
     border-radius: 4px;
-    background: rgba(255, 255, 255, 0.03);
+    background: var(--surface-2);
   }
   .rule-preview .frame {
     fill: none;
@@ -3265,8 +3265,8 @@
     vector-effect: non-scaling-stroke;
   }
   .rule-preview .slot {
-    fill: rgba(139, 124, 246, 0.35);
-    stroke: rgba(139, 124, 246, 0.8);
+    fill: var(--accent-line);
+    stroke: var(--accent);
     stroke-width: 1px;
     vector-effect: non-scaling-stroke;
   }
@@ -3284,15 +3284,15 @@
     font-size: 11px;
     font-weight: 600;
     color: var(--accent);
-    background: rgba(139, 124, 246, 0.14);
-    border: 1px solid rgba(139, 124, 246, 0.35);
+    background: var(--accent-soft);
+    border: 1px solid var(--accent-line);
     border-radius: 999px;
     padding: 2px 8px;
     white-space: nowrap;
   }
   .rule-scope.all {
     color: var(--faint);
-    background: rgba(255, 255, 255, 0.04);
+    background: var(--surface-2);
     border-color: var(--line);
   }
   .rule-slot {

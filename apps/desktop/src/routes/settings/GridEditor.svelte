@@ -623,7 +623,7 @@
     pointer-events: none;
     border: 2px dashed var(--accent);
     border-radius: 7px;
-    background: rgba(139, 124, 246, 0.1);
+    background: var(--accent-soft);
   }
 
   .editor {
@@ -677,23 +677,23 @@
   @keyframes -global-griddle-snap-grow {
     0% {
       box-shadow: inset 0 0 0 2px var(--accent);
-      background: rgba(139, 124, 246, 0.34);
+      background: var(--accent-strong);
     }
     100% {
       box-shadow: inset 0 0 0 2px transparent;
-      background: rgba(139, 124, 246, 0.14);
+      background: var(--accent-soft);
     }
   }
 
   /* Shrinking: a thick inner ring collapses inward — "it pulled in a cell". */
   @keyframes -global-griddle-snap-shrink {
     0% {
-      box-shadow: inset 0 0 0 10px rgba(139, 124, 246, 0.3);
-      background: rgba(139, 124, 246, 0.3);
+      box-shadow: inset 0 0 0 10px var(--accent-strong);
+      background: var(--accent-strong);
     }
     100% {
       box-shadow: inset 0 0 0 0 transparent;
-      background: rgba(139, 124, 246, 0.14);
+      background: var(--accent-soft);
     }
   }
 
@@ -707,12 +707,12 @@
   /* Dark-theme overrides for the GriddleGrid internals. */
   .editor :global(.grid-bg) {
     background-image:
-      linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+      linear-gradient(to right, var(--line) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--line) 1px, transparent 1px);
   }
   .editor :global(.griddle-drop-indicator) {
-    border: 2px dashed rgba(139, 124, 246, 0.65);
-    background: rgba(139, 124, 246, 0.12);
+    border: 2px dashed var(--accent-line);
+    background: var(--accent-soft);
   }
   /*
    * The library hangs its resize grip 6px *outside* the tile corner
@@ -772,8 +772,8 @@
     padding: 6px 10px;
     overflow: hidden;
     border-radius: var(--griddle-tile-radius, 6px);
-    background: rgba(139, 124, 246, 0.14);
-    border: 1px solid rgba(139, 124, 246, 0.42);
+    background: var(--accent-soft);
+    border: 1px solid var(--accent-line);
     color: var(--muted);
   }
   .wtitle {

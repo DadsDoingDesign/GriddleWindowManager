@@ -174,7 +174,7 @@
     border: 1px solid var(--line);
     border-radius: 10px;
     background: var(--surface);
-    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+    box-shadow: var(--shadow-2);
   }
 
   /* Non-interactive title. The exe can be long, so it wraps and breaks
@@ -206,16 +206,16 @@
   }
   button:hover,
   button:focus-visible {
-    background: rgba(139, 124, 246, 0.16);
+    background: var(--accent-soft);
     color: var(--text);
     outline: none;
   }
   button.danger {
-    color: #e79090;
+    color: var(--bad);
   }
   button.danger:hover,
   button.danger:focus-visible {
-    background: rgba(245, 101, 101, 0.14);
-    color: #f56565;
+    background: var(--bad-soft);
+    color: var(--bad);
   }
 </style>

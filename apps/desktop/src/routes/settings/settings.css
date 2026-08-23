@@ -36,10 +36,13 @@
   --accent: #8c8cf5;
   --accent-soft: rgba(140, 140, 245, 0.14); /* tinted fills */
   --accent-line: rgba(140, 140, 245, 0.5); /* tinted borders */
+  --accent-strong: rgba(140, 140, 245, 0.32); /* momentary emphasis */
   --on-accent: #ffffff; /* text on a filled accent */
   --good: #5fbf87;
   --warn: #e0b23a;
   --bad: #e0674f;
+  --warn-soft: rgba(224, 178, 58, 0.16);
+  --bad-soft: rgba(224, 103, 79, 0.16);
 
   /* ---------- spacing (4px base) ---------- */
   --sp-px: 2px; /* hairline nudges only */
@@ -122,10 +125,13 @@
   --accent: #5b5bd6;
   --accent-soft: rgba(91, 91, 214, 0.1);
   --accent-line: rgba(91, 91, 214, 0.45);
+  --accent-strong: rgba(91, 91, 214, 0.22);
   --on-accent: #ffffff;
   --good: #1f8a4c;
   --warn: #9a6b00;
   --bad: #b3402a;
+  --warn-soft: rgba(154, 107, 0, 0.12);
+  --bad-soft: rgba(179, 64, 42, 0.12);
 
   --shadow-1: 0 1px 2px rgba(16, 16, 32, 0.08);
   --shadow-2: 0 12px 28px rgba(16, 16, 32, 0.16);

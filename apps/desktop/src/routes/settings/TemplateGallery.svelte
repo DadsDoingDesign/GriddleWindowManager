@@ -137,7 +137,7 @@
 
 <div class="gallery" class:carousel>
   <div class="gallery-head">
-    <span class="lbl">Templates</span>
+    {#if !carousel}<span class="lbl">Templates</span>{/if}
     {#if capturing}
       <div class="capture-form">
         <input
@@ -170,7 +170,18 @@
   <div class="cards">
     {#each templates as t (t.id)}
       {@const active = t.id === activeTemplateId}
-      <div class="tcard" class:active>
+      <button
+        class="tcard"
+        class:active
+        title={`${t.name} — ${shapeOf(t).cols}×${shapeOf(t).rows}, ${t.slots.length} ${
+          t.slots.length === 1 ? 'slot' : 'slots'
+        }${t.builtin ? ', built-in' : ''}. ${
+          regrids(t)
+            ? `Applying re-dimensions this grid to ${t.cols}×${t.rows}.`
+            : `Keeps your ${gridCols}×${gridRows} grid.`
+        }`}
+        onclick={() => apply(t)}
+      >
         <svg
           class="preview"
           viewBox="0 0 {shapeOf(t).cols} {shapeOf(t).rows}"
@@ -187,39 +198,22 @@
             />
           {/each}
         </svg>
-        <div class="tinfo">
-          <span class="tname" title={t.name}>{t.name}</span>
-          <span class="tmeta">
-            {shapeOf(t).cols}×{shapeOf(t).rows} · {t.slots.length}
-            {t.slots.length === 1 ? 'slot' : 'slots'}
-            {#if t.builtin}· built-in{/if}
-          </span>
-        </div>
-        <div class="tactions">
-          <button
-            class="btn primary"
-            title={regrids(t)
-              ? `Re-dimensions this grid to ${t.cols}×${t.rows}, then lays windows out on the template`
-              : `Lays windows out on this ${shapeOf(t).cols}×${shapeOf(t).rows} layout, keeping your ${gridCols}×${gridRows} grid`}
-            onclick={() => apply(t)}
-          >
-            {active ? 'Reapply' : regrids(t) ? `Apply (re-grids to ${t.cols}×${t.rows})` : 'Apply'}
-          </button>
-          {#if !t.builtin}
-            <button
-              class="btn danger"
-              class:armed={armedDeleteId === t.id}
-              aria-label={armedDeleteId === t.id
-                ? `Confirm deleting template ${t.name}`
-                : `Delete template ${t.name}`}
-              onclick={() => requestDelete(t)}
-            >
-              {armedDeleteId === t.id ? 'Sure?' : 'Delete'}
-            </button>
-          {/if}
-        </div>
-        {#if active}<span class="active-dot" title="Last applied to this grid"></span>{/if}
-      </div>
+        <span class="tname">
+          {t.name}{#if regrids(t)}<span class="regrid" title="Applying changes the grid's dimensions"
+              >*</span
+            >{/if}
+        </span>
+      </button>
+      {#if !t.builtin}
+        <button
+          class="tdel"
+          class:armed={armedDeleteId === t.id}
+          aria-label={armedDeleteId === t.id
+            ? `Confirm deleting template ${t.name}`
+            : `Delete template ${t.name}`}
+          onclick={() => requestDelete(t)}>{armedDeleteId === t.id ? '!' : '×'}</button
+        >
+      {/if}
     {/each}
   </div>
   <p class="hint">Saved templates are shared across all grids.</p>
@@ -286,7 +280,7 @@
   }
   .btn:hover:not(:disabled) {
     border-color: var(--accent);
-    background: rgba(139, 124, 246, 0.12);
+    background: var(--accent-soft);
     color: var(--text);
   }
   .btn:disabled {
@@ -294,19 +288,13 @@
     cursor: default;
   }
   .btn.primary {
-    background: rgba(139, 124, 246, 0.16);
-    border-color: rgba(139, 124, 246, 0.45);
+    background: var(--accent-soft);
+    border-color: var(--accent-line);
     color: var(--accent);
   }
   .btn.primary:hover:not(:disabled) {
-    background: rgba(139, 124, 246, 0.28);
-    color: #a99dfa;
-  }
-  .btn.danger:hover:not(:disabled),
-  .btn.danger.armed {
-    border-color: rgba(245, 101, 101, 0.6);
-    background: rgba(245, 101, 101, 0.12);
-    color: #f56565;
+    background: var(--accent-soft);
+    color: var(--accent);
   }
 
   .cards {
@@ -325,15 +313,23 @@
     gap: 8px;
     min-height: 0;
   }
+  /* The strip scrolls; the panel never does. `min-width: 0` is what keeps the
+     grid's intrinsic width from widening the gallery — and with it the head —
+     past the box it is supposed to be scrolling inside. */
+  .gallery.carousel {
+    width: 100%;
+    min-width: 0;
+  }
   .gallery.carousel .cards {
     flex: 1 1 auto;
     min-height: 0;
+    width: 100%;
+    min-width: 0;
     grid-auto-flow: column;
     grid-template-columns: none;
-    grid-template-rows: repeat(auto-fill, minmax(112px, 1fr));
-    grid-auto-columns: 156px;
-    align-content: start;
-    padding-bottom: 2px;
+    grid-template-rows: minmax(0, 1fr);
+    grid-auto-columns: 132px;
+    align-content: stretch;
   }
   .gallery.carousel .tcard {
     min-height: 0;
@@ -343,19 +339,86 @@
     display: none;
   }
 
+  /*
+   * One option = one tile, and the preview fills it. The name sits under the
+   * picture and everything else — shape, slot count, whether applying will
+   * re-dimension the grid — is in the tooltip, because at this size a caption
+   * competes with the thing it is captioning.
+   */
   .tcard {
     position: relative;
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding: 10px;
-    border-radius: 10px;
+    gap: var(--sp-1);
+    padding: var(--sp-2);
+    border-radius: var(--radius);
     border: 1px solid var(--line);
     background: var(--surface-2);
-    transition: border-color 0.12s ease;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    min-height: 0;
+    text-align: center;
+    transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
   }
   .tcard:hover {
-    border-color: rgba(139, 124, 246, 0.45);
+    border-color: var(--accent-line);
+    background: var(--surface);
+  }
+  .tcard:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-offset);
+  }
+  .tcard.active {
+    border-color: var(--accent);
+  }
+  .tcard .tname {
+    font-size: var(--fs-xs);
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .tcard.active .tname {
+    color: var(--text);
+  }
+  .regrid {
+    color: var(--warn);
+  }
+
+  /* Only for templates you made, and only when you are on the card. */
+  .tdel {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--faint);
+    font: inherit;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity var(--dur) var(--ease);
+  }
+  .tcard:hover + .tdel,
+  .tdel:hover,
+  .tdel:focus-visible {
+    opacity: 1;
+  }
+  .tdel:hover,
+  .tdel.armed {
+    color: var(--bad);
+    background: var(--surface-2);
+  }
+
+  .tcard:hover {
+    border-color: var(--accent-line);
   }
   .tcard.active {
     border-color: var(--accent);
@@ -366,21 +429,15 @@
     height: 56px;
     display: block;
     border-radius: 6px;
-    background: rgba(255, 255, 255, 0.03);
+    background: var(--surface-2);
   }
   .preview rect {
-    fill: rgba(139, 124, 246, 0.28);
-    stroke: rgba(139, 124, 246, 0.75);
+    fill: var(--accent-soft);
+    stroke: var(--accent);
     stroke-width: 0.6%;
     vector-effect: non-scaling-stroke;
   }
 
-  .tinfo {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    min-width: 0;
-  }
   .tname {
     font-size: 12.5px;
     font-weight: 600;
@@ -389,26 +446,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .tmeta {
-    font-size: 11px;
-    color: var(--faint);
-  }
 
-  .tactions {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin-top: auto;
-  }
 
-  .active-dot {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--accent);
-    box-shadow: 0 0 6px rgba(139, 124, 246, 0.8);
-  }
 </style>
