@@ -1147,7 +1147,7 @@
      is worse to move than a titled one. Tauri tests the event target, so the
      attribute lives on the containers and every control inside them stays
      clickable by virtue of being the target itself. -->
-<div class="page" data-tauri-drag-region>
+<div class="page" class:scrolls={isActive('prefs')} data-tauri-drag-region>
   {#if firstRun}
     <header>
       <div class="brand">
@@ -1942,14 +1942,13 @@
       </ul>
     {:else}
       <p class="hint">
-        No defaults yet — right-click a window tile in a grid editor above and
-        choose “Save for this grid”.
+        None yet. Right-click a window in the grid above and choose
+        “Save for this grid”.
       </p>
     {/if}
     <p class="hint">
-      A default places every new window of that program into the saved cells.
-      A rule for a specific grid beats an all-grids rule; windows already on
-      screen never move when a default is saved or removed.
+      New windows of that program open in the saved cells. Windows already
+      open never move. A rule for one grid beats an all-grids rule.
     </p>
   </section>
 
@@ -2039,8 +2038,7 @@
       </div>
     {:else}
       <p class="hint">
-        No views yet — arrange your windows the way you like, then capture the
-        whole arrangement here.
+        None yet. Arrange your windows, then capture them here.
       </p>
     {/if}
     <div class="controls">
@@ -2065,8 +2063,7 @@
     </div>
     {#if !anyGridEnabled}
       <p class="hint">
-        Enable a grid first — a view saves your enabled grids and the windows
-        on them.
+        Turn on a grid first. A view saves the grids you have on.
       </p>
     {/if}
     <!-- Three things this card has to say plainly (critique round):
@@ -2074,15 +2071,14 @@
          but never starts programs, and that during the claim window a view
          outranks the app defaults card above. -->
     <p class="hint">
-      A template saves a slot arrangement for one grid; a view saves every
-      grid — dimensions, spacing — and remembers which program goes where.
+      A template is one grid’s layout. A view is every grid, plus which
+      program goes where.
     </p>
     <p class="hint">
-      Applying a view rebuilds its grids and puts each program's windows back
-      on their saved cells. It does not launch programs: apps already running,
-      or started within the next two minutes, land on their saved spots —
-      taking priority over app defaults during that window. With a startup
-      view, that covers the apps Windows relaunches after a reboot.
+      Applying a view rebuilds its grids and returns each program’s windows
+      to their cells. It launches nothing. Programs already running — or
+      started within two minutes — take their saved spots, outranking app
+      defaults until then.
     </p>
   </section>
 
@@ -2123,9 +2119,8 @@
       </label>
     </div>
     <p class="hint">
-      Stops Windows' own drag-to-edge snap and the Snap Layouts flyout from
-      fighting the grid. Win+Arrow keeps working. Griddle restores your
-      Windows settings when it quits.
+      Stops Windows’ drag-to-edge snap and Snap Layouts fighting the grid.
+      Win+Arrow still works. Griddle restores your settings when it quits.
     </p>
     <div class="controls">
       <label class="switch row">
@@ -2139,9 +2134,8 @@
       </label>
     </div>
     <p class="hint">
-      Off by default, because this window is a map of your grid — snapping it
-      in makes it occupy one of the cells it is describing. Leave it off and
-      drag it anywhere; Griddle remembers where you put it.
+      This window maps your grid, so snapping it in makes it occupy a cell it
+      is describing. Left off, it goes wherever you drag it and stays there.
     </p>
     <div class="controls">
       <label class="field">
@@ -2166,12 +2160,12 @@
       <p class="hint error">{hotkeyError}</p>
     {/if}
     <p class="hint">
-      Global shortcut that opens this window — e.g. Ctrl+Win+G. If another
-      app already owns the new combination, the previous one stays active.
+      Opens this window from anywhere — e.g. Ctrl+Win+G. If another app owns
+      the combination, the old one stays.
     </p>
     <p class="hint">
-      Looking for what your desktop looks like after a restart? That's “Load
-      at startup” in the Views card above.
+      For how your desktop looks after a restart, see “Load at startup”
+      under Views.
     </p>
   </section>
 
@@ -2735,9 +2729,29 @@
     gap: 0;
     height: 100%;
     box-sizing: border-box;
-    /* Fixed window, fixed content: the map absorbs the slack, so there is
-       never anything to scroll to. */
+    /* A display tab is fixed window, fixed content: the map absorbs the
+       slack, so there is nothing to scroll to and a scrollbar would be a
+       lie. Preferences has no absorber and is as long as it is. */
     overflow: hidden;
+  }
+  .page.scrolls {
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
+  }
+  .page.scrolls::-webkit-scrollbar {
+    width: 6px;
+  }
+  .page.scrolls::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .page.scrolls::-webkit-scrollbar-thumb {
+    border-radius: var(--radius-pill);
+    background: var(--line);
+  }
+  .page.scrolls::-webkit-scrollbar-thumb:hover {
+    background: var(--faint);
   }
 
 
@@ -2854,14 +2868,19 @@
     font-size: 14px;
   }
 
+  /* A band, not a card. The panel is already a frame; a rounded box inside
+     it drew a second one around every group and left the ground showing
+     between them. Full bleed, one rule underneath, 16px gutters like every
+     other row. */
   .card {
     background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: 14px;
-    padding: 18px 20px 20px;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    border-radius: 0;
+    padding: var(--sp-3) var(--sp-4) var(--sp-4);
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: var(--sp-3);
   }
   .card-head {
     display: flex;
