@@ -37,7 +37,10 @@
   --accent-soft: rgba(140, 140, 245, 0.14); /* tinted fills */
   --accent-line: rgba(140, 140, 245, 0.5); /* tinted borders */
   --accent-strong: rgba(140, 140, 245, 0.32); /* momentary emphasis */
-  --on-accent: #ffffff; /* text on a filled accent */
+  /* Text on a filled accent is the *ground*, not white (Figma 112-117:
+     #09090d on the dark accent, #fbfbfc on the light one). Dark mode's accent
+     is a light purple, so white-on-accent was barely legible. */
+  --on-accent: var(--bg);
   --good: #5fbf87;
   --warn: #e0b23a;
   --bad: #e0674f;
@@ -60,7 +63,8 @@
   --fs-h2: 13px; /* display name */
   --fs-body: 12.5px; /* row labels, values */
   --fs-sm: 12px; /* meta */
-  --fs-xs: 11px; /* units, exe names */
+  --fs-xs: 11px;
+  --fs-2xs: 10px; /* resolution, row hints (Figma 112-117) */ /* units, exe names */
   --lh-tight: 1.15;
   --lh-body: 1.45;
   --fw-regular: 400;
@@ -126,7 +130,7 @@
   --accent-soft: rgba(91, 91, 214, 0.1);
   --accent-line: rgba(91, 91, 214, 0.45);
   --accent-strong: rgba(91, 91, 214, 0.22);
-  --on-accent: #ffffff;
+  --on-accent: var(--bg);
   --good: #1f8a4c;
   --warn: #9a6b00;
   --bad: #b3402a;

@@ -1431,7 +1431,7 @@
           {#if spanned}<span class="badge">Spanned</span>{/if}
         </div>
         <label class="cell wide check" title={spanned ? 'Part of a spanning grid' : 'Apply the grid to this display'}>
-          <span class="check-label">Grid applied</span>
+          <span class="check-label">Grid on</span>
           <input
             type="checkbox"
             checked={enabled}
@@ -1451,7 +1451,9 @@
 
       {#if spanned === undefined}
         <!-- One block, not four bands: the dimension controls belong together,
-             so the rules go around the group rather than between its rows. -->
+             so the rules go around the group rather than between its rows.
+             Grid behavior stays outside it and last (Figma 112-117): it has
+             its own rules there, and it governs what the numbers do. -->
         <div class="group">
         {@render stepper('Columns', null, dims.cols, 1, MAX_COLS, 1, !enabled, (v) => setDims(mon, v, dims.rows))}
         {@render stepper('Rows', null, dims.rows, 1, MAX_ROWS, 1, !enabled, (v) => setDims(mon, dims.cols, v))}
@@ -1485,7 +1487,7 @@
       {#if enabled && grid}
         <div class="row" data-tauri-drag-region>
           <div class="cell label" data-tauri-drag-region>
-            <span class="lbl strong">Live grid manager</span>
+            <span class="lbl">Live grid manager</span>
             <span class="meta-inline">drag and resize from here</span>
           </div>
           <button
@@ -2435,18 +2437,17 @@
     padding: 0 var(--sp-3);
   }
 
+  /* A row's label is primary text, and everything qualifying it is one step
+     down (Figma 112-117). The panel used to sit a step dimmer throughout —
+     labels muted, units faint — which read as though every row were disabled. */
   .cell .lbl {
-    font-size: 12.5px;
-    color: var(--muted);
+    font-size: var(--fs-sm);
+    color: var(--text);
     white-space: nowrap;
   }
-  .cell .lbl.strong {
-    color: var(--text);
-    font-weight: 600;
-  }
   .cell .unit {
-    font-size: 11.5px;
-    color: var(--faint);
+    font-size: var(--fs-sm);
+    color: var(--muted);
   }
   .cell .mon-name {
     font-size: var(--fs-h2);
@@ -2493,7 +2494,7 @@
     display: block;
   }
 
-  /* "Grid applied" — a checkbox in the spec, not a switch: it states a fact
+  /* "Grid on" — a checkbox in the spec, not a switch: it states a fact
      about the display rather than flipping a mode. */
   .check {
     cursor: pointer;
@@ -2505,8 +2506,8 @@
     height: 0;
   }
   .check .check-label {
-    font-size: 12.5px;
-    color: var(--muted);
+    font-size: var(--fs-sm);
+    color: var(--text);
   }
   .check .box {
     width: 17px;
@@ -2522,7 +2523,7 @@
   .check input:checked + .box {
     background: var(--accent);
     border-color: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
   }
   .check input:focus-visible + .box {
     outline: var(--focus-ring);
@@ -2539,8 +2540,8 @@
 
   .ghost {
     cursor: pointer;
-    font-size: 12.5px;
-    color: var(--muted);
+    font-size: var(--fs-sm);
+    color: var(--text);
   }
   .ghost:hover {
     background: var(--surface-2);
@@ -2589,10 +2590,10 @@
 
 
 
+  /* Resolution and row hints: the small step, one level below the label. */
   .meta-inline {
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--faint);
+    font-size: var(--fs-2xs);
+    color: var(--muted);
     white-space: nowrap;
   }
 
@@ -2642,7 +2643,7 @@
 
   .tab.sel {
     background: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
   }
 
   /* `+` and the gear are glyphs, not words: square them up so they read as
