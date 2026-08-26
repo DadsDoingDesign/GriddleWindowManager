@@ -65,6 +65,15 @@ names close the `write_config` temp-file race (old item 4), and
 `overlay.rs::ensure_overlay` now uses the poison-tolerant lock pattern (old
 item 5).
 
+Also standing open by choice: the one **Dependabot advisory** on the repo
+(RUSTSEC-2024-0429, `glib` unsoundness). It is unreachable in anything we ship
+— `glib` reaches `Cargo.lock` only through Tauri's Linux-gated GTK tray stack
+and is absent from the Windows dependency graph — and there is no version to
+upgrade to. It is deliberately **not dismissed**, so the push banner keeps
+acting as a tripwire if Griddle ever gains a Linux build. Full triage and the
+reasoning in [`security-review.md`](security-review.md) §"Dependency
+advisories".
+
 ## Critique round (Task 22) — consciously deferred findings
 
 Decisions from the pre-ship critique triage. What was *fixed* is in the git
