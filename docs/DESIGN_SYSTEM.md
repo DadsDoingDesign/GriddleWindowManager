@@ -27,6 +27,13 @@ down the whole widget regardless of how long the labels are.
 That is not decoration. Griddle configures a grid, and the widget is built
 out of the same idea — fixed cells, one rule between them.
 
+The **brand row** is the lockup and two icon buttons — preferences and
+hide-to-tray — and nothing else (Figma 112-117). The lockup is one flat run at
+half-strength accent with the mark standing in for the G, so the product name
+recedes rather than competing with the settings under it. Pause and the
+appearance toggle live on the Preferences tab; Pause is also on the tray menu,
+which is where it stays reachable while the panel is hidden.
+
 The window is **fixed size and never scrolls**. The map absorbs the slack:
 it takes its size from the band it sits in and letterboxes to keep the
 display's proportions, so one window size works on any monitor.
@@ -68,6 +75,10 @@ doing.
 `--accent`, `--accent-soft` (tinted fills), `--accent-line` (tinted borders),
 `--on-accent` (text on a filled accent), and `--good` / `--warn` / `--bad`.
 
+`--on-accent` is **`var(--bg)`**, not white. Dark mode's accent is a light
+purple, so white text on the selected tab was barely legible; the ground
+colour is what Figma 112-117 puts there, and it is right in both modes.
+
 Accent carries one meaning: **this is selected or applied**. The selected tab
 is a solid `--accent` block; the "Grid applied" checkbox fills with it; map
 tiles are `--accent-soft` on `--accent-line`. It is never used for emphasis.
@@ -86,7 +97,7 @@ the system.
 ### Typography
 
 `--font-body`, `--font-mono`; sizes `--fs-h1` 16 / `--fs-h2` 13 /
-`--fs-body` 12.5 / `--fs-sm` 12 / `--fs-xs` 11; `--lh-tight` and `--lh-body`;
+`--fs-body` 12.5 / `--fs-sm` 12 / `--fs-xs` 11 / `--fs-2xs` 10; `--lh-tight` and `--lh-body`;
 weights `--fw-regular` / `--fw-medium` / `--fw-bold`; `--tracking-label` for
 uppercase tabs.
 
@@ -109,13 +120,19 @@ uppercase tabs.
    outline, never size. A flex item defaults to `min-width: auto`, so pin the
    cell and let the control fill it — this is exactly how the number fields
    once shoved the minus button sideways mid-edit.
-3. **Label in `--muted`, value in `--text`.** Units and hints in `--faint`,
-   parenthesised on the label rather than appended to the number.
+3. **Label in `--text`; everything qualifying it one step down.** Units,
+   hints and resolutions are `--muted`; `--faint` is for disabled and for the
+   exe under a tile title. The panel spent a while a step dimmer than this —
+   labels muted, units faint — and a whole table of it read as though every
+   row were disabled. Units stay parenthesised on the label rather than
+   appended to the number.
 4. **Numbers get `font-variant-numeric: tabular-nums`** so a row does not
    reflow as a value changes width.
 5. **Accent means selected or applied.** Nothing else.
-6. **State needs form as well as colour** — the applied grid gets a checkbox,
-   not just a tint.
+6. **State needs form as well as colour** — "Grid on" is an empty square
+   when off and a square with a tick when on, so the state survives being
+   read without colour. The glyph is `--accent` when on; it is not a filled
+   swatch.
 7. **Focus is visible on everything interactive**, via `--focus-ring`.
 8. **Motion is `--dur` on colour and opacity.** Never on layout, and never on
    anything that maps live desktop state: the grid map deliberately has no

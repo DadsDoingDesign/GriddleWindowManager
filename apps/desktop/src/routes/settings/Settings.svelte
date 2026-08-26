@@ -985,6 +985,34 @@
   >
 {/snippet}
 
+<!-- The "Grid on" control (Figma 112-117): a check-square glyph in accent, not
+     a filled box. State still has form as well as colour - an empty square
+     against a square with a tick - which is what the box was there for. -->
+{#snippet checkSquare(on: boolean)}
+  <svg class="ico" viewBox="0 0 16 16" aria-hidden="true">
+    <rect
+      x="1.75"
+      y="1.75"
+      width="12.5"
+      height="12.5"
+      rx="2.5"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.5"
+    />
+    {#if on}
+      <path
+        d="M4.75 8.25l2.25 2.25 4.25-4.75"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.75"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+    {/if}
+  </svg>
+{/snippet}
+
 {#snippet squares()}
   <svg class="ico" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"
     ><rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1.4" /><rect
@@ -1250,21 +1278,16 @@
          labelled action rather than a switch — it is the panic button, so it
          reads as something you press, not a preference you set. -->
     <div class="row brandrow" data-tauri-drag-region>
-      <div class="cell label nodivide" data-tauri-drag-region>
+      <!-- One flat lockup at half-strength accent (Figma 112-117): the mark
+           *is* the G, so the visible text starts at "riddle". The hidden G
+           keeps that a real word for a screen reader instead of a typo.
+           Pause and the appearance toggle moved to Preferences — the design
+           gives this row two controls and no more. -->
+      <div class="cell label nodivide brandlock" data-tauri-drag-region>
         {@render brandMark()}
-        <span class="wordmark" data-tauri-drag-region>Griddle</span>
-        <span class="product" data-tauri-drag-region>Window Manager</span>
-        {#if appVersion}<span class="version" data-tauri-drag-region>{appVersion}</span>{/if}
+        <span class="sr-only">G</span>
+        <span class="wordmark" data-tauri-drag-region>riddle window manager</span>
       </div>
-      <button
-        class="cell icon"
-        title={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
-        aria-label={theme === 'dark' ? 'Switch to light appearance' : 'Switch to dark appearance'}
-        aria-pressed={theme === 'light'}
-        onclick={toggleTheme}
-      >
-        {#if theme === 'dark'}{@render sunIcon()}{:else}{@render moonIcon()}{/if}
-      </button>
       <button
         class="cell icon"
         class:sel={isActive('prefs')}
@@ -1276,19 +1299,6 @@
       </button>
       <button class="cell icon" title="Hide to tray" onclick={() => void hideSettings()}>
         {@render collapseIcon()}
-      </button>
-      <!-- Pause is last on purpose: the icon buttons group together, and the
-           one labelled control — the panic button — ends the row where the
-           eye stops. -->
-      <button
-        class="cell wide ghost pause"
-        class:on={snapshot?.paused}
-        aria-pressed={snapshot?.paused ?? false}
-        title="Suspend tracking and placement everywhere"
-        onclick={() => togglePaused(!(snapshot?.paused ?? false))}
-      >
-        <span>{snapshot?.paused ? 'Paused' : 'Pause'}</span>
-        {@render pauseIcon()}
       </button>
     </div>
 
@@ -1438,7 +1448,7 @@
             disabled={spanned !== undefined}
             onchange={(e) => toggleGrid(mon, e.currentTarget.checked)}
           />
-          <span class="box" aria-hidden="true">{@render tick()}</span>
+          <span class="box" aria-hidden="true">{@render checkSquare(enabled)}</span>
         </label>
       </div>
 
@@ -1839,6 +1849,40 @@
   {/if}
 
   {#if isActive('prefs')}
+  <!-- Pause and appearance live here now that the brand row is the lockup and
+       two icons (Figma 112-117). Pause is also on the tray menu, which is
+       where it stays reachable while the panel is hidden. -->
+  <section class="rows">
+    <div class="row">
+      <div class="cell label"><span class="lbl">Appearance</span></div>
+      <button
+        class="cell wide ghost"
+        title={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
+        aria-label={theme === 'dark' ? 'Switch to light appearance' : 'Switch to dark appearance'}
+        onclick={toggleTheme}
+      >
+        <span>{theme === 'dark' ? 'Dark' : 'Light'}</span>
+        {#if theme === 'dark'}{@render sunIcon()}{:else}{@render moonIcon()}{/if}
+      </button>
+    </div>
+    <div class="row">
+      <div class="cell label">
+        <span class="lbl">Window management</span>
+        <span class="meta-inline">also on the tray menu</span>
+      </div>
+      <button
+        class="cell wide ghost pause"
+        class:on={snapshot?.paused}
+        aria-pressed={snapshot?.paused ?? false}
+        title="Suspend tracking and placement everywhere"
+        onclick={() => togglePaused(!(snapshot?.paused ?? false))}
+      >
+        <span>{snapshot?.paused ? 'Paused' : 'Pause'}</span>
+        {@render pauseIcon()}
+      </button>
+    </div>
+  </section>
+
   <!-- App defaults (spec v0.2 §2): the rules the tile context menu saves. -->
   <section class="card">
     <div class="card-head">
@@ -2338,21 +2382,35 @@
   .brandrow {
     background: var(--panel);
   }
-  .brandrow .wordmark {
-    font-size: var(--fs-h1);
-    font-weight: var(--fw-bold);
-    color: var(--text);
-    letter-spacing: -0.01em;
+  /* The mark butts straight onto the word it completes — a gap here and the
+     G stops being the G. Half strength across the whole lockup: the product
+     name is not what you opened this panel to read. */
+  .brandrow .brandlock {
+    gap: 0;
+    opacity: 0.5;
   }
-  /* The name completes the lockup without competing with it. */
-  .brandrow .product {
-    font-size: var(--fs-h2);
-    color: var(--muted);
+  .brandrow .wordmark {
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-medium);
+    color: var(--accent);
     white-space: nowrap;
   }
   .brandrow .brandmark {
-    width: 16px;
-    height: 16px;
+    width: 12px;
+    height: 12px;
+    color: var(--accent);
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
   }
   .cell.nodivide {
     border-right: 0;
@@ -2376,7 +2434,7 @@
   }
   .cell.icon {
     cursor: pointer;
-    color: var(--faint);
+    color: var(--muted);
     border-right: 1px solid var(--line);
   }
   .cell.icon:last-child {
@@ -2427,14 +2485,15 @@
     flex: 1 1 auto;
     justify-content: flex-start;
     gap: var(--sp-2);
-    padding: 0 var(--sp-3);
+    /* 16px gutters, as every Tab frame in Figma 112-117 has. */
+    padding: 0 var(--sp-4);
     min-width: 0;
     border-right: 1px solid var(--line);
   }
   .cell.wide {
     flex: 0 0 auto;
     gap: var(--sp-2);
-    padding: 0 var(--sp-3);
+    padding: 0 var(--sp-4);
   }
 
   /* A row's label is primary text, and everything qualifying it is one step
@@ -2510,20 +2569,17 @@
     color: var(--text);
   }
   .check .box {
-    width: 17px;
-    height: 17px;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--line);
-    background: var(--surface-2);
+    width: 16px;
+    height: 16px;
+    color: var(--muted);
     display: flex;
     align-items: center;
     justify-content: center;
-    color: transparent;
   }
+  /* Off is an empty square, on is a square with a tick, and only the colour
+     changes with it — the form carries the state either way. */
   .check input:checked + .box {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--on-accent);
+    color: var(--accent);
   }
   .check input:focus-visible + .box {
     outline: var(--focus-ring);
