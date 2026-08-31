@@ -12,6 +12,7 @@ import type {
   DragPos,
   Hwnd,
   MonitorInfo,
+  PlacementFill,
   PlacementMode,
   PreviewState,
   StateSnapshot,
@@ -210,6 +211,13 @@ export interface SettingsSetPrefsPayload {
   manageSettingsWindow?: boolean;
   /** Widget appearance. Absent leaves it unchanged. */
   theme?: 'dark' | 'light';
+  /**
+   * Spec 2026-08-31 (drag fill placement): footprint policy for windows new
+   * to a grid — 'fill' (largest open rectangle) or 'size' (window-size snap).
+   */
+  dropPlacement?: PlacementFill;
+  /** Spec 2026-08-31: footprint policy for tiles moving within their grid. */
+  movePlacement?: PlacementFill;
 }
 
 // ---------------------------------------------------------------------------

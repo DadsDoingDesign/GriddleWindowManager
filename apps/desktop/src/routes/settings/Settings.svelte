@@ -195,6 +195,22 @@
     applyTheme(next);
     void emitSettingsSetPrefs({ theme: next });
   }
+  /**
+   * Drag placement (spec 2026-08-31). Same single-writer shape as autostart:
+   * seeded from the config, this window is the only writer. `dropPlacement`
+   * governs windows new to a grid (floating intake and cross-grid moves),
+   * `movePlacement` tiles moving within their own grid.
+   */
+  let dropPlacement = $state<'fill' | 'size'>('fill');
+  let movePlacement = $state<'fill' | 'size'>('size');
+  function toggleDropPlacement(): void {
+    dropPlacement = dropPlacement === 'fill' ? 'size' : 'fill';
+    void emitSettingsSetPrefs({ dropPlacement });
+  }
+  function toggleMovePlacement(): void {
+    movePlacement = movePlacement === 'fill' ? 'size' : 'fill';
+    void emitSettingsSetPrefs({ movePlacement });
+  }
   let firstRunSuppressSnap = $state(false);
   let hotkeyDraft = $state(DISPLAY_DEFAULT_HOTKEY);
   let savedHotkey = $state(DISPLAY_DEFAULT_HOTKEY);
@@ -255,6 +271,8 @@
       suppressWindowsSnap = cfg.suppressWindowsSnap;
       manageSettingsWindow = cfg.manageSettingsWindow;
       applyTheme(cfg.theme === 'light' ? 'light' : 'dark');
+      dropPlacement = cfg.dropPlacement === 'size' ? 'size' : 'fill';
+      movePlacement = cfg.movePlacement === 'fill' ? 'fill' : 'size';
       hotkeyDraft = toDisplayHotkey(cfg.hotkey);
       savedHotkey = toDisplayHotkey(cfg.hotkey);
       seedExclusions = cfg.exclusions;
@@ -1879,6 +1897,43 @@
       >
         <span>{snapshot?.paused ? 'Paused' : 'Pause'}</span>
         {@render pauseIcon()}
+      </button>
+    </div>
+    <!-- Drag placement (spec 2026-08-31): two-value buttons like Appearance —
+         each shows the active choice, a click flips to the other. -->
+    <div class="row">
+      <div class="cell label">
+        <span class="lbl">Dropping onto a grid</span>
+        <span class="meta-inline">new windows, or tiles from another grid</span>
+      </div>
+      <button
+        class="cell wide ghost"
+        title={dropPlacement === 'fill'
+          ? 'Switch to keeping the window’s size'
+          : 'Switch to filling the biggest open space'}
+        aria-label={dropPlacement === 'fill'
+          ? 'Dropped windows fill the open space. Switch to keeping their size'
+          : 'Dropped windows keep their size. Switch to filling the open space'}
+        onclick={toggleDropPlacement}
+      >
+        <span>{dropPlacement === 'fill' ? 'Fill the open space' : 'Keep the window’s size'}</span>
+      </button>
+    </div>
+    <div class="row">
+      <div class="cell label">
+        <span class="lbl">Moving within a grid</span>
+      </div>
+      <button
+        class="cell wide ghost"
+        title={movePlacement === 'size'
+          ? 'Switch to filling the biggest open space'
+          : 'Switch to keeping the tile’s size'}
+        aria-label={movePlacement === 'size'
+          ? 'Moved tiles keep their size. Switch to filling the open space'
+          : 'Moved tiles fill the open space. Switch to keeping their size'}
+        onclick={toggleMovePlacement}
+      >
+        <span>{movePlacement === 'size' ? 'Keep the tile’s size' : 'Fill the open space'}</span>
       </button>
     </div>
   </section>

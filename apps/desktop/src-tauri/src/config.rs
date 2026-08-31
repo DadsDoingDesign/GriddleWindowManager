@@ -27,8 +27,10 @@ use std::path::{Path, PathBuf};
 /// + `settings_window_pos`
 /// over v5, which added `suppress_windows_snap` + `windows_snap_original`
 /// (spec 2026-08-19), both `#[serde(default)]` like every addition before
-/// them. Only *future* versions are quarantined.
-const CONFIG_VERSION: u32 = 7;
+/// them. v8 adds `drop_placement` + `move_placement` (spec 2026-08-31, drag
+/// fill placement), `#[serde(default)]` like every addition before them.
+/// Only *future* versions are quarantined.
+const CONFIG_VERSION: u32 = 8;
 /// Oldest schema version the migration path accepts.
 const MIN_CONFIG_VERSION: u32 = 1;
 
@@ -399,7 +401,46 @@ mod tests {
             manage_settings_window: false,
             settings_window_pos: None,
             theme: None,
+            drop_placement: None,
+            move_placement: None,
         }
+    }
+
+    /// Spec 2026-08-31 (drag fill placement): a v7 config — everything up to
+    /// `theme`, no placement-fill fields — migrates in place: version
+    /// re-stamped, both fields absent (`None`, which the brain reads as its
+    /// defaults), nothing else touched.
+    #[test]
+    fn v7_config_without_placement_fields_reads_as_untouched() {
+        let dir = ScratchDir::new();
+        fs::create_dir_all(dir.path()).unwrap();
+        let mut json = serde_json::to_value(sample_config()).unwrap();
+        let obj = json.as_object_mut().unwrap();
+        obj.insert("version".into(), serde_json::json!(7));
+        obj.remove("dropPlacement");
+        obj.remove("movePlacement");
+        fs::write(
+            dir.path().join(CONFIG_FILE),
+            serde_json::to_string(&json).unwrap(),
+        )
+        .unwrap();
+
+        let read = read_config_from(dir.path()).expect("v7 config must stay readable");
+        assert_eq!(read.version, CONFIG_VERSION, "re-stamped to v8");
+        assert_eq!(read.drop_placement, None, "the brain owns the default");
+        assert_eq!(read.move_placement, None, "the brain owns the default");
+    }
+
+    /// The placement-fill fields round-trip verbatim — Rust only stores what
+    /// the brain wrote.
+    #[test]
+    fn placement_fields_round_trip() {
+        let dir = ScratchDir::new();
+        let mut cfg = sample_config();
+        cfg.drop_placement = Some("size".into());
+        cfg.move_placement = Some("fill".into());
+        write_config_to(dir.path(), &cfg).expect("write");
+        assert_eq!(read_config_from(dir.path()), Some(cfg));
     }
 
     #[test]
