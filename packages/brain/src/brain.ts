@@ -23,8 +23,9 @@ import {
   slotFromCursor,
   snapRectToSlot,
 } from './coords';
-import { extractLayoutTiles, normalizePlacementMode } from './persist';
+import { CONFIG_VERSION, extractLayoutTiles, normalizePlacementMode } from './persist';
 import { solveMinimalMoves, type ReflowMove, type ReflowTile } from './reflow';
+import { bestOpenSlot } from './openspace';
 import {
   computeUnusableCells,
   nearestUsableSlot,
@@ -44,6 +45,7 @@ import type {
   LegacyPlacementMode,
   MonitorInfo,
   Move,
+  PlacementFill,
   PlacementMode,
   PreviewState,
   Slot,
@@ -389,6 +391,10 @@ export class WindowManagerBrain {
   private settingsWindowPos: import('./types').WindowPos | null;
   /** Widget appearance; `null` is dark. Round-tripped like the pop-out pos. */
   private theme: 'dark' | 'light' | null;
+  /** Spec 2026-08-31: footprint policy for windows new to a grid. */
+  private dropPlacement: PlacementFill;
+  /** Spec 2026-08-31: footprint policy for tiles moving within their grid. */
+  private movePlacement: PlacementFill;
 
   constructor(cb: BrainCallbacks, cfg?: AppConfig, opts?: { now?: () => number }) {
     this.cb = cb;
@@ -405,6 +411,11 @@ export class WindowManagerBrain {
     this.manageSettingsWindow = cfg?.manageSettingsWindow === true;
     this.settingsWindowPos = cfg?.settingsWindowPos ?? null;
     this.theme = cfg?.theme ?? null;
+    // Same loader-independence rule as the grid settings above: the shipped
+    // read path is Rust serde, so junk values default here, not just in
+    // sanitizeConfig.
+    this.dropPlacement = cfg?.dropPlacement === 'size' ? 'size' : 'fill';
+    this.movePlacement = cfg?.movePlacement === 'fill' ? 'fill' : 'size';
     // A pause that survived a restart (config `paused: true`) is already
     // running when the constructor returns — start its clock here so the
     // startup view's claim window is not eaten by it.
@@ -1255,6 +1266,12 @@ export class WindowManagerBrain {
     if (resizing) {
       footprint = snapRectToSlot(mon, dims, rect);
     } else {
+      // Spec 2026-08-31 (drag fill placement): under a 'fill' policy the
+      // footprint is the open-space rectangle, not a cursor-anchored box.
+      // Already >= the minimum cells and clear of dead space by
+      // construction, so none of the adjustment below applies.
+      const filled = this.fillFootprint(mg, mon, d, cursorX, cursorY);
+      if (filled) return { footprint: filled, resizing: false };
       const size =
         mg.settings.id === d.sourceGridId
           ? { w: d.startSlot.w, h: d.startSlot.h }
@@ -1276,6 +1293,54 @@ export class WindowManagerBrain {
     // Preview and commit snap to usable slots identically (spec §5.7).
     const adjusted = this.nearestUsable(mg, footprint);
     return adjusted ? { footprint: adjusted, resizing } : null;
+  }
+
+  /**
+   * Spec 2026-08-31 (drag fill placement): the open-space rectangle this
+   * drag should fill, or null when the cursor-anchored path applies — the
+   * policy says 'size', the target is a stack grid (overlapping tiles make
+   * "open space" meaningless), the window cannot be grown (absolute /
+   * non-resizable), or no free rectangle fits the window's minimum (the
+   * caller then falls through to the refusal + make-room/swap flow).
+   *
+   * Which policy applies is the drag kind: a tile moving within its own grid
+   * follows `movePlacement` (default: keep the span the user set); a window
+   * NEW to the grid — floating intake or a cross-grid transfer — follows
+   * `dropPlacement` (default: fill). Blocked cells mirror `placementRefused`
+   * exactly (in-flow tiles minus the dragged window, plus spanning dead
+   * space), so a fill placement is never refused.
+   */
+  private fillFootprint(
+    mg: ManagedGrid,
+    mon: MonitorInfo,
+    d: DragState,
+    cursorX: number,
+    cursorY: number,
+  ): Slot | null {
+    const policy =
+      mg.settings.id === d.sourceGridId ? this.movePlacement : this.dropPlacement;
+    if (policy !== 'fill') return null;
+    if (mg.settings.mode === 'stack') return null;
+    const info = this.windows.get(d.hwnd);
+    if (d.absolute || !(info?.resizable ?? true)) return null;
+
+    const dims = this.dims(mg.settings);
+    const blocked = new Set(mg.unusable);
+    for (const t of mg.grid.tiles) {
+      if (t.id === d.hwnd || !isInFlow(t)) continue;
+      const s = tileSlotOf(t);
+      for (let r = s.row; r < s.row + s.h; r++) {
+        for (let c = s.col; c < s.col + s.w; c++) blocked.add(r * dims.cols + c);
+      }
+    }
+    const cursorCell = slotFromCursor(mon, dims, cursorX, cursorY, { w: 1, h: 1 });
+    return bestOpenSlot({
+      cols: dims.cols,
+      rows: dims.rows,
+      blocked,
+      cursor: { col: cursorCell.col, row: cursorCell.row },
+      min: this.minCellsFor(mon, dims, info),
+    });
   }
 
   moveSizeEnd(
@@ -1775,7 +1840,7 @@ export class WindowManagerBrain {
     const layouts: Record<string, unknown> = { ...this.storedLayouts };
     for (const [id, mg] of this.grids) layouts[id] = mg.grid.toJSON();
     return {
-      version: 7,
+      version: CONFIG_VERSION,
       grids: [...this.gridSettings.values()].map((g) => ({ ...g })),
       templates: [...this.templates],
       exclusions: [...this.exclusions],
@@ -1792,6 +1857,8 @@ export class WindowManagerBrain {
       manageSettingsWindow: this.manageSettingsWindow,
       settingsWindowPos: this.settingsWindowPos,
       theme: this.theme,
+      dropPlacement: this.dropPlacement,
+      movePlacement: this.movePlacement,
     };
   }
 
@@ -1826,6 +1893,8 @@ export class WindowManagerBrain {
     suppressWindowsSnap?: boolean;
     manageSettingsWindow?: boolean;
     theme?: 'dark' | 'light';
+    dropPlacement?: PlacementFill;
+    movePlacement?: PlacementFill;
   }): void {
     let changed = false;
     if (prefs.paused !== undefined && prefs.paused !== this.paused) {
@@ -1879,6 +1948,20 @@ export class WindowManagerBrain {
     }
     if (prefs.theme !== undefined && prefs.theme !== this.theme) {
       this.theme = prefs.theme;
+      changed = true;
+    }
+    if (
+      prefs.dropPlacement !== undefined &&
+      prefs.dropPlacement !== this.dropPlacement
+    ) {
+      this.dropPlacement = prefs.dropPlacement;
+      changed = true;
+    }
+    if (
+      prefs.movePlacement !== undefined &&
+      prefs.movePlacement !== this.movePlacement
+    ) {
+      this.movePlacement = prefs.movePlacement;
       changed = true;
     }
     if (

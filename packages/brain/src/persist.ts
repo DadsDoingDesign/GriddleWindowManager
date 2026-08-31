@@ -17,11 +17,12 @@ import { MAX_SPACING_PX } from './coords';
  * their own parse and read back as `null`, i.e. "corrupt, start over".
  * Bumping a schema must be one edit, not four.
  */
-export const CONFIG_VERSION = 7;
+export const CONFIG_VERSION = 8;
 import type {
   AppConfig,
   AppRule,
   GridSettings,
+  PlacementFill,
   PlacementMode,
   Slot,
   Template,
@@ -80,7 +81,16 @@ export function defaultConfig(): AppConfig {
     manageSettingsWindow: false,
     settingsWindowPos: null,
     theme: null,
+    // Spec 2026-08-31 (drag fill placement): new-to-grid drops fill the open
+    // space; same-grid moves keep the size the user set.
+    dropPlacement: 'fill',
+    movePlacement: 'size',
   };
+}
+
+/** A stored placement-fill value, or the given default for anything else. */
+function sanitizePlacementFill(raw: unknown, fallback: PlacementFill): PlacementFill {
+  return raw === 'fill' || raw === 'size' ? raw : fallback;
 }
 
 function isWindowPos(v: unknown): v is import('./types').WindowPos {
@@ -376,6 +386,10 @@ export function sanitizeConfig(raw: unknown): AppConfig | null {
     // Anything but the two known names reads as dark, so a hand-edited or
     // future value can never leave the widget unstyled.
     theme: raw.theme === 'light' || raw.theme === 'dark' ? raw.theme : null,
+    // Spec 2026-08-31: absent (every pre-v8 config) or junk reads as the
+    // defaults — drops fill, moves keep their size.
+    dropPlacement: sanitizePlacementFill(raw.dropPlacement, 'fill'),
+    movePlacement: sanitizePlacementFill(raw.movePlacement, 'size'),
   };
 }
 

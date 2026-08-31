@@ -117,7 +117,7 @@ describe("serializeConfig / parseConfig", () => {
 
   it("round-trips a populated config", () => {
     const cfg: AppConfig = {
-      version: 7,
+      version: 8,
       grids: [
         makeGridSettings(),
         makeGridSettings({ id: "grid:other", enabled: false }),
@@ -163,7 +163,9 @@ describe("serializeConfig / parseConfig", () => {
       windowsSnapOriginal: null,
       manageSettingsWindow: false,
       settingsWindowPos: null,
-    theme: null,
+      theme: null,
+      dropPlacement: 'size',
+      movePlacement: 'fill',
     };
     expect(parseConfig(serializeConfig(cfg))).toEqual(cfg);
   });
@@ -229,6 +231,43 @@ describe("serializeConfig / parseConfig", () => {
     expect(cfg!.hotkey).toBe(DEFAULT_HOTKEY);
     expect(cfg!.autostart).toBe(false);
     expect(cfg!.paused).toBe(false);
+  });
+});
+
+describe("drag fill placement config (spec 2026-08-31)", () => {
+  it("defaults: drops fill the open space, moves keep the tile's size", () => {
+    const cfg = defaultConfig();
+    expect(cfg.dropPlacement).toBe("fill");
+    expect(cfg.movePlacement).toBe("size");
+  });
+
+  it("a pre-v8 config without the fields reads with the defaults", () => {
+    const raw = { ...defaultConfig() } as Record<string, unknown>;
+    delete raw.dropPlacement;
+    delete raw.movePlacement;
+    raw.version = 7;
+    const cfg = sanitizeConfig(raw);
+    expect(cfg).not.toBeNull();
+    expect(cfg!.version).toBe(CONFIG_VERSION);
+    expect(cfg!.dropPlacement).toBe("fill");
+    expect(cfg!.movePlacement).toBe("size");
+  });
+
+  it("valid values round-trip; junk reads as the defaults", () => {
+    const cfg: AppConfig = {
+      ...defaultConfig(),
+      dropPlacement: "size",
+      movePlacement: "fill",
+    };
+    expect(parseConfig(serializeConfig(cfg))).toEqual(cfg);
+
+    const junk = sanitizeConfig({
+      ...defaultConfig(),
+      dropPlacement: "nope",
+      movePlacement: 42,
+    });
+    expect(junk!.dropPlacement).toBe("fill");
+    expect(junk!.movePlacement).toBe("size");
   });
 });
 
