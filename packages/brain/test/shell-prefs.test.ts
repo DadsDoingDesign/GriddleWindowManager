@@ -106,6 +106,24 @@ describe('setShellPrefs (contract C3 extension, Task 18)', () => {
     expect(reloaded.exportConfig().movePlacement).toBe('fill');
   });
 
+  it('expand/auto-split prefs round-trip and only fire on change (spec 2026-08-31)', () => {
+    const { brain, snapshots } = makeBrain();
+    expect(brain.exportConfig().maximizeBehavior).toBe('expand');
+    expect(brain.exportConfig().noRoomPlacement).toBe('split');
+
+    brain.setShellPrefs({ maximizeBehavior: 'windows', noRoomPlacement: 'refuse' });
+    expect(brain.exportConfig().maximizeBehavior).toBe('windows');
+    expect(brain.exportConfig().noRoomPlacement).toBe('refuse');
+    expect(snapshots).toHaveLength(1);
+
+    brain.setShellPrefs({ maximizeBehavior: 'windows' }); // no-op
+    expect(snapshots).toHaveLength(1);
+
+    const { brain: reloaded } = makeBrain(brain.exportConfig());
+    expect(reloaded.exportConfig().maximizeBehavior).toBe('windows');
+    expect(reloaded.exportConfig().noRoomPlacement).toBe('refuse');
+  });
+
   it('round-trips through a config reload (persistence)', () => {
     const { brain } = makeBrain();
     brain.setShellPrefs({ paused: true, autostart: true, hotkey: 'Ctrl+Shift+F1' });

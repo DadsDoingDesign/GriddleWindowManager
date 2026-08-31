@@ -153,6 +153,46 @@ describe('bestOpenSlot', () => {
     expect(slot).toEqual({ col: 0, row: 0, w: 2, h: 2 });
   });
 
+  it('a cover constraint grows around the given cells (spec 2026-08-31, expand)', () => {
+    // 6x1 with col 3 blocked: the biggest region overall is cols 0-2, but
+    // the covered tile sits at col 4 — the answer must contain it.
+    const slot = bestOpenSlot({
+      cols: 6,
+      rows: 1,
+      blocked: blockCells(6, [{ col: 3, row: 0, w: 1, h: 1 }]),
+      cursor: null,
+      min: NO_MIN,
+      cover: { col: 4, row: 0, w: 1, h: 1 },
+    });
+    expect(slot).toEqual({ col: 4, row: 0, w: 2, h: 1 });
+  });
+
+  it('a boxed-in cover can only be itself', () => {
+    // 4x1 with col 1 blocked: cols 2-3 is the biggest region, but the cover
+    // at col 0 cannot reach it.
+    const slot = bestOpenSlot({
+      cols: 4,
+      rows: 1,
+      blocked: new Set([1]),
+      cursor: null,
+      min: NO_MIN,
+      cover: { col: 0, row: 0, w: 1, h: 1 },
+    });
+    expect(slot).toEqual({ col: 0, row: 0, w: 1, h: 1 });
+  });
+
+  it('a cover overlapping blocked cells yields null', () => {
+    const slot = bestOpenSlot({
+      cols: 2,
+      rows: 1,
+      blocked: new Set([0]),
+      cursor: null,
+      min: NO_MIN,
+      cover: { col: 0, row: 0, w: 2, h: 1 },
+    });
+    expect(slot).toBeNull();
+  });
+
   it('spanning dead-space cells block like tiles', () => {
     // Bottom-right cell dead on a 2x2: best is the top row.
     const slot = bestOpenSlot({

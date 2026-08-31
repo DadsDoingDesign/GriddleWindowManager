@@ -117,7 +117,7 @@ describe("serializeConfig / parseConfig", () => {
 
   it("round-trips a populated config", () => {
     const cfg: AppConfig = {
-      version: 8,
+      version: 9,
       grids: [
         makeGridSettings(),
         makeGridSettings({ id: "grid:other", enabled: false }),
@@ -166,6 +166,8 @@ describe("serializeConfig / parseConfig", () => {
       theme: null,
       dropPlacement: 'size',
       movePlacement: 'fill',
+      maximizeBehavior: 'windows',
+      noRoomPlacement: 'refuse',
     };
     expect(parseConfig(serializeConfig(cfg))).toEqual(cfg);
   });
@@ -268,6 +270,43 @@ describe("drag fill placement config (spec 2026-08-31)", () => {
     });
     expect(junk!.dropPlacement).toBe("fill");
     expect(junk!.movePlacement).toBe("size");
+  });
+});
+
+describe("expand + auto-split config (spec 2026-08-31, second batch)", () => {
+  it("defaults: maximize expands, a full grid makes room", () => {
+    const cfg = defaultConfig();
+    expect(cfg.maximizeBehavior).toBe("expand");
+    expect(cfg.noRoomPlacement).toBe("split");
+  });
+
+  it("a pre-v9 config without the fields reads with the defaults", () => {
+    const raw = { ...defaultConfig() } as Record<string, unknown>;
+    delete raw.maximizeBehavior;
+    delete raw.noRoomPlacement;
+    raw.version = 8;
+    const cfg = sanitizeConfig(raw);
+    expect(cfg).not.toBeNull();
+    expect(cfg!.version).toBe(CONFIG_VERSION);
+    expect(cfg!.maximizeBehavior).toBe("expand");
+    expect(cfg!.noRoomPlacement).toBe("split");
+  });
+
+  it("valid values round-trip; junk reads as the defaults", () => {
+    const cfg: AppConfig = {
+      ...defaultConfig(),
+      maximizeBehavior: "windows",
+      noRoomPlacement: "refuse",
+    };
+    expect(parseConfig(serializeConfig(cfg))).toEqual(cfg);
+
+    const junk = sanitizeConfig({
+      ...defaultConfig(),
+      maximizeBehavior: "nope",
+      noRoomPlacement: 17,
+    });
+    expect(junk!.maximizeBehavior).toBe("expand");
+    expect(junk!.noRoomPlacement).toBe("split");
   });
 });
 

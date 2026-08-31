@@ -4,6 +4,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { WindowManagerBrain } from '../src/brain';
+import { defaultConfig } from '../src/persist';
 import type {
   ApplyLayout,
   GridSettings,
@@ -68,15 +69,21 @@ interface Harness {
   previews: PreviewState[];
 }
 
+// noRoomPlacement 'refuse' pins the banded flow this file is about — under
+// the default 'split' (spec 2026-08-31, second batch) the band never draws
+// because the split is the hover outcome itself (auto-split.test.ts).
 function harness(): Harness {
   const applies: ApplyLayout[] = [];
   const snapshots: StateSnapshot[] = [];
   const previews: PreviewState[] = [];
-  const brain = new WindowManagerBrain({
-    onApply: (l) => applies.push(l),
-    onPreview: (p) => previews.push(p),
-    onSnapshot: (s) => snapshots.push(s),
-  });
+  const brain = new WindowManagerBrain(
+    {
+      onApply: (l) => applies.push(l),
+      onPreview: (p) => previews.push(p),
+      onSnapshot: (s) => snapshots.push(s),
+    },
+    { ...defaultConfig(), noRoomPlacement: 'refuse' },
+  );
   brain.setMonitors([makeMonitor()]);
   return { brain, applies, snapshots, previews };
 }

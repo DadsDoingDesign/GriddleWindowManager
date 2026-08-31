@@ -22,6 +22,13 @@ export interface OpenSpaceQuery {
   cursor: { col: number; row: number } | null;
   /** Minimum cells the window's OS minimum size needs (>= 1x1). */
   min: { w: number; h: number };
+  /**
+   * Spec 2026-08-31 (expand-on-maximize): when present, only rectangles
+   * fully containing these cells qualify — "grow around the tile" instead
+   * of "anywhere open". The caller masks the covered tile's own cells as
+   * free; a cover overlapping genuinely blocked cells yields null.
+   */
+  cover?: Slot;
 }
 
 /**
@@ -31,7 +38,7 @@ export interface OpenSpaceQuery {
  * maximal-width rectangle per height, which includes every maximal rectangle.
  */
 export function bestOpenSlot(q: OpenSpaceQuery): Slot | null {
-  const { cols, rows, blocked, cursor, min } = q;
+  const { cols, rows, blocked, cursor, min, cover } = q;
   if (cols < 1 || rows < 1) return null;
 
   // freeRight[r][c] = consecutive free cells rightward from (c, r), 0 when
@@ -61,6 +68,17 @@ export function bestOpenSlot(q: OpenSpaceQuery): Slot | null {
   let bestDist = Infinity;
 
   const consider = (slot: Slot) => {
+    if (
+      cover &&
+      !(
+        slot.col <= cover.col &&
+        slot.row <= cover.row &&
+        slot.col + slot.w >= cover.col + cover.w &&
+        slot.row + slot.h >= cover.row + cover.h
+      )
+    ) {
+      return;
+    }
     const contains =
       cursorFree &&
       cursor!.col >= slot.col &&

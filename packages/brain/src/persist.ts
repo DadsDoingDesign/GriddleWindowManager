@@ -17,7 +17,7 @@ import { MAX_SPACING_PX } from './coords';
  * their own parse and read back as `null`, i.e. "corrupt, start over".
  * Bumping a schema must be one edit, not four.
  */
-export const CONFIG_VERSION = 8;
+export const CONFIG_VERSION = 9;
 import type {
   AppConfig,
   AppRule,
@@ -85,6 +85,10 @@ export function defaultConfig(): AppConfig {
     // space; same-grid moves keep the size the user set.
     dropPlacement: 'fill',
     movePlacement: 'size',
+    // Spec 2026-08-31 (second batch): maximize grows the tile in the grid;
+    // a full grid makes room by splitting the aimed tile.
+    maximizeBehavior: 'expand',
+    noRoomPlacement: 'split',
   };
 }
 
@@ -390,6 +394,9 @@ export function sanitizeConfig(raw: unknown): AppConfig | null {
     // defaults — drops fill, moves keep their size.
     dropPlacement: sanitizePlacementFill(raw.dropPlacement, 'fill'),
     movePlacement: sanitizePlacementFill(raw.movePlacement, 'size'),
+    // Spec 2026-08-31 (second batch): same absent-or-junk rule for v9.
+    maximizeBehavior: raw.maximizeBehavior === 'windows' ? 'windows' : 'expand',
+    noRoomPlacement: raw.noRoomPlacement === 'refuse' ? 'refuse' : 'split',
   };
 }
 

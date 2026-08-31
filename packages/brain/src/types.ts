@@ -282,10 +282,12 @@ export interface AppConfig {
   // v7: adds `theme` (default null = dark).
   // v8 (spec 2026-08-31): adds `dropPlacement` (default 'fill') +
   // `movePlacement` (default 'size'), the drag-fill placement pair.
+  // v9 (spec 2026-08-31, second batch): adds `maximizeBehavior` (default
+  // 'expand') + `noRoomPlacement` (default 'split').
   // The loaders (persist.ts and the Rust mirror's serde defaults) migrate
   // older configs in place — defaults `appRules: [], views: [],
   // startupViewId: null, autoCheckUpdates: false`, spacing absent-means-0.
-  version: 8;
+  version: 9;
   grids: GridSettings[];
   templates: Template[];
   exclusions: string[]; // lowercase exe names
@@ -350,6 +352,21 @@ export interface AppConfig {
    * footprint. Default `'size'` — a size the user set is respected.
    */
   movePlacement: PlacementFill;
+  /**
+   * Spec 2026-08-31 (second batch): what a maximize gesture (double-click,
+   * caption button, Win+Up — indistinguishable at the tracker) does to a
+   * tiled window. `'expand'` (default) grows the tile to the largest free
+   * rectangle containing its cells, toggling back on the next maximize;
+   * `'windows'` keeps the pre-spec behavior (tile released, window left
+   * OS-maximized).
+   */
+  maximizeBehavior: 'expand' | 'windows';
+  /**
+   * Spec 2026-08-31 (second batch): what a refused new-to-grid drop does.
+   * `'split'` (default) auto-splits the aimed tile — the preview shows the
+   * outcome and a release commits it; `'refuse'` keeps the banded refusal.
+   */
+  noRoomPlacement: 'split' | 'refuse';
 }
 
 /** A remembered top-left corner in physical screen pixels. */
