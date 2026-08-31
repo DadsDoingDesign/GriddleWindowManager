@@ -1,0 +1,71 @@
+name: Boot smoke
+
+# Evals plan §1 (docs/evals-plan.md): install the real NSIS bundle on a clean
+# runner, launch it, soak past the 90 s brain-host watchdog, and assert the
+# process survived with boot markers and no ERROR lines in the log. This is
+# the eval aimed at the DOA class — v0.1.0 and v0.2.0 both shipped unable to
+# boot with every unit suite green.
+#
+# Runs on demand and on pushes to master (not per-PR: the release build takes
+# minutes, and PRs already run the fast suites in ci.yml). Run it manually
+# before tagging a release.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - 'apps/**'
+      - 'packages/**'
+      - 'scripts/boot-smoke.ps1'
+      - '.github/workflows/boot-smoke.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: boot-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  boot-smoke:
+    name: Install, boot, and soak (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Rust (stable, MSVC)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - name: Install npm workspaces
+        run: npm ci
+
+      # The unsigned local-build config: produces a complete installer and a
+      # clean exit without the signing key (which this workflow never sees).
+      - name: Build the NSIS bundle
+        run: npm run tauri:build:local
+
+      - name: Install, launch, soak, assert
+        run: powershell -NoProfile -File scripts/boot-smoke.ps1
+
+      - name: Upload the boot log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: griddle-wm-boot-log
+          path: ~/AppData/Roaming/griddle-wm/logs/
+          if-no-files-found: ignore

@@ -1,0 +1,140 @@
+{
+  "version": 7,
+  "grids": [
+    {
+      "id": "grid:\\.\\DISPLAY1@0,0",
+      "monitorIds": [
+        "\\.\\DISPLAY1@0,0"
+      ],
+      "cols": 12,
+      "rows": 6,
+      "mode": "reflow",
+      "enabled": true,
+      "activeTemplateId": null,
+      "gap": 8,
+      "padding": 12
+    },
+    {
+      "id": "grid:\\.\\DISPLAY2@1920,0",
+      "monitorIds": [
+        "\\.\\DISPLAY2@1920,0"
+      ],
+      "cols": 4,
+      "rows": 2,
+      "mode": "stack",
+      "enabled": false,
+      "activeTemplateId": "tpl:user:1"
+    }
+  ],
+  "templates": [
+    {
+      "id": "tpl:user:1",
+      "name": "Halves",
+      "cols": 2,
+      "rows": 1,
+      "slots": [
+        {
+          "col": 0,
+          "row": 0,
+          "w": 1,
+          "h": 1
+        },
+        {
+          "col": 1,
+          "row": 0,
+          "w": 1,
+          "h": 1
+        }
+      ],
+      "builtin": false
+    }
+  ],
+  "exclusions": [
+    "slack.exe"
+  ],
+  "layouts": {
+    "grid:\\.\\DISPLAY1@0,0": {
+      "version": 1,
+      "tiles": [
+        {
+          "id": "197226",
+          "col": 0,
+          "row": 0,
+          "w": 6,
+          "h": 6
+        },
+        {
+          "id": "263432",
+          "col": 0,
+          "row": 0,
+          "w": 3,
+          "h": 2,
+          "position": "absolute",
+          "pinned": {
+            "x": 9,
+            "y": 0
+          }
+        }
+      ]
+    }
+  },
+  "hotkey": "Ctrl+Super+G",
+  "autostart": true,
+  "paused": false,
+  "appRules": [
+    {
+      "exe": "code.exe",
+      "gridId": null,
+      "slot": {
+        "col": 6,
+        "row": 0,
+        "w": 6,
+        "h": 6
+      }
+    }
+  ],
+  "views": [
+    {
+      "id": "view:1",
+      "name": "Work",
+      "grids": [
+        {
+          "settings": {
+            "id": "grid:\\.\\DISPLAY1@0,0",
+            "monitorIds": [
+              "\\.\\DISPLAY1@0,0"
+            ],
+            "cols": 12,
+            "rows": 6,
+            "mode": "reflow",
+            "enabled": true,
+            "activeTemplateId": null,
+            "gap": 8,
+            "padding": 12
+          },
+          "assignments": [
+            {
+              "exe": "code.exe",
+              "slot": {
+                "col": 0,
+                "row": 0,
+                "w": 6,
+                "h": 6
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "startupViewId": "view:1",
+  "autoCheckUpdates": true,
+  "suppressWindowsSnap": false,
+  "windowsSnapOriginal": null,
+  "manageSettingsWindow": false,
+  "settingsWindowPos": {
+    "x": 1412,
+    "y": 903
+  },
+  "theme": null
+}

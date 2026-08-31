@@ -481,6 +481,51 @@ mod tests {
         assert_eq!(read_config_from(dir.path()), Some(cfg));
     }
 
+    /// Evals plan §2 (docs/evals-plan.md): the shared config corpus — the
+    /// SAME fixture files the brain's vitest suite parses. Every historical
+    /// schema version must load through the full read path (including the
+    /// quarantine gate) and re-stamp to the current version; brain-owned
+    /// optionals stay `None` where the file lacks them.
+    #[test]
+    fn corpus_every_version_loads_and_restamps() {
+        let corpus = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("..")
+            .join("fixtures")
+            .join("configs");
+        let mut seen = 0u32;
+        for v in 1..=CONFIG_VERSION {
+            let file = corpus.join(format!("v{v}.json"));
+            let text = fs::read_to_string(&file)
+                .unwrap_or_else(|e| panic!("corpus file {file:?} unreadable: {e}"));
+            let dir = ScratchDir::new();
+            fs::create_dir_all(dir.path()).unwrap();
+            fs::write(dir.path().join(CONFIG_FILE), &text).unwrap();
+            let read = read_config_from(dir.path())
+                .unwrap_or_else(|| panic!("corpus v{v} failed to load"));
+            assert_eq!(read.version, CONFIG_VERSION, "v{v} re-stamped");
+            assert!(
+                !dir.path().join(BAK_FILE).exists(),
+                "v{v} must never be quarantined"
+            );
+            // Write-back round-trip: the migrated file must persist and
+            // re-load identically (the second-boot guarantee).
+            write_config_to(dir.path(), &read).expect("write migrated");
+            assert_eq!(read_config_from(dir.path()), Some(read.clone()), "v{v} idempotent");
+            if v < 8 {
+                assert_eq!(read.drop_placement, None, "v{v}: brain owns the default");
+                assert_eq!(read.move_placement, None, "v{v}: brain owns the default");
+            }
+            if v < 9 {
+                assert_eq!(read.maximize_behavior, None, "v{v}: brain owns the default");
+                assert_eq!(read.no_room_placement, None, "v{v}: brain owns the default");
+            }
+            seen += 1;
+        }
+        assert_eq!(seen, CONFIG_VERSION, "one corpus file per schema version");
+    }
+
     #[test]
     fn missing_dir_and_missing_file_read_as_none() {
         let dir = ScratchDir::new();

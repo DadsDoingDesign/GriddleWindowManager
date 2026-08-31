@@ -4,6 +4,18 @@
 batch, when "the suites are green" and "the app works" have again proven to
 be different claims.
 
+**Status (same day):** §1–§4 are built. §1: `scripts/boot-smoke.ps1` +
+`.github/workflows/boot-smoke.yml` (manual + master pushes). §2:
+`fixtures/configs/v1..v9.json`, parsed by `test/config-corpus.test.ts` and
+`config.rs::corpus_every_version_loads_and_restamps`. §3:
+`test/invariants.test.ts` (seeded; `INVARIANT_SEED=<n>` reproduces). §4:
+`scripts/log-lint.ps1` (3-day window by default; `-Days 0` for history) —
+whose first run found two live issues: the watchdog respawns the brain host
+after every long sleep (wall-clock heartbeat deadline), and a recurring
+396x0 rect for one hwnd that the actuator's collapse guard blocks daily.
+Both are filed as follow-up tasks; the lint gate stays red until they land.
+§5–§6 remain future work.
+
 ## What we already have
 
 | Layer | What it covers | Count today |
