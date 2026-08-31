@@ -262,6 +262,40 @@ fn minimize_native(key: isize) {
     }
 }
 
+/// Spec 2026-08-31 (expand-on-maximize): `restore_window(hwnd)`. The brain
+/// has already remembered the grown slot when it asks; this only un-maximizes
+/// the window so the tracker's unmaximize event can re-tile it. The exact
+/// mirror of `minimize_window`: same security rules, same async ShowWindow so
+/// a hung target cannot stall the caller.
+#[tauri::command]
+pub fn restore_window(window: tauri::Window, hwnd: Hwnd) {
+    if crate::guard::authorize("restore_window", window.label()).is_err() {
+        return;
+    }
+    let Ok(key) = hwnd.parse::<isize>() else {
+        log::warn!("restore_window: malformed hwnd {hwnd:?}, skipping");
+        return;
+    };
+    if !crate::tracker::verify_for_actuation(key) {
+        log::info!("restore_window: hwnd {key} not in live eligible set, skipping");
+        return;
+    }
+    restore_native(key);
+}
+
+#[cfg(not(windows))]
+fn restore_native(_key: isize) {}
+
+#[cfg(windows)]
+fn restore_native(key: isize) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{ShowWindowAsync, SW_RESTORE};
+    let h = HWND(key as *mut core::ffi::c_void);
+    if !unsafe { ShowWindowAsync(h, SW_RESTORE) }.as_bool() {
+        log::warn!("restore_window: ShowWindowAsync declined for hwnd {key}");
+    }
+}
+
 /// Contract §C2: `focus_window(hwnd)`. Same security rules as `apply_layout`
 /// (caller label + live-set + actuation-time identity re-verification).
 #[tauri::command]

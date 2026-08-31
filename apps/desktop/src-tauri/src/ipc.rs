@@ -328,6 +328,18 @@ pub struct AppConfig {
     /// for an absent value) or `"fill"`. Round-tripped like `drop_placement`.
     #[serde(default)]
     pub move_placement: Option<String>,
+    /// Spec 2026-08-31 (second batch): what a maximize gesture does to a
+    /// tiled window — `"expand"` (grow the tile in the grid; the brain's
+    /// default for an absent value) or `"windows"` (real OS maximize).
+    /// Round-tripped like `drop_placement`.
+    #[serde(default)]
+    pub maximize_behavior: Option<String>,
+    /// Spec 2026-08-31 (second batch): what a refused new-to-grid drop does —
+    /// `"split"` (auto-split the aimed tile; the brain's default for an
+    /// absent value) or `"refuse"` (the banded refusal). Round-tripped like
+    /// `drop_placement`.
+    #[serde(default)]
+    pub no_room_placement: Option<String>,
 }
 
 /// A remembered top-left corner in physical screen pixels. Signed because a
@@ -382,6 +394,10 @@ pub mod events {
     pub const WINDOW_APPEARED: &str = "window-appeared";
     pub const WINDOW_DESTROYED: &str = "window-destroyed";
     pub const WINDOW_MINIMIZED: &str = "window-minimized";
+    /// Spec 2026-08-31 (second batch): a tracked window was maximized —
+    /// double-click, caption button or Win+Up, indistinguishable here. The
+    /// brain decides whether that means expand-in-grid or leave-alone.
+    pub const WINDOW_MAXIMIZED: &str = "window-maximized";
     pub const WINDOW_RESTORED: &str = "window-restored";
     pub const MOVESIZE_START: &str = "movesize-start";
     pub const DRAG_POS: &str = "drag-pos";

@@ -27,6 +27,7 @@ import {
   listMonitors,
   listWindows,
   minimizeWindow,
+  restoreWindow,
   onDragPos,
   onMonitorsChanged,
   onMoveSizeEnd,
@@ -63,6 +64,7 @@ import {
   onTrayToggleGrid,
   onWindowAppeared,
   onWindowDestroyed,
+  onWindowMaximized,
   onWindowMinimized,
   onWindowRestored,
   readConfig,
@@ -305,6 +307,9 @@ export async function startBrainHost(): Promise<BrainHost> {
       onMinimize(hwnd) {
         minimizeWindow(hwnd).catch((e) => console.error('minimize_window failed:', e));
       },
+      onRestore(hwnd) {
+        restoreWindow(hwnd).catch((e) => console.error('restore_window failed:', e));
+      },
       onSnapshot(s) {
         lastSnapshot = s;
         emitStateSnapshot(s).catch((e) => console.error('state-snapshot emit failed:', e));
@@ -494,6 +499,7 @@ export async function startBrainHost(): Promise<BrainHost> {
     onWindowAppeared((w) => brain.windowAppeared(w)),
     onWindowDestroyed((p) => void confirmedWindowDestroyed(p.hwnd)),
     onWindowMinimized((p) => brain.windowMinimized(p.hwnd)),
+    onWindowMaximized((p) => brain.windowMaximized(p.hwnd)),
     onWindowRestored((w) => brain.windowRestored(w)),
     onMoveSizeStart((p) => brain.moveSizeStart(p.hwnd)),
     // An elevated window the actuator cannot move (spec 2026-08-20): find

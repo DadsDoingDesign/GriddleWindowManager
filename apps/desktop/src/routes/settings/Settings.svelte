@@ -190,27 +190,79 @@
     theme = next;
     document.documentElement.dataset.theme = next;
   }
-  function toggleTheme(): void {
-    const next = theme === 'dark' ? 'light' : 'dark';
+  function setThemePref(next: 'dark' | 'light'): void {
+    if (next === theme) return;
     applyTheme(next);
     void emitSettingsSetPrefs({ theme: next });
   }
   /**
-   * Drag placement (spec 2026-08-31). Same single-writer shape as autostart:
-   * seeded from the config, this window is the only writer. `dropPlacement`
-   * governs windows new to a grid (floating intake and cross-grid moves),
-   * `movePlacement` tiles moving within their own grid.
+   * Drag/maximize behavior prefs (spec 2026-08-31, both batches). Same
+   * single-writer shape as autostart: seeded from the config, this window is
+   * the only writer. `dropPlacement` governs windows new to a grid (floating
+   * intake and cross-grid moves), `movePlacement` tiles moving within their
+   * own grid, `maximizeBehavior` the maximize gesture on a tiled window,
+   * `noRoomPlacement` a drop refused for lack of room.
    */
   let dropPlacement = $state<'fill' | 'size'>('fill');
   let movePlacement = $state<'fill' | 'size'>('size');
-  function toggleDropPlacement(): void {
-    dropPlacement = dropPlacement === 'fill' ? 'size' : 'fill';
-    void emitSettingsSetPrefs({ dropPlacement });
-  }
-  function toggleMovePlacement(): void {
-    movePlacement = movePlacement === 'fill' ? 'size' : 'fill';
-    void emitSettingsSetPrefs({ movePlacement });
-  }
+  let maximizeBehavior = $state<'expand' | 'windows'>('expand');
+  let noRoomPlacement = $state<'split' | 'refuse'>('split');
+
+  /** The Preferences dropdowns (user request 2026-08-31): text choices are
+   * pickers, not cycling buttons — the same in-page listbox the Placement
+   * control uses, because a native select popup lands off-window here. */
+  const THEME_OPTIONS = [
+    { value: 'dark', label: 'Dark', blurb: 'the default look' },
+    { value: 'light', label: 'Light', blurb: 'for bright rooms' },
+  ];
+  const DROP_OPTIONS = [
+    {
+      value: 'fill',
+      label: 'Fill the open space',
+      blurb: 'take the biggest free rectangle',
+    },
+    {
+      value: 'size',
+      label: 'Keep the window’s size',
+      blurb: 'a footprint cut from the window',
+    },
+  ];
+  const MOVE_OPTIONS = [
+    {
+      value: 'size',
+      label: 'Keep the tile’s size',
+      blurb: 'the span you set is respected',
+    },
+    {
+      value: 'fill',
+      label: 'Fill the open space',
+      blurb: 'grow into the biggest free rectangle',
+    },
+  ];
+  const MAXIMIZE_OPTIONS = [
+    {
+      value: 'expand',
+      label: 'Expand in the grid',
+      blurb: 'grow the tile; maximize again to undo',
+    },
+    {
+      value: 'windows',
+      label: 'Windows maximize',
+      blurb: 'full screen; the tile is released',
+    },
+  ];
+  const NO_ROOM_OPTIONS = [
+    {
+      value: 'split',
+      label: 'Make room automatically',
+      blurb: 'the tile you aim at shares its space',
+    },
+    {
+      value: 'refuse',
+      label: 'Just say no room',
+      blurb: 'offer the Make-room band instead',
+    },
+  ];
   let firstRunSuppressSnap = $state(false);
   let hotkeyDraft = $state(DISPLAY_DEFAULT_HOTKEY);
   let savedHotkey = $state(DISPLAY_DEFAULT_HOTKEY);
@@ -273,6 +325,8 @@
       applyTheme(cfg.theme === 'light' ? 'light' : 'dark');
       dropPlacement = cfg.dropPlacement === 'size' ? 'size' : 'fill';
       movePlacement = cfg.movePlacement === 'fill' ? 'fill' : 'size';
+      maximizeBehavior = cfg.maximizeBehavior === 'windows' ? 'windows' : 'expand';
+      noRoomPlacement = cfg.noRoomPlacement === 'refuse' ? 'refuse' : 'split';
       hotkeyDraft = toDisplayHotkey(cfg.hotkey);
       savedHotkey = toDisplayHotkey(cfg.hotkey);
       seedExclusions = cfg.exclusions;
@@ -1065,20 +1119,6 @@
   >
 {/snippet}
 
-{#snippet sunIcon()}
-  <svg class="ico" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
-    ><circle cx="8" cy="8" r="3.1" /><path
-      d="M8 1.2v1.5M8 13.3v1.5M14.8 8h-1.5M2.7 8H1.2M12.8 3.2l-1.1 1.1M4.3 11.7l-1.1 1.1M12.8 12.8l-1.1-1.1M4.3 4.3L3.2 3.2"
-    /></svg
-  >
-{/snippet}
-
-{#snippet moonIcon()}
-  <svg class="ico" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"
-    ><path d="M13.3 10.1A5.7 5.7 0 0 1 6 2.7a5.9 5.9 0 1 0 7.3 7.4Z" /></svg
-  >
-{/snippet}
-
 {#snippet pauseIcon()}
   <svg class="ico" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"
     ><rect x="3.5" y="2.5" width="3.4" height="11" rx="1.1" /><rect
@@ -1306,24 +1346,15 @@
         <span class="sr-only">G</span>
         <span class="wordmark" data-tauri-drag-region>riddle window manager</span>
       </div>
-      <button
-        class="cell icon"
-        class:sel={isActive('prefs')}
-        aria-pressed={isActive('prefs')}
-        title="Preferences"
-        onclick={() => (activeTabKey = 'prefs')}
-      >
-        {@render gearIcon()}
-      </button>
       <button class="cell icon" title="Hide to tray" onclick={() => void hideSettings()}>
         {@render collapseIcon()}
       </button>
     </div>
 
-    <!-- Tab band: one segment per grid plus `+`, each divided by a rule, then
-         the two window actions pinned right. The gear selects the preferences
-         tab like any other, but reads as an action because that is what it is
-         next to — it is not a display. -->
+    <!-- Tab band: one segment per grid plus `+`, each divided by a rule, and
+         the gear pinned right (user request 2026-08-31): Preferences is a
+         view at the same level as a display, and this row — visible in both
+         views — is the one way in and out of it. -->
     {#if tabs.length > 0}
       <nav class="row tabrow" aria-label="Displays and settings" data-tauri-drag-region>
         <div class="tabs" role="tablist">
@@ -1342,6 +1373,15 @@
           {/each}
         </div>
         <div class="spacer" data-tauri-drag-region></div>
+        <button
+          class="tab glyph gear"
+          class:sel={isActive('prefs')}
+          aria-pressed={isActive('prefs')}
+          title="Preferences"
+          onclick={() => (activeTabKey = 'prefs')}
+        >
+          {@render gearIcon()}
+        </button>
       </nav>
     {/if}
   </div>
@@ -1873,15 +1913,15 @@
   <section class="rows">
     <div class="row">
       <div class="cell label"><span class="lbl">Appearance</span></div>
-      <button
-        class="cell wide ghost"
-        title={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
-        aria-label={theme === 'dark' ? 'Switch to light appearance' : 'Switch to dark appearance'}
-        onclick={toggleTheme}
-      >
-        <span>{theme === 'dark' ? 'Dark' : 'Light'}</span>
-        {#if theme === 'dark'}{@render sunIcon()}{:else}{@render moonIcon()}{/if}
-      </button>
+      <div class="cell behavior">
+        <PlacementPicker
+          value={theme}
+          options={THEME_OPTIONS}
+          compact
+          label="Appearance"
+          onchange={(v) => setThemePref(v as 'dark' | 'light')}
+        />
+      </div>
     </div>
     <div class="row">
       <div class="cell label">
@@ -1899,42 +1939,76 @@
         {@render pauseIcon()}
       </button>
     </div>
-    <!-- Drag placement (spec 2026-08-31): two-value buttons like Appearance —
-         each shows the active choice, a click flips to the other. -->
+    <!-- Drag and maximize behavior (spec 2026-08-31, both batches): every
+         text choice is the same in-page picker the Placement control uses. -->
     <div class="row">
       <div class="cell label">
         <span class="lbl">Dropping onto a grid</span>
         <span class="meta-inline">new windows, or tiles from another grid</span>
       </div>
-      <button
-        class="cell wide ghost"
-        title={dropPlacement === 'fill'
-          ? 'Switch to keeping the window’s size'
-          : 'Switch to filling the biggest open space'}
-        aria-label={dropPlacement === 'fill'
-          ? 'Dropped windows fill the open space. Switch to keeping their size'
-          : 'Dropped windows keep their size. Switch to filling the open space'}
-        onclick={toggleDropPlacement}
-      >
-        <span>{dropPlacement === 'fill' ? 'Fill the open space' : 'Keep the window’s size'}</span>
-      </button>
+      <div class="cell behavior">
+        <PlacementPicker
+          value={dropPlacement}
+          options={DROP_OPTIONS}
+          compact
+          label="Dropping onto a grid"
+          onchange={(v) => {
+            dropPlacement = v as 'fill' | 'size';
+            void emitSettingsSetPrefs({ dropPlacement });
+          }}
+        />
+      </div>
+    </div>
+    <div class="row">
+      <div class="cell label"><span class="lbl">Moving within a grid</span></div>
+      <div class="cell behavior">
+        <PlacementPicker
+          value={movePlacement}
+          options={MOVE_OPTIONS}
+          compact
+          label="Moving within a grid"
+          onchange={(v) => {
+            movePlacement = v as 'fill' | 'size';
+            void emitSettingsSetPrefs({ movePlacement });
+          }}
+        />
+      </div>
     </div>
     <div class="row">
       <div class="cell label">
-        <span class="lbl">Moving within a grid</span>
+        <span class="lbl">Maximizing a tiled window</span>
+        <span class="meta-inline">double-click, the button, or Win+Up</span>
       </div>
-      <button
-        class="cell wide ghost"
-        title={movePlacement === 'size'
-          ? 'Switch to filling the biggest open space'
-          : 'Switch to keeping the tile’s size'}
-        aria-label={movePlacement === 'size'
-          ? 'Moved tiles keep their size. Switch to filling the open space'
-          : 'Moved tiles fill the open space. Switch to keeping their size'}
-        onclick={toggleMovePlacement}
-      >
-        <span>{movePlacement === 'size' ? 'Keep the tile’s size' : 'Fill the open space'}</span>
-      </button>
+      <div class="cell behavior">
+        <PlacementPicker
+          value={maximizeBehavior}
+          options={MAXIMIZE_OPTIONS}
+          compact
+          label="Maximizing a tiled window"
+          onchange={(v) => {
+            maximizeBehavior = v as 'expand' | 'windows';
+            void emitSettingsSetPrefs({ maximizeBehavior });
+          }}
+        />
+      </div>
+    </div>
+    <div class="row">
+      <div class="cell label">
+        <span class="lbl">Dropping on a full grid</span>
+        <span class="meta-inline">never below a window’s minimum size</span>
+      </div>
+      <div class="cell behavior">
+        <PlacementPicker
+          value={noRoomPlacement}
+          options={NO_ROOM_OPTIONS}
+          compact
+          label="Dropping on a full grid"
+          onchange={(v) => {
+            noRoomPlacement = v as 'split' | 'refuse';
+            void emitSettingsSetPrefs({ noRoomPlacement });
+          }}
+        />
+      </div>
     </div>
   </section>
 
@@ -2489,8 +2563,7 @@
   .cell.icon:last-child {
     border-right: 0;
   }
-  .cell.icon:hover,
-  .cell.icon.sel {
+  .cell.icon:hover {
     background: var(--surface);
     color: var(--text);
   }
@@ -2759,6 +2832,12 @@
     padding: 0;
     font-size: 15px;
     letter-spacing: 0;
+  }
+
+  /* The gear rides the tab band's right edge: the spacer already draws the
+     rule on its left, and a rule on its right would double the frame. */
+  .tab.gear {
+    border-right: 0;
   }
 
 

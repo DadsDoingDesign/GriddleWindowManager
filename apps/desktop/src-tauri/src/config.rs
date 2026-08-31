@@ -28,9 +28,10 @@ use std::path::{Path, PathBuf};
 /// over v5, which added `suppress_windows_snap` + `windows_snap_original`
 /// (spec 2026-08-19), both `#[serde(default)]` like every addition before
 /// them. v8 adds `drop_placement` + `move_placement` (spec 2026-08-31, drag
-/// fill placement), `#[serde(default)]` like every addition before them.
-/// Only *future* versions are quarantined.
-const CONFIG_VERSION: u32 = 8;
+/// fill placement), and v9 `maximize_behavior` + `no_room_placement` (same
+/// day, second batch), all `#[serde(default)]` like every addition before
+/// them. Only *future* versions are quarantined.
+const CONFIG_VERSION: u32 = 9;
 /// Oldest schema version the migration path accepts.
 const MIN_CONFIG_VERSION: u32 = 1;
 
@@ -403,6 +404,8 @@ mod tests {
             theme: None,
             drop_placement: None,
             move_placement: None,
+            maximize_behavior: None,
+            no_room_placement: None,
         }
     }
 
@@ -429,6 +432,41 @@ mod tests {
         assert_eq!(read.version, CONFIG_VERSION, "re-stamped to v8");
         assert_eq!(read.drop_placement, None, "the brain owns the default");
         assert_eq!(read.move_placement, None, "the brain owns the default");
+    }
+
+    /// Spec 2026-08-31 (second batch): a v8 config — no expand/auto-split
+    /// fields — migrates in place with both absent (`None`, the brain's
+    /// defaults), nothing else touched.
+    #[test]
+    fn v8_config_without_behavior_fields_reads_as_untouched() {
+        let dir = ScratchDir::new();
+        fs::create_dir_all(dir.path()).unwrap();
+        let mut json = serde_json::to_value(sample_config()).unwrap();
+        let obj = json.as_object_mut().unwrap();
+        obj.insert("version".into(), serde_json::json!(8));
+        obj.remove("maximizeBehavior");
+        obj.remove("noRoomPlacement");
+        fs::write(
+            dir.path().join(CONFIG_FILE),
+            serde_json::to_string(&json).unwrap(),
+        )
+        .unwrap();
+
+        let read = read_config_from(dir.path()).expect("v8 config must stay readable");
+        assert_eq!(read.version, CONFIG_VERSION, "re-stamped to v9");
+        assert_eq!(read.maximize_behavior, None, "the brain owns the default");
+        assert_eq!(read.no_room_placement, None, "the brain owns the default");
+    }
+
+    /// The v9 behavior fields round-trip verbatim, like the v8 pair.
+    #[test]
+    fn behavior_fields_round_trip() {
+        let dir = ScratchDir::new();
+        let mut cfg = sample_config();
+        cfg.maximize_behavior = Some("windows".into());
+        cfg.no_room_placement = Some("refuse".into());
+        write_config_to(dir.path(), &cfg).expect("write");
+        assert_eq!(read_config_from(dir.path()), Some(cfg));
     }
 
     /// The placement-fill fields round-trip verbatim — Rust only stores what
