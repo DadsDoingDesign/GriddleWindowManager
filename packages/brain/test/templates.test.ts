@@ -111,7 +111,7 @@ const TPL_8X6: Template = {
 
 function makeConfig(templates: Template[]): AppConfig {
   return {
-    version: 7,
+    version: 9,
     grids: [],
     templates,
     exclusions: [],
@@ -128,6 +128,10 @@ function makeConfig(templates: Template[]): AppConfig {
     manageSettingsWindow: false,
     settingsWindowPos: null,
     theme: null,
+    dropPlacement: 'fill',
+    movePlacement: 'size',
+    maximizeBehavior: 'expand',
+    noRoomPlacement: 'split',
   };
 }
 

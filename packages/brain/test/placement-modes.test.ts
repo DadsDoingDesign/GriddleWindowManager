@@ -460,7 +460,13 @@ describe('reflow drops', () => {
   });
 
   it('a window arriving from another monitor takes its cells too', () => {
-    const h = harness({ twoMonitors: true });
+    // dropPlacement 'size' pins the cursor-anchored arrival this test is
+    // about; under the default 'fill' (spec 2026-08-31) the arrival would
+    // snap to the free column instead of displacing anyone.
+    const h = harness({
+      twoMonitors: true,
+      cfg: { ...defaultConfig(), dropPlacement: 'size' },
+    });
     h.brain.enableGrid(makeGridSettings({ mode: 'reflow' }), [
       makeWindow('B', 2),
       makeWindow('C', 1, { x: 1440 }),

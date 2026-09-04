@@ -12,6 +12,7 @@ import type {
   DragPos,
   Hwnd,
   MonitorInfo,
+  PlacementFill,
   PlacementMode,
   PreviewState,
   StateSnapshot,
@@ -210,6 +211,23 @@ export interface SettingsSetPrefsPayload {
   manageSettingsWindow?: boolean;
   /** Widget appearance. Absent leaves it unchanged. */
   theme?: 'dark' | 'light';
+  /**
+   * Spec 2026-08-31 (drag fill placement): footprint policy for windows new
+   * to a grid — 'fill' (largest open rectangle) or 'size' (window-size snap).
+   */
+  dropPlacement?: PlacementFill;
+  /** Spec 2026-08-31: footprint policy for tiles moving within their grid. */
+  movePlacement?: PlacementFill;
+  /**
+   * Spec 2026-08-31 (second batch): a maximize gesture on a tiled window —
+   * 'expand' grows the tile in the grid, 'windows' keeps real OS maximize.
+   */
+  maximizeBehavior?: 'expand' | 'windows';
+  /**
+   * Spec 2026-08-31 (second batch): a refused new-to-grid drop — 'split'
+   * auto-splits the aimed tile, 'refuse' keeps the banded refusal.
+   */
+  noRoomPlacement?: 'split' | 'refuse';
 }
 
 // ---------------------------------------------------------------------------
@@ -222,6 +240,15 @@ export interface SettingsSetPrefsPayload {
  */
 export function minimizeWindow(hwnd: string): Promise<void> {
   return invoke('minimize_window', { hwnd });
+}
+
+/**
+ * Spec 2026-08-31 (expand-on-maximize): un-maximize a window whose maximize
+ * the brain intercepted. The grown slot is already remembered; the tracker's
+ * unmaximize event re-tiles the window there.
+ */
+export function restoreWindow(hwnd: string): Promise<void> {
+  return invoke('restore_window', { hwnd });
 }
 
 /** Spec 2026-08-20: dismiss the pop-out to the tray (hides, never closes). */
@@ -348,6 +375,16 @@ export function onWindowDestroyed(cb: (p: HwndPayload) => void): Promise<Unliste
 
 export function onWindowMinimized(cb: (p: HwndPayload) => void): Promise<UnlistenFn> {
   return on('window-minimized', cb);
+}
+
+/**
+ * Spec 2026-08-31 (second batch): a tracked window was maximized — title-bar
+ * double-click, caption button or Win+Up, indistinguishable at the tracker.
+ * Routed to `windowMaximized`, which expands the tile in the grid or falls
+ * back to the old release-and-leave-alone per the preference.
+ */
+export function onWindowMaximized(cb: (p: HwndPayload) => void): Promise<UnlistenFn> {
+  return on('window-maximized', cb);
 }
 
 export function onWindowRestored(cb: (w: WindowInfo) => void): Promise<UnlistenFn> {

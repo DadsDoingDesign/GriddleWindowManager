@@ -256,6 +256,14 @@ export interface StateSnapshot {
   paused: boolean;
 }
 
+/**
+ * How a drag chooses its footprint (spec 2026-08-31, drag fill placement).
+ * `fill` — the largest open rectangle of free cells (cursor-region first);
+ * `size` — the pre-spec behavior: the window's own extent snapped to cells
+ * (drops) or the tile's existing span (same-grid moves).
+ */
+export type PlacementFill = 'fill' | 'size';
+
 export interface AppConfig {
   // schema for %APPDATA%/griddle-wm/config.json
   // v2 (spec v0.2 §4): adds `appRules`, `views`, `startupViewId`;
@@ -272,10 +280,14 @@ export interface AppConfig {
   // v6 (spec 2026-08-20 addendum): adds `manageSettingsWindow` (default
   // false) + `settingsWindowPos` (default null), for the settings pop-out.
   // v7: adds `theme` (default null = dark).
+  // v8 (spec 2026-08-31): adds `dropPlacement` (default 'fill') +
+  // `movePlacement` (default 'size'), the drag-fill placement pair.
+  // v9 (spec 2026-08-31, second batch): adds `maximizeBehavior` (default
+  // 'expand') + `noRoomPlacement` (default 'split').
   // The loaders (persist.ts and the Rust mirror's serde defaults) migrate
   // older configs in place — defaults `appRules: [], views: [],
   // startupViewId: null, autoCheckUpdates: false`, spacing absent-means-0.
-  version: 7;
+  version: 9;
   grids: GridSettings[];
   templates: Template[];
   exclusions: string[]; // lowercase exe names
@@ -329,6 +341,32 @@ export interface AppConfig {
    * before this field existed should keep looking like.
    */
   theme: 'dark' | 'light' | null;
+  /**
+   * Spec 2026-08-31: how a window NEW to a grid (floating intake, or a tile
+   * crossing from another grid) gets its footprint. Default `'fill'` — the
+   * feature is the new behavior, and `'size'` is the escape hatch back.
+   */
+  dropPlacement: PlacementFill;
+  /**
+   * Spec 2026-08-31: how a tile moving WITHIN its own grid gets its
+   * footprint. Default `'size'` — a size the user set is respected.
+   */
+  movePlacement: PlacementFill;
+  /**
+   * Spec 2026-08-31 (second batch): what a maximize gesture (double-click,
+   * caption button, Win+Up — indistinguishable at the tracker) does to a
+   * tiled window. `'expand'` (default) grows the tile to the largest free
+   * rectangle containing its cells, toggling back on the next maximize;
+   * `'windows'` keeps the pre-spec behavior (tile released, window left
+   * OS-maximized).
+   */
+  maximizeBehavior: 'expand' | 'windows';
+  /**
+   * Spec 2026-08-31 (second batch): what a refused new-to-grid drop does.
+   * `'split'` (default) auto-splits the aimed tile — the preview shows the
+   * outcome and a release commits it; `'refuse'` keeps the banded refusal.
+   */
+  noRoomPlacement: 'split' | 'refuse';
 }
 
 /** A remembered top-left corner in physical screen pixels. */

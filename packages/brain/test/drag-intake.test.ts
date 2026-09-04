@@ -6,7 +6,9 @@
 
 import { describe, expect, it } from 'vitest';
 import { WindowManagerBrain } from '../src/brain';
+import { defaultConfig } from '../src/persist';
 import type {
+  AppConfig,
   ApplyLayout,
   GridSettings,
   MonitorInfo,
@@ -90,15 +92,18 @@ interface Harness {
   previews: PreviewState[];
 }
 
-function harness(): Harness {
+function harness(cfg?: AppConfig): Harness {
   const applies: ApplyLayout[] = [];
   const snapshots: StateSnapshot[] = [];
   const previews: PreviewState[] = [];
-  const brain = new WindowManagerBrain({
-    onApply: (l) => applies.push(l),
-    onPreview: (p) => previews.push(p),
-    onSnapshot: (s) => snapshots.push(s),
-  });
+  const brain = new WindowManagerBrain(
+    {
+      onApply: (l) => applies.push(l),
+      onPreview: (p) => previews.push(p),
+      onSnapshot: (s) => snapshots.push(s),
+    },
+    cfg,
+  );
   brain.setMonitors([makeMonitor(), makeMonitor2()]);
   return { brain, applies, snapshots, previews };
 }
@@ -190,7 +195,10 @@ describe('intake drags (floating window)', () => {
   });
 
   it('a reflow grid moves the incumbent aside and honours the aimed cell', () => {
-    const h = harness();
+    // dropPlacement 'size' pins the aimed-cell intake this test is about;
+    // under the default 'fill' (spec 2026-08-31) the drop would snap to the
+    // open columns instead of displacing the incumbent.
+    const h = harness({ ...defaultConfig(), dropPlacement: 'size' });
     floatB(h, grid2({ mode: 'reflow' }));
     h.brain.windowAppeared(makeWindow('C', { monitorId: MON2_ID, x: 1920 }));
     const before = last(h.snapshots).tiles[GRID2_ID]!;

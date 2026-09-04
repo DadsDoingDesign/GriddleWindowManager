@@ -768,7 +768,7 @@
     display: flex;
     flex-direction: column;
     justify-content: center;
-    gap: 2px;
+    gap: var(--sp-1);
     padding: 6px 10px;
     overflow: hidden;
     border-radius: var(--griddle-tile-radius, 6px);
@@ -777,16 +777,17 @@
     color: var(--muted);
   }
   .wtitle {
-    font-size: 12px;
-    font-weight: 600;
+    font-size: var(--fs-sm);
     color: var(--text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  /* Same size as the title (Figma 112-117), separated by colour rather than
+     by scale — and not mono: at tile size the monospace exe read as a
+     different kind of thing from the window it belongs to. */
   .wexe {
-    font-size: 10px;
-    font-family: var(--font-mono);
+    font-size: var(--fs-sm);
     color: var(--faint);
     white-space: nowrap;
     overflow: hidden;

@@ -316,6 +316,30 @@ pub struct AppConfig {
     /// written before this field existed should keep looking like.
     #[serde(default)]
     pub theme: Option<String>,
+    /// Spec 2026-08-31 (drag fill placement): how a window NEW to a grid
+    /// (floating intake, or a tile crossing from another grid) gets its
+    /// footprint — `"fill"` (largest open rectangle; the brain's default for
+    /// an absent value) or `"size"` (the pre-v8 window-size snap). Stored and
+    /// round-tripped only; the brain owns the semantics and the defaulting.
+    #[serde(default)]
+    pub drop_placement: Option<String>,
+    /// Spec 2026-08-31: how a tile moving WITHIN its own grid gets its
+    /// footprint — `"size"` (keep the span the user set; the brain's default
+    /// for an absent value) or `"fill"`. Round-tripped like `drop_placement`.
+    #[serde(default)]
+    pub move_placement: Option<String>,
+    /// Spec 2026-08-31 (second batch): what a maximize gesture does to a
+    /// tiled window — `"expand"` (grow the tile in the grid; the brain's
+    /// default for an absent value) or `"windows"` (real OS maximize).
+    /// Round-tripped like `drop_placement`.
+    #[serde(default)]
+    pub maximize_behavior: Option<String>,
+    /// Spec 2026-08-31 (second batch): what a refused new-to-grid drop does —
+    /// `"split"` (auto-split the aimed tile; the brain's default for an
+    /// absent value) or `"refuse"` (the banded refusal). Round-tripped like
+    /// `drop_placement`.
+    #[serde(default)]
+    pub no_room_placement: Option<String>,
 }
 
 /// A remembered top-left corner in physical screen pixels. Signed because a
@@ -370,6 +394,10 @@ pub mod events {
     pub const WINDOW_APPEARED: &str = "window-appeared";
     pub const WINDOW_DESTROYED: &str = "window-destroyed";
     pub const WINDOW_MINIMIZED: &str = "window-minimized";
+    /// Spec 2026-08-31 (second batch): a tracked window was maximized —
+    /// double-click, caption button or Win+Up, indistinguishable here. The
+    /// brain decides whether that means expand-in-grid or leave-alone.
+    pub const WINDOW_MAXIMIZED: &str = "window-maximized";
     pub const WINDOW_RESTORED: &str = "window-restored";
     pub const MOVESIZE_START: &str = "movesize-start";
     pub const DRAG_POS: &str = "drag-pos";

@@ -190,11 +190,79 @@
     theme = next;
     document.documentElement.dataset.theme = next;
   }
-  function toggleTheme(): void {
-    const next = theme === 'dark' ? 'light' : 'dark';
+  function setThemePref(next: 'dark' | 'light'): void {
+    if (next === theme) return;
     applyTheme(next);
     void emitSettingsSetPrefs({ theme: next });
   }
+  /**
+   * Drag/maximize behavior prefs (spec 2026-08-31, both batches). Same
+   * single-writer shape as autostart: seeded from the config, this window is
+   * the only writer. `dropPlacement` governs windows new to a grid (floating
+   * intake and cross-grid moves), `movePlacement` tiles moving within their
+   * own grid, `maximizeBehavior` the maximize gesture on a tiled window,
+   * `noRoomPlacement` a drop refused for lack of room.
+   */
+  let dropPlacement = $state<'fill' | 'size'>('fill');
+  let movePlacement = $state<'fill' | 'size'>('size');
+  let maximizeBehavior = $state<'expand' | 'windows'>('expand');
+  let noRoomPlacement = $state<'split' | 'refuse'>('split');
+
+  /** The Preferences dropdowns (user request 2026-08-31): text choices are
+   * pickers, not cycling buttons — the same in-page listbox the Placement
+   * control uses, because a native select popup lands off-window here. */
+  const THEME_OPTIONS = [
+    { value: 'dark', label: 'Dark', blurb: 'the default look' },
+    { value: 'light', label: 'Light', blurb: 'for bright rooms' },
+  ];
+  const DROP_OPTIONS = [
+    {
+      value: 'fill',
+      label: 'Fill the open space',
+      blurb: 'take the biggest free rectangle',
+    },
+    {
+      value: 'size',
+      label: 'Keep the window’s size',
+      blurb: 'a footprint cut from the window',
+    },
+  ];
+  const MOVE_OPTIONS = [
+    {
+      value: 'size',
+      label: 'Keep the tile’s size',
+      blurb: 'the span you set is respected',
+    },
+    {
+      value: 'fill',
+      label: 'Fill the open space',
+      blurb: 'grow into the biggest free rectangle',
+    },
+  ];
+  const MAXIMIZE_OPTIONS = [
+    {
+      value: 'expand',
+      label: 'Expand in the grid',
+      blurb: 'grow the tile; maximize again to undo',
+    },
+    {
+      value: 'windows',
+      label: 'Windows maximize',
+      blurb: 'full screen; the tile is released',
+    },
+  ];
+  const NO_ROOM_OPTIONS = [
+    {
+      value: 'split',
+      label: 'Make room automatically',
+      blurb: 'the tile you aim at shares its space',
+    },
+    {
+      value: 'refuse',
+      label: 'Just say no room',
+      blurb: 'offer the Make-room band instead',
+    },
+  ];
   let firstRunSuppressSnap = $state(false);
   let hotkeyDraft = $state(DISPLAY_DEFAULT_HOTKEY);
   let savedHotkey = $state(DISPLAY_DEFAULT_HOTKEY);
@@ -255,6 +323,10 @@
       suppressWindowsSnap = cfg.suppressWindowsSnap;
       manageSettingsWindow = cfg.manageSettingsWindow;
       applyTheme(cfg.theme === 'light' ? 'light' : 'dark');
+      dropPlacement = cfg.dropPlacement === 'size' ? 'size' : 'fill';
+      movePlacement = cfg.movePlacement === 'fill' ? 'fill' : 'size';
+      maximizeBehavior = cfg.maximizeBehavior === 'windows' ? 'windows' : 'expand';
+      noRoomPlacement = cfg.noRoomPlacement === 'refuse' ? 'refuse' : 'split';
       hotkeyDraft = toDisplayHotkey(cfg.hotkey);
       savedHotkey = toDisplayHotkey(cfg.hotkey);
       seedExclusions = cfg.exclusions;
@@ -985,6 +1057,34 @@
   >
 {/snippet}
 
+<!-- The "Grid on" control (Figma 112-117): a check-square glyph in accent, not
+     a filled box. State still has form as well as colour - an empty square
+     against a square with a tick - which is what the box was there for. -->
+{#snippet checkSquare(on: boolean)}
+  <svg class="ico" viewBox="0 0 16 16" aria-hidden="true">
+    <rect
+      x="1.75"
+      y="1.75"
+      width="12.5"
+      height="12.5"
+      rx="2.5"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.5"
+    />
+    {#if on}
+      <path
+        d="M4.75 8.25l2.25 2.25 4.25-4.75"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.75"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      />
+    {/if}
+  </svg>
+{/snippet}
+
 {#snippet squares()}
   <svg class="ico" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"
     ><rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1.4" /><rect
@@ -1016,20 +1116,6 @@
     ><path
       d="M19.14 12.94a7.07 7.07 0 0 0 0-1.88l2-1.58a.5.5 0 0 0 .12-.61l-1.92-3.32a.5.5 0 0 0-.59-.22l-2.39.96a7.03 7.03 0 0 0-1.62-.94l-.36-2.54a.5.5 0 0 0-.5-.42H10.6a.5.5 0 0 0-.5.42l-.36 2.54a7.03 7.03 0 0 0-1.62.94l-2.39-.96a.5.5 0 0 0-.59.22L3.22 8.87a.5.5 0 0 0 .12.61l2 1.58a7.07 7.07 0 0 0 0 1.88l-2 1.58a.5.5 0 0 0-.12.61l1.92 3.32a.5.5 0 0 0 .59.22l2.39-.96a7.03 7.03 0 0 0 1.62.94l.36 2.54a.5.5 0 0 0 .5.42h3.84a.5.5 0 0 0 .5-.42l.36-2.54a7.03 7.03 0 0 0 1.62-.94l2.39.96a.5.5 0 0 0 .59-.22l1.92-3.32a.5.5 0 0 0-.12-.61ZM12 15.6A3.6 3.6 0 1 1 15.6 12 3.6 3.6 0 0 1 12 15.6Z"
     /></svg
-  >
-{/snippet}
-
-{#snippet sunIcon()}
-  <svg class="ico" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
-    ><circle cx="8" cy="8" r="3.1" /><path
-      d="M8 1.2v1.5M8 13.3v1.5M14.8 8h-1.5M2.7 8H1.2M12.8 3.2l-1.1 1.1M4.3 11.7l-1.1 1.1M12.8 12.8l-1.1-1.1M4.3 4.3L3.2 3.2"
-    /></svg
-  >
-{/snippet}
-
-{#snippet moonIcon()}
-  <svg class="ico" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"
-    ><path d="M13.3 10.1A5.7 5.7 0 0 1 6 2.7a5.9 5.9 0 1 0 7.3 7.4Z" /></svg
   >
 {/snippet}
 
@@ -1119,7 +1205,7 @@
      is worse to move than a titled one. Tauri tests the event target, so the
      attribute lives on the containers and every control inside them stays
      clickable by virtue of being the target itself. -->
-<div class="page" data-tauri-drag-region>
+<div class="page" class:scrolls={isActive('prefs')} data-tauri-drag-region>
   {#if firstRun}
     <header>
       <div class="brand">
@@ -1250,52 +1336,25 @@
          labelled action rather than a switch — it is the panic button, so it
          reads as something you press, not a preference you set. -->
     <div class="row brandrow" data-tauri-drag-region>
-      <div class="cell label nodivide" data-tauri-drag-region>
+      <!-- One flat lockup at half-strength accent (Figma 112-117): the mark
+           *is* the G, so the visible text starts at "riddle". The hidden G
+           keeps that a real word for a screen reader instead of a typo.
+           Pause and the appearance toggle moved to Preferences — the design
+           gives this row two controls and no more. -->
+      <div class="cell label nodivide brandlock" data-tauri-drag-region>
         {@render brandMark()}
-        <span class="wordmark" data-tauri-drag-region>Griddle</span>
-        <span class="product" data-tauri-drag-region>Window Manager</span>
-        {#if appVersion}<span class="version" data-tauri-drag-region>{appVersion}</span>{/if}
+        <span class="sr-only">G</span>
+        <span class="wordmark" data-tauri-drag-region>riddle window manager</span>
       </div>
-      <button
-        class="cell icon"
-        title={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
-        aria-label={theme === 'dark' ? 'Switch to light appearance' : 'Switch to dark appearance'}
-        aria-pressed={theme === 'light'}
-        onclick={toggleTheme}
-      >
-        {#if theme === 'dark'}{@render sunIcon()}{:else}{@render moonIcon()}{/if}
-      </button>
-      <button
-        class="cell icon"
-        class:sel={isActive('prefs')}
-        aria-pressed={isActive('prefs')}
-        title="Preferences"
-        onclick={() => (activeTabKey = 'prefs')}
-      >
-        {@render gearIcon()}
-      </button>
       <button class="cell icon" title="Hide to tray" onclick={() => void hideSettings()}>
         {@render collapseIcon()}
       </button>
-      <!-- Pause is last on purpose: the icon buttons group together, and the
-           one labelled control — the panic button — ends the row where the
-           eye stops. -->
-      <button
-        class="cell wide ghost pause"
-        class:on={snapshot?.paused}
-        aria-pressed={snapshot?.paused ?? false}
-        title="Suspend tracking and placement everywhere"
-        onclick={() => togglePaused(!(snapshot?.paused ?? false))}
-      >
-        <span>{snapshot?.paused ? 'Paused' : 'Pause'}</span>
-        {@render pauseIcon()}
-      </button>
     </div>
 
-    <!-- Tab band: one segment per grid plus `+`, each divided by a rule, then
-         the two window actions pinned right. The gear selects the preferences
-         tab like any other, but reads as an action because that is what it is
-         next to — it is not a display. -->
+    <!-- Tab band: one segment per grid plus `+`, each divided by a rule, and
+         the gear pinned right (user request 2026-08-31): Preferences is a
+         view at the same level as a display, and this row — visible in both
+         views — is the one way in and out of it. -->
     {#if tabs.length > 0}
       <nav class="row tabrow" aria-label="Displays and settings" data-tauri-drag-region>
         <div class="tabs" role="tablist">
@@ -1314,6 +1373,15 @@
           {/each}
         </div>
         <div class="spacer" data-tauri-drag-region></div>
+        <button
+          class="tab glyph gear"
+          class:sel={isActive('prefs')}
+          aria-pressed={isActive('prefs')}
+          title="Preferences"
+          onclick={() => (activeTabKey = 'prefs')}
+        >
+          {@render gearIcon()}
+        </button>
       </nav>
     {/if}
   </div>
@@ -1431,14 +1499,14 @@
           {#if spanned}<span class="badge">Spanned</span>{/if}
         </div>
         <label class="cell wide check" title={spanned ? 'Part of a spanning grid' : 'Apply the grid to this display'}>
-          <span class="check-label">Grid applied</span>
+          <span class="check-label">Grid on</span>
           <input
             type="checkbox"
             checked={enabled}
             disabled={spanned !== undefined}
             onchange={(e) => toggleGrid(mon, e.currentTarget.checked)}
           />
-          <span class="box" aria-hidden="true">{@render tick()}</span>
+          <span class="box" aria-hidden="true">{@render checkSquare(enabled)}</span>
         </label>
       </div>
 
@@ -1451,7 +1519,9 @@
 
       {#if spanned === undefined}
         <!-- One block, not four bands: the dimension controls belong together,
-             so the rules go around the group rather than between its rows. -->
+             so the rules go around the group rather than between its rows.
+             Grid behavior stays outside it and last (Figma 112-117): it has
+             its own rules there, and it governs what the numbers do. -->
         <div class="group">
         {@render stepper('Columns', null, dims.cols, 1, MAX_COLS, 1, !enabled, (v) => setDims(mon, v, dims.rows))}
         {@render stepper('Rows', null, dims.rows, 1, MAX_ROWS, 1, !enabled, (v) => setDims(mon, dims.cols, v))}
@@ -1485,7 +1555,7 @@
       {#if enabled && grid}
         <div class="row" data-tauri-drag-region>
           <div class="cell label" data-tauri-drag-region>
-            <span class="lbl strong">Live grid manager</span>
+            <span class="lbl">Live grid manager</span>
             <span class="meta-inline">drag and resize from here</span>
           </div>
           <button
@@ -1837,6 +1907,111 @@
   {/if}
 
   {#if isActive('prefs')}
+  <!-- Pause and appearance live here now that the brand row is the lockup and
+       two icons (Figma 112-117). Pause is also on the tray menu, which is
+       where it stays reachable while the panel is hidden. -->
+  <section class="rows">
+    <div class="row">
+      <div class="cell label"><span class="lbl">Appearance</span></div>
+      <div class="cell behavior">
+        <PlacementPicker
+          value={theme}
+          options={THEME_OPTIONS}
+          compact
+          label="Appearance"
+          onchange={(v) => setThemePref(v as 'dark' | 'light')}
+        />
+      </div>
+    </div>
+    <div class="row">
+      <div class="cell label">
+        <span class="lbl">Window management</span>
+        <span class="meta-inline">also on the tray menu</span>
+      </div>
+      <button
+        class="cell wide ghost pause"
+        class:on={snapshot?.paused}
+        aria-pressed={snapshot?.paused ?? false}
+        title="Suspend tracking and placement everywhere"
+        onclick={() => togglePaused(!(snapshot?.paused ?? false))}
+      >
+        <span>{snapshot?.paused ? 'Paused' : 'Pause'}</span>
+        {@render pauseIcon()}
+      </button>
+    </div>
+    <!-- Drag and maximize behavior (spec 2026-08-31, both batches): every
+         text choice is the same in-page picker the Placement control uses. -->
+    <div class="row">
+      <div class="cell label">
+        <span class="lbl">Dropping onto a grid</span>
+        <span class="meta-inline">new windows, or tiles from another grid</span>
+      </div>
+      <div class="cell behavior">
+        <PlacementPicker
+          value={dropPlacement}
+          options={DROP_OPTIONS}
+          compact
+          label="Dropping onto a grid"
+          onchange={(v) => {
+            dropPlacement = v as 'fill' | 'size';
+            void emitSettingsSetPrefs({ dropPlacement });
+          }}
+        />
+      </div>
+    </div>
+    <div class="row">
+      <div class="cell label"><span class="lbl">Moving within a grid</span></div>
+      <div class="cell behavior">
+        <PlacementPicker
+          value={movePlacement}
+          options={MOVE_OPTIONS}
+          compact
+          label="Moving within a grid"
+          onchange={(v) => {
+            movePlacement = v as 'fill' | 'size';
+            void emitSettingsSetPrefs({ movePlacement });
+          }}
+        />
+      </div>
+    </div>
+    <div class="row">
+      <div class="cell label">
+        <span class="lbl">Maximizing a tiled window</span>
+        <span class="meta-inline">double-click, the button, or Win+Up</span>
+      </div>
+      <div class="cell behavior">
+        <PlacementPicker
+          value={maximizeBehavior}
+          options={MAXIMIZE_OPTIONS}
+          compact
+          label="Maximizing a tiled window"
+          onchange={(v) => {
+            maximizeBehavior = v as 'expand' | 'windows';
+            void emitSettingsSetPrefs({ maximizeBehavior });
+          }}
+        />
+      </div>
+    </div>
+    <div class="row">
+      <div class="cell label">
+        <span class="lbl">Dropping on a full grid</span>
+        <span class="meta-inline">never below a window’s minimum size</span>
+      </div>
+      <div class="cell behavior">
+        <PlacementPicker
+          value={noRoomPlacement}
+          options={NO_ROOM_OPTIONS}
+          compact
+          label="Dropping on a full grid"
+          onchange={(v) => {
+            noRoomPlacement = v as 'split' | 'refuse';
+            void emitSettingsSetPrefs({ noRoomPlacement });
+          }}
+        />
+      </div>
+    </div>
+  </section>
+
   <!-- App defaults (spec v0.2 §2): the rules the tile context menu saves. -->
   <section class="card">
     <div class="card-head">
@@ -1896,14 +2071,13 @@
       </ul>
     {:else}
       <p class="hint">
-        No defaults yet — right-click a window tile in a grid editor above and
-        choose “Save for this grid”.
+        None yet. Right-click a window in the grid above and choose
+        “Save for this grid”.
       </p>
     {/if}
     <p class="hint">
-      A default places every new window of that program into the saved cells.
-      A rule for a specific grid beats an all-grids rule; windows already on
-      screen never move when a default is saved or removed.
+      New windows of that program open in the saved cells. Windows already
+      open never move. A rule for one grid beats an all-grids rule.
     </p>
   </section>
 
@@ -1993,8 +2167,7 @@
       </div>
     {:else}
       <p class="hint">
-        No views yet — arrange your windows the way you like, then capture the
-        whole arrangement here.
+        None yet. Arrange your windows, then capture them here.
       </p>
     {/if}
     <div class="controls">
@@ -2019,8 +2192,7 @@
     </div>
     {#if !anyGridEnabled}
       <p class="hint">
-        Enable a grid first — a view saves your enabled grids and the windows
-        on them.
+        Turn on a grid first. A view saves the grids you have on.
       </p>
     {/if}
     <!-- Three things this card has to say plainly (critique round):
@@ -2028,15 +2200,14 @@
          but never starts programs, and that during the claim window a view
          outranks the app defaults card above. -->
     <p class="hint">
-      A template saves a slot arrangement for one grid; a view saves every
-      grid — dimensions, spacing — and remembers which program goes where.
+      A template is one grid’s layout. A view is every grid, plus which
+      program goes where.
     </p>
     <p class="hint">
-      Applying a view rebuilds its grids and puts each program's windows back
-      on their saved cells. It does not launch programs: apps already running,
-      or started within the next two minutes, land on their saved spots —
-      taking priority over app defaults during that window. With a startup
-      view, that covers the apps Windows relaunches after a reboot.
+      Applying a view rebuilds its grids and returns each program’s windows
+      to their cells. It launches nothing. Programs already running — or
+      started within two minutes — take their saved spots, outranking app
+      defaults until then.
     </p>
   </section>
 
@@ -2077,9 +2248,8 @@
       </label>
     </div>
     <p class="hint">
-      Stops Windows' own drag-to-edge snap and the Snap Layouts flyout from
-      fighting the grid. Win+Arrow keeps working. Griddle restores your
-      Windows settings when it quits.
+      Stops Windows’ drag-to-edge snap and Snap Layouts fighting the grid.
+      Win+Arrow still works. Griddle restores your settings when it quits.
     </p>
     <div class="controls">
       <label class="switch row">
@@ -2093,9 +2263,8 @@
       </label>
     </div>
     <p class="hint">
-      Off by default, because this window is a map of your grid — snapping it
-      in makes it occupy one of the cells it is describing. Leave it off and
-      drag it anywhere; Griddle remembers where you put it.
+      This window maps your grid, so snapping it in makes it occupy a cell it
+      is describing. Left off, it goes wherever you drag it and stays there.
     </p>
     <div class="controls">
       <label class="field">
@@ -2120,12 +2289,12 @@
       <p class="hint error">{hotkeyError}</p>
     {/if}
     <p class="hint">
-      Global shortcut that opens this window — e.g. Ctrl+Win+G. If another
-      app already owns the new combination, the previous one stays active.
+      Opens this window from anywhere — e.g. Ctrl+Win+G. If another app owns
+      the combination, the old one stays.
     </p>
     <p class="hint">
-      Looking for what your desktop looks like after a restart? That's “Load
-      at startup” in the Views card above.
+      For how your desktop looks after a restart, see “Load at startup”
+      under Views.
     </p>
   </section>
 
@@ -2336,21 +2505,35 @@
   .brandrow {
     background: var(--panel);
   }
-  .brandrow .wordmark {
-    font-size: var(--fs-h1);
-    font-weight: var(--fw-bold);
-    color: var(--text);
-    letter-spacing: -0.01em;
+  /* The mark butts straight onto the word it completes — a gap here and the
+     G stops being the G. Half strength across the whole lockup: the product
+     name is not what you opened this panel to read. */
+  .brandrow .brandlock {
+    gap: 0;
+    opacity: 0.5;
   }
-  /* The name completes the lockup without competing with it. */
-  .brandrow .product {
-    font-size: var(--fs-h2);
-    color: var(--muted);
+  .brandrow .wordmark {
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-medium);
+    color: var(--accent);
     white-space: nowrap;
   }
   .brandrow .brandmark {
-    width: 16px;
-    height: 16px;
+    width: 12px;
+    height: 12px;
+    color: var(--accent);
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
   }
   .cell.nodivide {
     border-right: 0;
@@ -2374,14 +2557,13 @@
   }
   .cell.icon {
     cursor: pointer;
-    color: var(--faint);
+    color: var(--muted);
     border-right: 1px solid var(--line);
   }
   .cell.icon:last-child {
     border-right: 0;
   }
-  .cell.icon:hover,
-  .cell.icon.sel {
+  .cell.icon:hover {
     background: var(--surface);
     color: var(--text);
   }
@@ -2425,28 +2607,28 @@
     flex: 1 1 auto;
     justify-content: flex-start;
     gap: var(--sp-2);
-    padding: 0 var(--sp-3);
+    /* 16px gutters, as every Tab frame in Figma 112-117 has. */
+    padding: 0 var(--sp-4);
     min-width: 0;
     border-right: 1px solid var(--line);
   }
   .cell.wide {
     flex: 0 0 auto;
     gap: var(--sp-2);
-    padding: 0 var(--sp-3);
+    padding: 0 var(--sp-4);
   }
 
+  /* A row's label is primary text, and everything qualifying it is one step
+     down (Figma 112-117). The panel used to sit a step dimmer throughout —
+     labels muted, units faint — which read as though every row were disabled. */
   .cell .lbl {
-    font-size: 12.5px;
-    color: var(--muted);
+    font-size: var(--fs-sm);
+    color: var(--text);
     white-space: nowrap;
   }
-  .cell .lbl.strong {
-    color: var(--text);
-    font-weight: 600;
-  }
   .cell .unit {
-    font-size: 11.5px;
-    color: var(--faint);
+    font-size: var(--fs-sm);
+    color: var(--muted);
   }
   .cell .mon-name {
     font-size: var(--fs-h2);
@@ -2493,7 +2675,7 @@
     display: block;
   }
 
-  /* "Grid applied" — a checkbox in the spec, not a switch: it states a fact
+  /* "Grid on" — a checkbox in the spec, not a switch: it states a fact
      about the display rather than flipping a mode. */
   .check {
     cursor: pointer;
@@ -2505,24 +2687,21 @@
     height: 0;
   }
   .check .check-label {
-    font-size: 12.5px;
-    color: var(--muted);
+    font-size: var(--fs-sm);
+    color: var(--text);
   }
   .check .box {
-    width: 17px;
-    height: 17px;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--line);
-    background: var(--surface-2);
+    width: 16px;
+    height: 16px;
+    color: var(--muted);
     display: flex;
     align-items: center;
     justify-content: center;
-    color: transparent;
   }
+  /* Off is an empty square, on is a square with a tick, and only the colour
+     changes with it — the form carries the state either way. */
   .check input:checked + .box {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: #fff;
+    color: var(--accent);
   }
   .check input:focus-visible + .box {
     outline: var(--focus-ring);
@@ -2539,8 +2718,8 @@
 
   .ghost {
     cursor: pointer;
-    font-size: 12.5px;
-    color: var(--muted);
+    font-size: var(--fs-sm);
+    color: var(--text);
   }
   .ghost:hover {
     background: var(--surface-2);
@@ -2589,10 +2768,10 @@
 
 
 
+  /* Resolution and row hints: the small step, one level below the label. */
   .meta-inline {
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--faint);
+    font-size: var(--fs-2xs);
+    color: var(--muted);
     white-space: nowrap;
   }
 
@@ -2642,7 +2821,7 @@
 
   .tab.sel {
     background: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
   }
 
   /* `+` and the gear are glyphs, not words: square them up so they read as
@@ -2653,6 +2832,12 @@
     padding: 0;
     font-size: 15px;
     letter-spacing: 0;
+  }
+
+  /* The gear rides the tab band's right edge: the spacer already draws the
+     rule on its left, and a rule on its right would double the frame. */
+  .tab.gear {
+    border-right: 0;
   }
 
 
@@ -2678,9 +2863,29 @@
     gap: 0;
     height: 100%;
     box-sizing: border-box;
-    /* Fixed window, fixed content: the map absorbs the slack, so there is
-       never anything to scroll to. */
+    /* A display tab is fixed window, fixed content: the map absorbs the
+       slack, so there is nothing to scroll to and a scrollbar would be a
+       lie. Preferences has no absorber and is as long as it is. */
     overflow: hidden;
+  }
+  .page.scrolls {
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
+  }
+  .page.scrolls::-webkit-scrollbar {
+    width: 6px;
+  }
+  .page.scrolls::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .page.scrolls::-webkit-scrollbar-thumb {
+    border-radius: var(--radius-pill);
+    background: var(--line);
+  }
+  .page.scrolls::-webkit-scrollbar-thumb:hover {
+    background: var(--faint);
   }
 
 
@@ -2797,14 +3002,19 @@
     font-size: 14px;
   }
 
+  /* A band, not a card. The panel is already a frame; a rounded box inside
+     it drew a second one around every group and left the ground showing
+     between them. Full bleed, one rule underneath, 16px gutters like every
+     other row. */
   .card {
     background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: 14px;
-    padding: 18px 20px 20px;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    border-radius: 0;
+    padding: var(--sp-3) var(--sp-4) var(--sp-4);
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: var(--sp-3);
   }
   .card-head {
     display: flex;

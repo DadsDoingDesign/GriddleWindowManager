@@ -451,7 +451,9 @@ describe('moveSizeEnd — drop on a different gridded monitor', () => {
     const show = last(h.previews);
     expect(show.gridId).toBe(GRID2_ID);
     expect(show.visible).toBe(true);
-    expect(show.footprint).toEqual({ col: 3, row: 1, w: 3, h: 2 });
+    // The tile is new to the empty target grid, so the default fill policy
+    // (spec 2026-08-31) previews the whole grid, not a cursor-anchored box.
+    expect(show.footprint).toEqual({ col: 0, row: 0, w: 12, h: 6 });
   });
 });
 

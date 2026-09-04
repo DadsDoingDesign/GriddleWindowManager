@@ -23,8 +23,9 @@ import {
   slotFromCursor,
   snapRectToSlot,
 } from './coords';
-import { extractLayoutTiles, normalizePlacementMode } from './persist';
+import { CONFIG_VERSION, extractLayoutTiles, normalizePlacementMode } from './persist';
 import { solveMinimalMoves, type ReflowMove, type ReflowTile } from './reflow';
+import { bestOpenSlot } from './openspace';
 import {
   computeUnusableCells,
   nearestUsableSlot,
@@ -44,6 +45,7 @@ import type {
   LegacyPlacementMode,
   MonitorInfo,
   Move,
+  PlacementFill,
   PlacementMode,
   PreviewState,
   Slot,
@@ -65,6 +67,13 @@ export interface BrainCallbacks {
    * has already released the window's tile when this fires.
    */
   onMinimize?(hwnd: Hwnd): void;
+  /**
+   * Spec 2026-08-31 (expand-on-maximize): ask the shell to SW_RESTORE a
+   * window the user just maximized — the brain has already remembered the
+   * grown slot, and the tracker's unmaximize event re-tiles it there.
+   * Optional for the same host-compatibility reason as `onMinimize`.
+   */
+  onRestore?(hwnd: Hwnd): void;
   onSnapshot(s: StateSnapshot): void;
 }
 
@@ -389,6 +398,22 @@ export class WindowManagerBrain {
   private settingsWindowPos: import('./types').WindowPos | null;
   /** Widget appearance; `null` is dark. Round-tripped like the pop-out pos. */
   private theme: 'dark' | 'light' | null;
+  /** Spec 2026-08-31: footprint policy for windows new to a grid. */
+  private dropPlacement: PlacementFill;
+  /** Spec 2026-08-31: footprint policy for tiles moving within their grid. */
+  private movePlacement: PlacementFill;
+  /** Spec 2026-08-31 (2nd batch): maximize on a tiled window expands it. */
+  private maximizeBehavior: 'expand' | 'windows';
+  /** Spec 2026-08-31 (2nd batch): a refused drop auto-splits the aimed tile. */
+  private noRoomPlacement: 'split' | 'refuse';
+  /**
+   * Pre-expand slots of tiles grown by a maximize gesture, so the next
+   * maximize toggles back. Cleared by any other commit that moves or
+   * resizes the tile — after a manual rearrangement the next maximize grows
+   * again instead of jumping to a stale slot. The gridId guards against a
+   * memory following the window onto a different grid.
+   */
+  private expandedFrom = new Map<Hwnd, { gridId: string; slot: Slot }>();
 
   constructor(cb: BrainCallbacks, cfg?: AppConfig, opts?: { now?: () => number }) {
     this.cb = cb;
@@ -405,6 +430,13 @@ export class WindowManagerBrain {
     this.manageSettingsWindow = cfg?.manageSettingsWindow === true;
     this.settingsWindowPos = cfg?.settingsWindowPos ?? null;
     this.theme = cfg?.theme ?? null;
+    // Same loader-independence rule as the grid settings above: the shipped
+    // read path is Rust serde, so junk values default here, not just in
+    // sanitizeConfig.
+    this.dropPlacement = cfg?.dropPlacement === 'size' ? 'size' : 'fill';
+    this.movePlacement = cfg?.movePlacement === 'fill' ? 'fill' : 'size';
+    this.maximizeBehavior = cfg?.maximizeBehavior === 'windows' ? 'windows' : 'expand';
+    this.noRoomPlacement = cfg?.noRoomPlacement === 'refuse' ? 'refuse' : 'split';
     // A pause that survived a restart (config `paused: true`) is already
     // running when the constructor returns — start its clock here so the
     // startup view's claim window is not eaten by it.
@@ -608,6 +640,7 @@ export class WindowManagerBrain {
     if (this.windows.delete(hwnd)) changed = true;
     this.recency.delete(hwnd);
     this.appliedRects.delete(hwnd);
+    this.expandedFrom.delete(hwnd);
     if (changed) {
       this.flush();
       this.emitSnapshot();
@@ -640,6 +673,81 @@ export class WindowManagerBrain {
     if (this.floating.delete(hwnd)) {
       this.emitSnapshot();
     }
+  }
+
+  /**
+   * Spec 2026-08-31 (second batch): the tracker saw a maximize — a title-bar
+   * double-click, the caption button or Win+Up, indistinguishable at the
+   * hook. Under `maximizeBehavior: 'expand'` a tiled, resizable, in-flow
+   * window does not stay OS-maximized: its tile grows to the largest free
+   * rectangle containing its cells (toggling back to the pre-expand slot on
+   * the next maximize), the tile is released with the grown slot remembered,
+   * and the shell is asked to SW_RESTORE — the tracker's unmaximize event
+   * then re-tiles it through the existing restore path. Everything else
+   * (pref `'windows'`, floating, absolute/non-resizable, stack grids) keeps
+   * the pre-spec behavior: treat like a minimize and leave the window alone.
+   */
+  windowMaximized(hwnd: Hwnd): void {
+    const known =
+      this.tileGrid.has(hwnd) || this.floating.has(hwnd) || this.windows.has(hwnd);
+    if (!known) return;
+    const gridId = this.tileGrid.get(hwnd);
+    const mg = gridId !== undefined ? this.grids.get(gridId) : undefined;
+    const tile = mg?.grid.getTile(hwnd);
+    const info = this.windows.get(hwnd);
+    if (
+      this.maximizeBehavior !== 'expand' ||
+      !mg ||
+      !tile ||
+      tile.position === 'absolute' ||
+      !(info?.resizable ?? true)
+    ) {
+      this.windowMinimized(hwnd);
+      return;
+    }
+
+    const cur = tileSlotOf(tile);
+    const prev = this.expandedFrom.get(hwnd);
+    let target: Slot;
+    if (prev && prev.gridId === mg.settings.id) {
+      // Toggle back. The pre-expand slot lies inside the expanded rect, so
+      // it is free the moment the tile is released; the restore path still
+      // re-validates and falls through to normal placement if the grid
+      // changed underneath.
+      this.expandedFrom.delete(hwnd);
+      target = prev.slot;
+    } else {
+      this.expandedFrom.delete(hwnd); // a stale other-grid memory dies here
+      target =
+        bestOpenSlot({
+          cols: this.dims(mg.settings).cols,
+          rows: this.dims(mg.settings).rows,
+          blocked: this.blockedCells(mg, hwnd),
+          cursor: null,
+          min: { w: cur.w, h: cur.h },
+          cover: cur,
+        }) ?? cur;
+      if (!sameSlot(target, cur)) {
+        this.expandedFrom.set(hwnd, { gridId: mg.settings.id, slot: cur });
+      }
+    }
+
+    // Release like a minimize, but remember the target slot: the actuator
+    // never resizes a zoomed window, so the move must wait for the restore —
+    // which is exactly what the remembered-slot machinery does.
+    this.cancelDrag(hwnd);
+    if (info) this.windows.set(hwnd, { ...info, minimized: true });
+    this.remembered.set(hwnd, {
+      gridId: mg.settings.id,
+      slot: target,
+      absolute: false,
+    });
+    mg.grid.removeTile(hwnd);
+    this.tileGrid.delete(hwnd);
+    this.appliedRects.delete(hwnd);
+    this.flush();
+    this.emitSnapshot();
+    this.cb.onRestore?.(hwnd);
   }
 
   windowRestored(w: WindowInfo): void {
@@ -798,12 +906,16 @@ export class WindowManagerBrain {
     const mrResult = offerPills
       ? this.makeRoomPlan(mg, computed.footprint, minCells, mon, this.dims(mg.settings))
       : null;
+    // Under auto-split (spec 2026-08-31 second batch) the make-room band
+    // never draws — but the grab still shows the plain refusal (armed stays
+    // false below), and the first drag sample flips to the split preview.
+    const grabAutoSplit = this.noRoomPlacement === 'split' && mrResult?.kind === 'ok';
     const swPlan = offerPills ? this.swapPlan(mg, computed.footprint, minCells) : null;
     const pills = this.pillRects(
       mon,
       this.dims(mg.settings),
       computed.footprint,
-      mrResult !== null,
+      !grabAutoSplit && mrResult !== null,
       swPlan !== null,
     );
     // Never armed at the grab: the full-width bands sit under many windows'
@@ -871,25 +983,38 @@ export class WindowManagerBrain {
     const dragInfo = this.windows.get(d.hwnd);
     const unfittable = this.minUnfittable(mon, this.dims(mg.settings), dragInfo);
     const refused = unfittable || this.placementRefused(mg, d, footprint);
-    // Pills are offered for intake drags only: their drop machinery lives in
-    // intakeDrop, and a pill a managed drop would silently ignore is worse
-    // than no pill.
-    const offerPills = refused && !unfittable && d.sourceGridId === null;
+    // Spec 2026-08-31 (second batch): a refused NEW-TO-GRID drop — intake or
+    // managed transfer — auto-splits the aimed tile under the default pref:
+    // the preview shows the split as the outcome and no make-room band is
+    // drawn. The bands keep their intake-only rule (their drop machinery
+    // lives in intakeDrop, and a band a managed drop would silently ignore
+    // is worse than no band); the swap band survives auto-split as the
+    // explicit alternative gesture.
+    const newToGrid = refused && !unfittable && d.sourceGridId !== mg.settings.id;
+    const intake = d.sourceGridId === null;
     const minCells = this.minCellsFor(mon, this.dims(mg.settings), dragInfo);
-    const mrResult = offerPills
+    const mrResult = newToGrid
       ? this.makeRoomPlan(mg, footprint, minCells, mon, this.dims(mg.settings))
       : null;
     const plan = mrResult?.kind === 'ok' ? mrResult : null;
-    const swPlan = offerPills ? this.swapPlan(mg, footprint, minCells) : null;
-    const pills = this.pillRects(mon, this.dims(mg.settings), footprint, mrResult !== null, swPlan !== null);
+    const autoSplit = this.noRoomPlacement === 'split' && plan !== null;
+    const swPlan = newToGrid && intake ? this.swapPlan(mg, footprint, minCells) : null;
+    const pills = this.pillRects(
+      mon,
+      this.dims(mg.settings),
+      footprint,
+      !autoSplit && intake && mrResult !== null,
+      swPlan !== null,
+    );
     const inRect = (r: { x: number; y: number; width: number; height: number } | undefined) =>
       r !== undefined &&
       p.cursorX >= r.x &&
       p.cursorX <= r.x + r.width &&
       p.cursorY >= r.y &&
       p.cursorY <= r.y + r.height;
-    const armed = plan !== null && inRect(pills.makeRoom);
+    // An explicit aim at the swap band beats the default split.
     const swapArmed = inRect(pills.swap);
+    const armed = plan !== null && !swapArmed && (autoSplit || inRect(pills.makeRoom));
     const unchanged =
       d.previewGridId === mg.settings.id &&
       d.lastFootprint !== null &&
@@ -1255,6 +1380,12 @@ export class WindowManagerBrain {
     if (resizing) {
       footprint = snapRectToSlot(mon, dims, rect);
     } else {
+      // Spec 2026-08-31 (drag fill placement): under a 'fill' policy the
+      // footprint is the open-space rectangle, not a cursor-anchored box.
+      // Already >= the minimum cells and clear of dead space by
+      // construction, so none of the adjustment below applies.
+      const filled = this.fillFootprint(mg, mon, d, cursorX, cursorY);
+      if (filled) return { footprint: filled, resizing: false };
       const size =
         mg.settings.id === d.sourceGridId
           ? { w: d.startSlot.w, h: d.startSlot.h }
@@ -1276,6 +1407,64 @@ export class WindowManagerBrain {
     // Preview and commit snap to usable slots identically (spec §5.7).
     const adjusted = this.nearestUsable(mg, footprint);
     return adjusted ? { footprint: adjusted, resizing } : null;
+  }
+
+  /**
+   * Spec 2026-08-31 (drag fill placement): the open-space rectangle this
+   * drag should fill, or null when the cursor-anchored path applies — the
+   * policy says 'size', the target is a stack grid (overlapping tiles make
+   * "open space" meaningless), the window cannot be grown (absolute /
+   * non-resizable), or no free rectangle fits the window's minimum (the
+   * caller then falls through to the refusal + make-room/swap flow).
+   *
+   * Which policy applies is the drag kind: a tile moving within its own grid
+   * follows `movePlacement` (default: keep the span the user set); a window
+   * NEW to the grid — floating intake or a cross-grid transfer — follows
+   * `dropPlacement` (default: fill). Blocked cells mirror `placementRefused`
+   * exactly (in-flow tiles minus the dragged window, plus spanning dead
+   * space), so a fill placement is never refused.
+   */
+  private fillFootprint(
+    mg: ManagedGrid,
+    mon: MonitorInfo,
+    d: DragState,
+    cursorX: number,
+    cursorY: number,
+  ): Slot | null {
+    const policy =
+      mg.settings.id === d.sourceGridId ? this.movePlacement : this.dropPlacement;
+    if (policy !== 'fill') return null;
+    if (mg.settings.mode === 'stack') return null;
+    const info = this.windows.get(d.hwnd);
+    if (d.absolute || !(info?.resizable ?? true)) return null;
+
+    const dims = this.dims(mg.settings);
+    const cursorCell = slotFromCursor(mon, dims, cursorX, cursorY, { w: 1, h: 1 });
+    return bestOpenSlot({
+      cols: dims.cols,
+      rows: dims.rows,
+      blocked: this.blockedCells(mg, d.hwnd),
+      cursor: { col: cursorCell.col, row: cursorCell.row },
+      min: this.minCellsFor(mon, dims, info),
+    });
+  }
+
+  /**
+   * The open-space finder's blocked mask for `mg`: in-flow tile cells minus
+   * the given hwnd's own, plus spanning dead space — the same occupation
+   * rule `placementRefused` applies, so a fill or expand is never refused.
+   */
+  private blockedCells(mg: ManagedGrid, exclude: Hwnd): Set<number> {
+    const dims = this.dims(mg.settings);
+    const blocked = new Set(mg.unusable);
+    for (const t of mg.grid.tiles) {
+      if (t.id === exclude || !isInFlow(t)) continue;
+      const s = tileSlotOf(t);
+      for (let r = s.row; r < s.row + s.h; r++) {
+        for (let c = s.col; c < s.col + s.w; c++) blocked.add(r * dims.cols + c);
+      }
+    }
+    return blocked;
   }
 
   moveSizeEnd(
@@ -1376,6 +1565,47 @@ export class WindowManagerBrain {
       this.flush();
       this.emitSnapshot();
       return;
+    }
+
+    // Spec 2026-08-31 (second batch): a refused cross-grid transfer under
+    // the default pref commits the auto-split the preview showed. Same
+    // click safety as intake — no drag samples, no split.
+    if (
+      target !== source &&
+      this.noRoomPlacement === 'split' &&
+      d.lastDragPos !== null
+    ) {
+      const mon = this.monitorFor(target.settings);
+      const dropInfo = this.windows.get(hwnd);
+      if (
+        mon &&
+        !this.minUnfittable(mon, this.dims(target.settings), dropInfo) &&
+        this.placementRefused(target, d, snapped)
+      ) {
+        const mr = this.makeRoomPlan(
+          target,
+          snapped,
+          this.minCellsFor(mon, this.dims(target.settings), dropInfo),
+          mon,
+          this.dims(target.settings),
+        );
+        if (mr?.kind === 'ok') {
+          source.grid.removeTile(hwnd);
+          this.tileGrid.delete(hwnd);
+          this.expandedFrom.delete(hwnd);
+          if (this.commitMakeRoom(target, hwnd, mr)) {
+            this.tileGrid.set(hwnd, target.settings.id);
+          } else if (dropInfo) {
+            // The plan raced the grid: same fallback commitTransfer uses.
+            this.placeWindow(target, dropInfo);
+          }
+          this.touch(hwnd);
+          this.appliedRects.delete(hwnd);
+          this.flush();
+          this.emitSnapshot();
+          return;
+        }
+      }
     }
 
     if (target === source) {
@@ -1775,7 +2005,7 @@ export class WindowManagerBrain {
     const layouts: Record<string, unknown> = { ...this.storedLayouts };
     for (const [id, mg] of this.grids) layouts[id] = mg.grid.toJSON();
     return {
-      version: 7,
+      version: CONFIG_VERSION,
       grids: [...this.gridSettings.values()].map((g) => ({ ...g })),
       templates: [...this.templates],
       exclusions: [...this.exclusions],
@@ -1792,6 +2022,10 @@ export class WindowManagerBrain {
       manageSettingsWindow: this.manageSettingsWindow,
       settingsWindowPos: this.settingsWindowPos,
       theme: this.theme,
+      dropPlacement: this.dropPlacement,
+      movePlacement: this.movePlacement,
+      maximizeBehavior: this.maximizeBehavior,
+      noRoomPlacement: this.noRoomPlacement,
     };
   }
 
@@ -1826,6 +2060,10 @@ export class WindowManagerBrain {
     suppressWindowsSnap?: boolean;
     manageSettingsWindow?: boolean;
     theme?: 'dark' | 'light';
+    dropPlacement?: PlacementFill;
+    movePlacement?: PlacementFill;
+    maximizeBehavior?: 'expand' | 'windows';
+    noRoomPlacement?: 'split' | 'refuse';
   }): void {
     let changed = false;
     if (prefs.paused !== undefined && prefs.paused !== this.paused) {
@@ -1879,6 +2117,34 @@ export class WindowManagerBrain {
     }
     if (prefs.theme !== undefined && prefs.theme !== this.theme) {
       this.theme = prefs.theme;
+      changed = true;
+    }
+    if (
+      prefs.dropPlacement !== undefined &&
+      prefs.dropPlacement !== this.dropPlacement
+    ) {
+      this.dropPlacement = prefs.dropPlacement;
+      changed = true;
+    }
+    if (
+      prefs.movePlacement !== undefined &&
+      prefs.movePlacement !== this.movePlacement
+    ) {
+      this.movePlacement = prefs.movePlacement;
+      changed = true;
+    }
+    if (
+      prefs.maximizeBehavior !== undefined &&
+      prefs.maximizeBehavior !== this.maximizeBehavior
+    ) {
+      this.maximizeBehavior = prefs.maximizeBehavior;
+      changed = true;
+    }
+    if (
+      prefs.noRoomPlacement !== undefined &&
+      prefs.noRoomPlacement !== this.noRoomPlacement
+    ) {
+      this.noRoomPlacement = prefs.noRoomPlacement;
       changed = true;
     }
     if (
@@ -2586,6 +2852,9 @@ export class WindowManagerBrain {
   private commitSameGrid(mg: ManagedGrid, hwnd: Hwnd, snapped: Slot): void {
     const tile = mg.grid.getTile(hwnd);
     if (!tile) return;
+    // A deliberate re-slot supersedes any expand-toggle memory (spec
+    // 2026-08-31): the next maximize grows fresh instead of jumping back.
+    this.expandedFrom.delete(hwnd);
 
     // Reflow mode: the drop lands where it was aimed and the neighbors
     // reorganise around it. A declined solve falls through to the push path
@@ -2666,6 +2935,7 @@ export class WindowManagerBrain {
     const hwnd = d.hwnd;
     source.grid.removeTile(hwnd);
     this.tileGrid.delete(hwnd);
+    this.expandedFrom.delete(hwnd); // same supersession rule as commitSameGrid
     const info = this.windows.get(hwnd);
 
     // Absolute in the target iff the target is stack-mode or the window
@@ -2756,17 +3026,18 @@ export class WindowManagerBrain {
         ? null
         : this.makeRoomPlan(target, snapped, minCells, at.mon, this.dims(target.settings));
       const plan = mrResult?.kind === 'ok' ? mrResult : null;
+      const autoSplit = this.noRoomPlacement === 'split' && plan !== null;
       const swPlan = dropUnfittable ? null : this.swapPlan(target, snapped, minCells);
       const pills = this.pillRects(
         at.mon,
         this.dims(target.settings),
         snapped,
-        mrResult !== null,
+        !autoSplit && mrResult !== null,
         swPlan !== null,
       );
       // A drop with no drag samples is a click, not an aimed gesture — the
-      // bands must never commit on it (they cover enough of the screen that
-      // a stationary release would often land inside one).
+      // bands (and the auto-split, which covers the whole grid) must never
+      // commit on it.
       const sampled = d.lastDragPos !== null;
       const inRect = (r: { x: number; y: number; width: number; height: number } | undefined) =>
         sampled &&
@@ -2775,15 +3046,8 @@ export class WindowManagerBrain {
         cursorX <= r.x + r.width &&
         cursorY >= r.y &&
         cursorY <= r.y + r.height;
-      if (plan && inRect(pills.makeRoom) && this.commitMakeRoom(target, hwnd, plan)) {
-        this.tileGrid.set(hwnd, target.settings.id);
-        this.floating.delete(hwnd);
-        this.touch(hwnd);
-        this.appliedRects.delete(hwnd);
-        this.flush();
-        this.emitSnapshot();
-        return;
-      }
+      // Swap is checked first: under auto-split it is the only band left,
+      // and an explicit aim at it must beat the default split.
       if (swPlan && inRect(pills.swap) && this.commitSwap(target, hwnd, swPlan, dropInfo)) {
         this.tileGrid.set(hwnd, target.settings.id);
         this.floating.delete(hwnd);
@@ -2795,6 +3059,23 @@ export class WindowManagerBrain {
         // shell to minimize the swapped-out window. The tracker's minimize
         // event that follows finds its tile already released — idempotent.
         this.cb.onMinimize?.(swPlan.victim);
+        return;
+      }
+      // Auto-split (release anywhere) or an armed make-room band: split the
+      // aimed tile and take the donated half — the same computation the
+      // preview ghosted.
+      if (
+        plan &&
+        sampled &&
+        (autoSplit || inRect(pills.makeRoom)) &&
+        this.commitMakeRoom(target, hwnd, plan)
+      ) {
+        this.tileGrid.set(hwnd, target.settings.id);
+        this.floating.delete(hwnd);
+        this.touch(hwnd);
+        this.appliedRects.delete(hwnd);
+        this.flush();
+        this.emitSnapshot();
         return;
       }
       // The refusal the preview showed, restated at the drop so releasing

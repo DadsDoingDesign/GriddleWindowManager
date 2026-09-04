@@ -5,7 +5,9 @@
 
 import { describe, expect, it } from 'vitest';
 import { WindowManagerBrain } from '../src/brain';
+import { defaultConfig } from '../src/persist';
 import type {
+  AppConfig,
   ApplyLayout,
   GridSettings,
   Hwnd,
@@ -71,17 +73,20 @@ interface Harness {
   minimized: Hwnd[];
 }
 
-function harness(): Harness {
+function harness(cfg?: AppConfig): Harness {
   const applies: ApplyLayout[] = [];
   const snapshots: StateSnapshot[] = [];
   const previews: PreviewState[] = [];
   const minimized: Hwnd[] = [];
-  const brain = new WindowManagerBrain({
-    onApply: (l) => applies.push(l),
-    onPreview: (p) => previews.push(p),
-    onSnapshot: (s) => snapshots.push(s),
-    onMinimize: (h) => minimized.push(h),
-  });
+  const brain = new WindowManagerBrain(
+    {
+      onApply: (l) => applies.push(l),
+      onPreview: (p) => previews.push(p),
+      onSnapshot: (s) => snapshots.push(s),
+      onMinimize: (h) => minimized.push(h),
+    },
+    cfg,
+  );
   brain.setMonitors([makeMonitor()]);
   return { brain, applies, snapshots, previews, minimized };
 }
@@ -102,7 +107,9 @@ function floatB(h: Harness): void {
 
 describe('swap drop zone (spec 2026-08-20 addendum)', () => {
   it('offers both pills, with disjoint rects', () => {
-    const h = harness();
+    // Both bands exist only under noRoomPlacement 'refuse' — the default
+    // auto-split (spec 2026-08-31, second batch) replaces the make-room band.
+    const h = harness({ ...defaultConfig(), noRoomPlacement: 'refuse' });
     floatB(h);
 
     h.brain.moveSizeStart('B');

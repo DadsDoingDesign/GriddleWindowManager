@@ -170,6 +170,7 @@ pub fn run() {
             actuator::apply_layout,
             actuator::focus_window,
             actuator::minimize_window,
+            actuator::restore_window,
             overlay::show_overlay,
             overlay::hide_overlay,
             config::read_config,

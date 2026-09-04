@@ -259,7 +259,6 @@
     white-space: nowrap;
   }
   .value .name {
-    font-weight: 600;
     color: var(--text);
   }
   .value .blurb {
@@ -268,7 +267,7 @@
 
   .caret {
     flex: 0 0 auto;
-    color: var(--faint);
+    color: var(--text);
     line-height: 1;
   }
 

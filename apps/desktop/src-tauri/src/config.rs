@@ -27,8 +27,11 @@ use std::path::{Path, PathBuf};
 /// + `settings_window_pos`
 /// over v5, which added `suppress_windows_snap` + `windows_snap_original`
 /// (spec 2026-08-19), both `#[serde(default)]` like every addition before
+/// them. v8 adds `drop_placement` + `move_placement` (spec 2026-08-31, drag
+/// fill placement), and v9 `maximize_behavior` + `no_room_placement` (same
+/// day, second batch), all `#[serde(default)]` like every addition before
 /// them. Only *future* versions are quarantined.
-const CONFIG_VERSION: u32 = 7;
+const CONFIG_VERSION: u32 = 9;
 /// Oldest schema version the migration path accepts.
 const MIN_CONFIG_VERSION: u32 = 1;
 
@@ -399,7 +402,128 @@ mod tests {
             manage_settings_window: false,
             settings_window_pos: None,
             theme: None,
+            drop_placement: None,
+            move_placement: None,
+            maximize_behavior: None,
+            no_room_placement: None,
         }
+    }
+
+    /// Spec 2026-08-31 (drag fill placement): a v7 config — everything up to
+    /// `theme`, no placement-fill fields — migrates in place: version
+    /// re-stamped, both fields absent (`None`, which the brain reads as its
+    /// defaults), nothing else touched.
+    #[test]
+    fn v7_config_without_placement_fields_reads_as_untouched() {
+        let dir = ScratchDir::new();
+        fs::create_dir_all(dir.path()).unwrap();
+        let mut json = serde_json::to_value(sample_config()).unwrap();
+        let obj = json.as_object_mut().unwrap();
+        obj.insert("version".into(), serde_json::json!(7));
+        obj.remove("dropPlacement");
+        obj.remove("movePlacement");
+        fs::write(
+            dir.path().join(CONFIG_FILE),
+            serde_json::to_string(&json).unwrap(),
+        )
+        .unwrap();
+
+        let read = read_config_from(dir.path()).expect("v7 config must stay readable");
+        assert_eq!(read.version, CONFIG_VERSION, "re-stamped to v8");
+        assert_eq!(read.drop_placement, None, "the brain owns the default");
+        assert_eq!(read.move_placement, None, "the brain owns the default");
+    }
+
+    /// Spec 2026-08-31 (second batch): a v8 config — no expand/auto-split
+    /// fields — migrates in place with both absent (`None`, the brain's
+    /// defaults), nothing else touched.
+    #[test]
+    fn v8_config_without_behavior_fields_reads_as_untouched() {
+        let dir = ScratchDir::new();
+        fs::create_dir_all(dir.path()).unwrap();
+        let mut json = serde_json::to_value(sample_config()).unwrap();
+        let obj = json.as_object_mut().unwrap();
+        obj.insert("version".into(), serde_json::json!(8));
+        obj.remove("maximizeBehavior");
+        obj.remove("noRoomPlacement");
+        fs::write(
+            dir.path().join(CONFIG_FILE),
+            serde_json::to_string(&json).unwrap(),
+        )
+        .unwrap();
+
+        let read = read_config_from(dir.path()).expect("v8 config must stay readable");
+        assert_eq!(read.version, CONFIG_VERSION, "re-stamped to v9");
+        assert_eq!(read.maximize_behavior, None, "the brain owns the default");
+        assert_eq!(read.no_room_placement, None, "the brain owns the default");
+    }
+
+    /// The v9 behavior fields round-trip verbatim, like the v8 pair.
+    #[test]
+    fn behavior_fields_round_trip() {
+        let dir = ScratchDir::new();
+        let mut cfg = sample_config();
+        cfg.maximize_behavior = Some("windows".into());
+        cfg.no_room_placement = Some("refuse".into());
+        write_config_to(dir.path(), &cfg).expect("write");
+        assert_eq!(read_config_from(dir.path()), Some(cfg));
+    }
+
+    /// The placement-fill fields round-trip verbatim — Rust only stores what
+    /// the brain wrote.
+    #[test]
+    fn placement_fields_round_trip() {
+        let dir = ScratchDir::new();
+        let mut cfg = sample_config();
+        cfg.drop_placement = Some("size".into());
+        cfg.move_placement = Some("fill".into());
+        write_config_to(dir.path(), &cfg).expect("write");
+        assert_eq!(read_config_from(dir.path()), Some(cfg));
+    }
+
+    /// Evals plan §2 (docs/evals-plan.md): the shared config corpus — the
+    /// SAME fixture files the brain's vitest suite parses. Every historical
+    /// schema version must load through the full read path (including the
+    /// quarantine gate) and re-stamp to the current version; brain-owned
+    /// optionals stay `None` where the file lacks them.
+    #[test]
+    fn corpus_every_version_loads_and_restamps() {
+        let corpus = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("..")
+            .join("fixtures")
+            .join("configs");
+        let mut seen = 0u32;
+        for v in 1..=CONFIG_VERSION {
+            let file = corpus.join(format!("v{v}.json"));
+            let text = fs::read_to_string(&file)
+                .unwrap_or_else(|e| panic!("corpus file {file:?} unreadable: {e}"));
+            let dir = ScratchDir::new();
+            fs::create_dir_all(dir.path()).unwrap();
+            fs::write(dir.path().join(CONFIG_FILE), &text).unwrap();
+            let read = read_config_from(dir.path())
+                .unwrap_or_else(|| panic!("corpus v{v} failed to load"));
+            assert_eq!(read.version, CONFIG_VERSION, "v{v} re-stamped");
+            assert!(
+                !dir.path().join(BAK_FILE).exists(),
+                "v{v} must never be quarantined"
+            );
+            // Write-back round-trip: the migrated file must persist and
+            // re-load identically (the second-boot guarantee).
+            write_config_to(dir.path(), &read).expect("write migrated");
+            assert_eq!(read_config_from(dir.path()), Some(read.clone()), "v{v} idempotent");
+            if v < 8 {
+                assert_eq!(read.drop_placement, None, "v{v}: brain owns the default");
+                assert_eq!(read.move_placement, None, "v{v}: brain owns the default");
+            }
+            if v < 9 {
+                assert_eq!(read.maximize_behavior, None, "v{v}: brain owns the default");
+                assert_eq!(read.no_room_placement, None, "v{v}: brain owns the default");
+            }
+            seen += 1;
+        }
+        assert_eq!(seen, CONFIG_VERSION, "one corpus file per schema version");
     }
 
     #[test]

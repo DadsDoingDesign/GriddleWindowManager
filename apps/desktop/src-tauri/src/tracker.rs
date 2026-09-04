@@ -476,7 +476,7 @@ mod win {
     static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
 
     /// Tracked hwnds currently observed maximized (critique fix, untracked
-    /// window-state changes). Membership drives the maximize→`window-minimized`
+    /// window-state changes). Membership drives the maximize→`window-maximized`
     /// / unmaximize→`window-restored` translation in [`sync_zoom_state`].
     fn zoomed_lock() -> &'static std::sync::Mutex<std::collections::HashSet<isize>> {
         static ZOOMED: OnceLock<std::sync::Mutex<std::collections::HashSet<isize>>> =
@@ -1113,8 +1113,12 @@ mod win {
         if zoomed {
             set.insert(key);
             drop(set);
+            // Spec 2026-08-31 (second batch): its own event now, not the
+            // minimize translation — the brain either expands the tile in
+            // the grid (asking for a restore_window) or falls back to the
+            // old release-and-leave-alone itself.
             emit(
-                events::WINDOW_MINIMIZED,
+                events::WINDOW_MAXIMIZED,
                 HwndPayload {
                     hwnd: key.to_string(),
                 },

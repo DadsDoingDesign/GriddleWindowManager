@@ -399,7 +399,27 @@ versions discard the write and `CStr::from_ptr` is handed NULL. The blast radius
 is a crash while iterating GVariant strings — on Linux, in code this project
 does not build.
 
-**Action:** dismiss the Dependabot alert as *not affected — vulnerable code is
-not present in the shipped artifact*, and re-check when the Tauri minor version
-moves. If a Linux build is ever attempted, this advisory becomes live and must
-be resolved before shipping.
+**Decision (2026-08-26): leave the alert open.** An earlier pass recommended
+dismissing it as *not affected*. Re-checked against the tree at `e5511d5` — the
+assessment above still holds exactly, `tauri` is still at its newest published
+version (2.11.5), `gtk` is still at *its* newest (0.18.2, and gtk3-rs is frozen
+there), so there is still no version to move to. The alert is left open anyway,
+deliberately:
+
+- **A dismissal is silent; an open alert is not.** Dismissed as `not_used`, the
+  finding disappears from the security tab and from the push banner. The reason
+  it is not used is a *platform assumption* — Windows-only — and the day that
+  assumption changes is precisely the day nobody would think to reopen a
+  dismissed alert. The banner on every push is the cheapest possible tripwire.
+- **The condition that clears it is upstream, not ours.** There is no work item
+  here to close. Dismissing would record a decision as if it were a resolution.
+- **The cost of leaving it is one line of noise on `git push`.** That is a fair
+  price for a standing reminder that the Linux GTK stack is in `Cargo.lock`
+  whether or not it is in the binary.
+
+Re-check when the Tauri minor version moves. **If a Linux build is ever
+attempted, this advisory becomes live and must be resolved before shipping** —
+that is the whole reason the alert stays visible.
+
+Verified 2026-08-26: `npm audit` across the workspace reports 0 vulnerabilities,
+so this is the only outstanding advisory of any kind.
