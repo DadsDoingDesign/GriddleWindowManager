@@ -1,6 +1,6 @@
 [package]
 name = "griddle-wm"
-version = "0.2.0"
+version = "0.3.0"
 description = "Griddle Window Manager - a Windows 11 grid window manager"
 authors = ["Griddle Window Manager contributors"]
 license = "MIT"

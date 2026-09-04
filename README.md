@@ -40,7 +40,7 @@ minute.
 **Requirements:** Windows 11, x64. Windows 10 is untested and there is no macOS
 or Linux build — the window-tracking half of the app is Win32-specific.
 
-1. Download `Griddle Window Manager_0.2.0_x64-setup.exe` from the
+1. Download `Griddle Window Manager_0.3.0_x64-setup.exe` from the
    [releases page](https://github.com/DadsDoingDesign/GriddleWindowManager/releases)
    (or [build it from source](#building-from-source)).
 2. Run the installer. It installs **per-user** — no administrator rights needed.
@@ -250,7 +250,7 @@ npm run tauri:dev
 
 # release build + NSIS installer, without the maintainer's signing key
 npm run tauri:build:local
-# → apps/desktop/src-tauri/target/release/bundle/nsis/Griddle Window Manager_0.2.0_x64-setup.exe
+# → apps/desktop/src-tauri/target/release/bundle/nsis/Griddle Window Manager_0.3.0_x64-setup.exe
 ```
 
 Use the npm scripts rather than calling `tauri` directly:
@@ -289,7 +289,7 @@ stays pure TypeScript, only `actuator.rs` moves windows, and IPC changes land
 on both sides of the contract at once.
 
 GUI-affecting changes need a pass through
-[`docs/smoke-test-v0.2.0.md`](docs/smoke-test-v0.2.0.md) — the automated suites
+[`docs/smoke-test-v0.3.0.md`](docs/smoke-test-v0.3.0.md) — the automated suites
 cover logic, not pixels.
 
 Participation is under the [Code of Conduct](CODE_OF_CONDUCT.md). Security
