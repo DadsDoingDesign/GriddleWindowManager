@@ -510,6 +510,20 @@ export function onOverlayReady(cb: () => void): Promise<UnlistenFn> {
   return on('overlay-ready', () => cb());
 }
 
+/**
+ * Rust hid an overlay on its own initiative (display topology changed, or
+ * the watchdog caught one lingering with no drag in progress). The host
+ * clears its shown-set for that monitor (2026-11-07).
+ */
+export interface OverlayHiddenPayload {
+  monitorId: string;
+  reason: string;
+}
+
+export function onOverlayHidden(cb: (p: OverlayHiddenPayload) => void): Promise<UnlistenFn> {
+  return on('overlay-hidden', cb);
+}
+
 export function emitSettingsEnableGrid(p: SettingsEnableGridPayload): Promise<void> {
   return emit('settings-enable-grid', p);
 }

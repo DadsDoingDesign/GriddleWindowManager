@@ -127,6 +127,9 @@ pub fn run() {
                 }
             }
             monitors::start_display_watcher(app.handle().clone());
+            // Overlay safety net (overlay.rs module docs, guard 3): a drag
+            // preview that outlives its drag is hidden within seconds.
+            overlay::start_overlay_watchdog(app.handle().clone());
             drag_pump::init(app.handle().clone());
             tracker::start_tracker(app.handle().clone());
             // Heartbeat watchdog: covers the brain deaths the Destroyed

@@ -128,13 +128,20 @@ pub fn sample_decision(alive: bool, frame: Option<Rect>, self_caused: bool) -> S
 // ---------------------------------------------------------------------------
 
 #[cfg(windows)]
-pub use win::{init, is_dragging, on_move_size_end, on_move_size_start, on_window_gone};
+pub use win::{
+    any_drag_active, init, is_dragging, on_move_size_end, on_move_size_start, on_window_gone,
+};
 
 #[cfg(not(windows))]
 pub fn init(_app: tauri::AppHandle) {}
 
 #[cfg(not(windows))]
 pub fn is_dragging(_hwnd: isize) -> bool {
+    false
+}
+
+#[cfg(not(windows))]
+pub fn any_drag_active() -> bool {
     false
 }
 
@@ -201,6 +208,12 @@ mod win {
     /// brain never fights the user's drag.
     pub fn is_dragging(hwnd: isize) -> bool {
         state().active().is_some_and(|d| d.hwnd == hwnd)
+    }
+
+    /// Is *any* managed drag in progress? The overlay watchdog never hides a
+    /// drag preview while the user is still dragging.
+    pub fn any_drag_active() -> bool {
+        state().active().is_some()
     }
 
     /// Tracker hook: the window left the managed universe mid-drag

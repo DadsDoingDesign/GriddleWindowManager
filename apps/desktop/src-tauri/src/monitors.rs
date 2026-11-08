@@ -321,6 +321,10 @@ mod win {
         // The tray syncs on every brain snapshot; it works from this cache so
         // the hot path never re-walks the display topology (critique round 3).
         crate::shell::refresh_monitor_cache(&monitors);
+        // A drag preview drawn for the old topology is wrong for the new one,
+        // and a monitor that renamed itself would strand its overlay forever
+        // (2026-11-07). Hide them all; the next drag shows what is needed.
+        crate::overlay::hide_all(app, "display topology changed");
         log::info!(
             "display change detected: {} monitor(s), emitting {}",
             monitors.len(),

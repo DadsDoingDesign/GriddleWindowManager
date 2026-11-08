@@ -425,6 +425,11 @@ pub mod events {
     /// is confusing — the window simply does not tile and nothing says why.
     /// The host answers on the overlay of whichever grid covers that monitor.
     pub const ELEVATED_DRAG: &str = "elevated-drag";
+    /// 2026-11-07: Rust hid an overlay on its own initiative (display
+    /// topology changed, or the watchdog caught one lingering with no drag in
+    /// progress). The host clears its shown-set for that monitor so the next
+    /// drag shows the overlay again instead of believing it already is.
+    pub const OVERLAY_HIDDEN: &str = "overlay-hidden";
 }
 
 /// Payload of [`events::ELEVATED_DRAG`]. Carries the monitor rather than a
@@ -436,4 +441,13 @@ pub struct ElevatedDrag {
     pub hwnd: String,
     pub monitor_id: String,
     pub exe: String,
+}
+
+/// Payload of [`events::OVERLAY_HIDDEN`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OverlayHidden {
+    pub monitor_id: String,
+    /// Free text for the log/console: "display topology changed", "watchdog".
+    pub reason: String,
 }
