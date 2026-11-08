@@ -22,9 +22,10 @@ Window Manager's own source code.
   and build/test-only tooling.
 - License texts are copied verbatim from the files each component ships, not transcribed.
 
-Regenerated for Griddle Window Manager 0.2.0 from the `Cargo.lock` and
-`package-lock.json` that produce the released installer, after the in-app
-updater added its HTTP and TLS dependencies.
+Regenerated for Griddle Window Manager 0.3.1 from the `Cargo.lock` and
+`package-lock.json` that produce the released installer. The 0.3.1 refresh
+follows the updater dropping its unused `zip` feature (which removed `zip`
+from the binary) and a round of security bumps; no license changed.
 
 ## Summary
 
@@ -50,7 +51,7 @@ earlier one. Three points deserve attention:
 
 ---
 
-## Rust crates (311, linked into the Griddle Window Manager binary)
+## Rust crates (310, linked into the Griddle Window Manager binary)
 
 Grouped by the SPDX expression each crate declares. An `OR` expression means the crate
 is offered under any one of the listed licenses at the redistributor's choice; for those
@@ -210,7 +211,7 @@ license applies simultaneously.
 - **windows_x86_64_msvc** 0.52.6 — Microsoft
 - **windows_x86_64_msvc** 0.53.1
 
-### `MIT` — 62 crates
+### `MIT` — 61 crates
 
 - **auto-launch** 0.5.0 — zzzgydi
 - **bytes** 1.12.1 — Carl Lerche, Sean McArthur
@@ -272,7 +273,6 @@ license applies simultaneously.
 - **winnow** 1.0.4
 - **winreg** 0.10.1 — Igor Shaula
 - **winreg** 0.55.0 — Igor Shaula
-- **zip** 4.6.1 — Mathijs van de Nes, Marli Frost, Ryan Levick, Chris Hennick
 - **zmij** 1.0.23 — David Tolnay
 
 ### `Apache-2.0 OR MIT` — 37 crates
@@ -305,7 +305,7 @@ license applies simultaneously.
 - **tauri-plugin-log** 2.9.0 — Tauri Programme within The Commons Conservancy
 - **tauri-plugin-process** 2.3.1 — Tauri Programme within The Commons Conservancy
 - **tauri-plugin-single-instance** 2.4.3 — Tauri Programme within The Commons Conservancy
-- **tauri-plugin-updater** 2.10.1 — Tauri Programme within The Commons Conservancy
+- **tauri-plugin-updater** 2.12.0 — Tauri Programme within The Commons Conservancy
 - **tauri-runtime** 2.11.3 — Tauri Programme within The Commons Conservancy
 - **tauri-runtime-wry** 2.11.4 — Tauri Programme within The Commons Conservancy
 - **tauri-utils** 2.9.3 — Tauri Programme within The Commons Conservancy
@@ -380,11 +380,11 @@ license applies simultaneously.
 ### `Apache-2.0 OR ISC OR MIT` — 2 crates
 
 - **hyper-rustls** 0.27.9
-- **rustls** 0.23.43
+- **rustls** 0.23.46
 
 ### `ISC` — 2 crates
 
-- **rustls-webpki** 0.103.13
+- **rustls-webpki** 0.103.16
 - **untrusted** 0.9.0 — Brian Smith
 
 ### `MIT OR Apache-2.0 OR Zlib` — 2 crates
@@ -445,32 +445,31 @@ license applies simultaneously.
 
 ## npm packages
 
-### Redistributed in the installer (25)
+### Redistributed in the installer (24)
 
 The production dependency closure of `@griddle-wm/desktop`. Code from these packages
 can be bundled by Vite into the compiled frontend that ships inside the installer.
 
-#### `MIT` — 20
+#### `MIT` — 19
 
 - **@griddle/core** 0.1.11 — Trustybits
 - **@griddle/svelte** 0.1.10 — Trustybits
 - **@jridgewell/gen-mapping** 0.3.13 — Justin Ridgewell
 - **@jridgewell/remapping** 2.3.5 — Justin Ridgewell
 - **@jridgewell/resolve-uri** 3.1.2 — Justin Ridgewell
-- **@jridgewell/sourcemap-codec** 1.5.5 — Justin Ridgewell
+- **@jridgewell/sourcemap-codec** 1.6.0 — Justin Ridgewell
 - **@jridgewell/trace-mapping** 0.3.31 — Justin Ridgewell
-- **@sveltejs/acorn-typescript** 1.0.12 — tyrealhu and the Svelte team
+- **@sveltejs/acorn-typescript** 1.0.13 — tyrealhu and the Svelte team
 - **@types/estree** 1.0.9
-- **@types/trusted-types** 2.0.7
-- **acorn** 8.18.0
+- **acorn** 8.19.0
 - **clsx** 2.1.1 — Luke Edwards
-- **devalue** 5.9.0
+- **devalue** 5.9.4
 - **esm-env** 1.2.2 — Ben McCann
-- **esrap** 2.3.2
+- **esrap** 2.4.0
 - **is-reference** 3.0.3 — Rich Harris
 - **locate-character** 3.0.0 — Rich Harris
 - **magic-string** 0.30.21 — Rich Harris
-- **svelte** 5.56.8
+- **svelte** 5.57.3
 - **zimmerframe** 1.1.4
 
 #### `Apache-2.0` — 2
@@ -495,8 +494,8 @@ obligations of their licenses do not attach to the shipped artifact.
 
 #### `MIT` — 47
 
-- **@oxc-project/types** 0.143.0 — Boshen and oxc contributors
-- **@rolldown/binding-win32-x64-msvc** 1.2.3
+- **@oxc-project/types** 0.156.0 — Boshen and oxc contributors
+- **@rolldown/binding-win32-x64-msvc** 1.2.16
 - **@rolldown/pluginutils** 1.0.1
 - **@standard-schema/spec** 1.1.0 — Colin McDonnell
 - **@sveltejs/load-config** 0.2.2
@@ -505,15 +504,15 @@ obligations of their licenses do not attach to the shipped artifact.
 - **@types/chai** 5.2.3
 - **@types/deep-eql** 4.0.2
 - **@types/node** 24.13.3
-- **@vitest/expect** 4.1.10
-- **@vitest/mocker** 4.1.10
-- **@vitest/pretty-format** 4.1.10
-- **@vitest/runner** 4.1.10
-- **@vitest/snapshot** 4.1.10
-- **@vitest/spy** 4.1.10
-- **@vitest/utils** 4.1.10
+- **@vitest/expect** 4.1.12
+- **@vitest/mocker** 4.1.12
+- **@vitest/pretty-format** 4.1.12
+- **@vitest/runner** 4.1.12
+- **@vitest/snapshot** 4.1.12
+- **@vitest/spy** 4.1.12
+- **@vitest/utils** 4.1.12
 - **assertion-error** 2.0.1 — Jake Luer
-- **chai** 6.2.2 — Jake Luer
+- **chai** 6.3.0 — Jake Luer
 - **chokidar** 4.0.3 — Paul Miller
 - **convert-source-map** 2.0.0 — Thorsten Lorenz
 - **deepmerge** 4.3.1
@@ -522,13 +521,13 @@ obligations of their licenses do not attach to the shipped artifact.
 - **fdir** 6.5.0 — thecodrr
 - **magic-string** 1.1.0 — Rich Harris
 - **mri** 1.2.0 — Luke Edwards
-- **nanoid** 3.3.18 — Andrey Sitnik
+- **nanoid** 3.3.20 — Andrey Sitnik
 - **obug** 2.1.4 — Kevin Deng
 - **pathe** 2.0.3
-- **picomatch** 4.0.5 — Jon Schlinkert
-- **postcss** 8.5.26 — Andrey Sitnik
+- **picomatch** 4.0.7 — Jon Schlinkert
+- **postcss** 8.5.32 — Andrey Sitnik
 - **readdirp** 4.1.2 — Thorsten Lorenz
-- **rolldown** 1.2.3
+- **rolldown** 1.2.16
 - **sade** 1.8.1 — Luke Edwards
 - **stackback** 0.0.2 — Roman Shtylman
 - **std-env** 4.2.0
@@ -536,11 +535,11 @@ obligations of their licenses do not attach to the shipped artifact.
 - **tinybench** 2.9.0
 - **tinyexec** 1.3.0 — James Garbutt
 - **tinyglobby** 0.2.17 — Superchupu
-- **tinyrainbow** 3.1.1
+- **tinyrainbow** 3.2.0
 - **undici-types** 7.18.2
-- **vite** 8.2.1 — Evan You
+- **vite** 8.3.6 — Evan You
 - **vitefu** 1.1.3
-- **vitest** 4.1.10 — Anthony Fu
+- **vitest** 4.1.12 — Anthony Fu
 - **why-is-node-running** 2.3.0 — Mathias Buus
 
 #### `Apache-2.0` — 3
@@ -566,7 +565,7 @@ obligations of their licenses do not attach to the shipped artifact.
 
 #### `BSD-3-Clause` — 1
 
-- **source-map-js** 1.2.1 — Valentin 7rulnik Semirulnik
+- **source-map-js** 1.2.2 — Valentin 7rulnik Semirulnik
 
 ---
 
