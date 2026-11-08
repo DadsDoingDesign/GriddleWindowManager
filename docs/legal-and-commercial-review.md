@@ -53,7 +53,7 @@ the library's.
 | Renderer | WebView2 (OS component) | Microsoft redistributable | Microsoft |
 | Installer | NSIS | zlib | NSIS contributors |
 
-311 Rust crates and 82 npm packages resolved. Every one declares a license;
+310 Rust crates and 81 npm packages resolved. Every one declares a license;
 none is missing or ambiguous.
 
 *(Recount 2026-08-10: this review was written against a 271-crate closure. The
@@ -103,8 +103,8 @@ Specific credits worth making by name in your README or About screen:
   by name and link the upstream repository; this app is a *consumer* of that
   library, not its home.
 
-Apache-2.0 §4 also requires propagating any upstream `NOTICE` file. All 311
-crate source directories were re-scanned on 2026-08-10: **none ships one**, so
+Apache-2.0 §4 also requires propagating any upstream `NOTICE` file. All 310
+crate source directories were re-scanned on 2026-11-08 (v0.3.1): **none ships one**, so
 the license text alone suffices. Re-check if the dependency tree changes
 materially — `tao` and `sync_wrapper` are Apache-2.0-only and are hard
 dependencies.
