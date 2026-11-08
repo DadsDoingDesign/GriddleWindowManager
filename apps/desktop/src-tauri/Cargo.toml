@@ -30,7 +30,10 @@ tauri-plugin-autostart = "2"
 # section of docs/security-review.md). The updater performs its HTTP from
 # Rust; `tauri-plugin-process` supplies the relaunch the installer handoff
 # needs.
-tauri-plugin-updater = "2"
+# `zip` (a default feature) only exists for zip-wrapped bundles; release.yml
+# ships the raw NSIS exe, so it is dead weight here and it pinned a vulnerable
+# zip 4.x (GHSA Dependabot alerts 23/24). Keep rustls-tls for the HTTPS client.
+tauri-plugin-updater = { version = "2", default-features = false, features = ["rustls-tls"] }
 tauri-plugin-process = "2"
 
 [target.'cfg(windows)'.dependencies]
