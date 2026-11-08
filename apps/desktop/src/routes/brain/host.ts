@@ -36,6 +36,7 @@ import {
   onSettingsWindowMoved,
   onWindowUnmovable,
   onOverlayReady,
+  onOverlayHidden,
   onSettingsApplyTemplate,
   onSettingsCaptureTemplate,
   onSettingsDeleteTemplate,
@@ -183,6 +184,13 @@ export async function startBrainHost(): Promise<BrainHost> {
   const overlayHideTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** Monitors whose overlay window is currently shown (or being shown). */
   const overlaysShown = new Set<string>();
+  /**
+   * Monitors each grid actually showed overlays on. A hide must target the
+   * same monitors the show did: recomputing them from the *current* snapshot
+   * misses any monitor the grid lost in between (topology change mid-drag),
+   * and that overlay then never gets hidden (2026-11-07 field failure).
+   */
+  const shownByGrid = new Map<string, Set<string>>();
 
   /** Monitors covered by a grid id, from the last snapshot or the id itself. */
   const monitorIdsForGrid = (gridId: string): string[] => {
@@ -199,7 +207,15 @@ export async function startBrainHost(): Promise<BrainHost> {
   let refusalLinger: ReturnType<typeof setTimeout> | null = null;
 
   const syncOverlays = (gridId: string, visible: boolean) => {
-    for (const monitorId of monitorIdsForGrid(gridId)) {
+    const current = monitorIdsForGrid(gridId);
+    const previouslyShown = shownByGrid.get(gridId);
+    const targets = visible ? current : [...new Set([...current, ...(previouslyShown ?? [])])];
+    if (visible) {
+      shownByGrid.set(gridId, new Set([...(previouslyShown ?? []), ...current]));
+    } else {
+      shownByGrid.delete(gridId);
+    }
+    for (const monitorId of targets) {
       const pending = overlayHideTimers.get(monitorId);
       if (visible) {
         if (pending !== undefined) {
@@ -583,6 +599,18 @@ export async function startBrainHost(): Promise<BrainHost> {
           console.error('state-snapshot re-emit failed:', e),
         );
       }
+    }),
+    // Rust hid an overlay without being asked (topology change, watchdog):
+    // forget we showed it, or the next drag would skip the show.
+    onOverlayHidden((p) => {
+      const pending = overlayHideTimers.get(p.monitorId);
+      if (pending !== undefined) {
+        clearTimeout(pending);
+        overlayHideTimers.delete(p.monitorId);
+      }
+      overlaysShown.delete(p.monitorId);
+      for (const set of shownByGrid.values()) set.delete(p.monitorId);
+      console.warn(`overlay on ${p.monitorId} hidden by Rust: ${p.reason}`);
     }),
     onSettingsMove((p) => {
       markUserAction();
